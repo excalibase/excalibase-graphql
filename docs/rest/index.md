@@ -88,6 +88,20 @@ as GraphQL's selection set:
 GET /api/v1/issues?select=id,title,status&limit=5
 ```
 
+## Embedding related rows
+
+`?select=id,users(name)` embeds the rows a foreign key leads to (or from). When more than one relationship fits
+the name, the answer is `300` with code `ambiguous_relationship`, and the message lists embed names that each
+pick one:
+
+- `users!created_by` picks the key by its column.
+- `tenant_b.users` names the table with its schema, for same-named tables in two schemas;
+  `tenant_a.users!created_by` does both when one table has several keys.
+
+A `!column` that names no key of an existing relationship is `400 unknown_relationship_hint`. An embed named with
+its schema comes back under the table name (`users`), unless another embed of the same select has that name, when it
+keeps the name as written (`tenant_b.users`).
+
 ## Worked example
 
 A complete read-path query — filter by enum + numeric range, order, paginate,

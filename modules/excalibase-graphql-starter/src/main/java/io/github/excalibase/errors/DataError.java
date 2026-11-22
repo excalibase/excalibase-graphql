@@ -27,6 +27,7 @@ public record DataError(int status, String code, String message, String constrai
     public static final String AMBIGUOUS_RELATIONSHIP = "ambiguous_relationship";
     /** The project's database could not be reached: down, restarting, or shut down by a pause. */
     public static final String PROJECT_UNAVAILABLE = "project_unavailable";
+    public static final String UNKNOWN_RELATIONSHIP_HINT = "unknown_relationship_hint";
 
     private static final int BAD_REQUEST = 400;
     private static final int FORBIDDEN = 403;
@@ -55,10 +56,16 @@ public record DataError(int status, String code, String message, String constrai
         return new DataError(BAD_REQUEST, code, message, constraint, column);
     }
 
-    /** Several relationships fit {@code relation}; a key hint ({@code relation!column}) picks one. */
-    public static DataError ambiguousRelationship(String relation) {
+    /** Several relationships fit {@code relation}; {@code options} are embed names that each pick exactly one. */
+    public static DataError ambiguousRelationship(String relation, java.util.List<String> options) {
         return new DataError(MULTIPLE_CHOICES, AMBIGUOUS_RELATIONSHIP, "More than one relationship fits '"
-                + relation + "'; name the foreign key column with " + relation + "!column", null, null);
+                + relation + "'; use one of: " + String.join(", ", options), null, null);
+    }
+
+    /** An embed's {@code !hint} names no foreign key column of the relationship it is on. */
+    public static DataError unknownRelationshipHint(String relation, String hint) {
+        return badRequest(UNKNOWN_RELATIONSHIP_HINT,
+                "No foreign key column '" + hint + "' leads to '" + relation + "'");
     }
 
     /** The database is not there; says nothing of where it is or what the driver reported. */

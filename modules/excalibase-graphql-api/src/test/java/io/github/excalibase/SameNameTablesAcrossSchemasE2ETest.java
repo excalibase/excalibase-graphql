@@ -10,6 +10,7 @@ import java.util.Map;
 
 import static io.github.excalibase.support.Expect.jsonPath;
 import static io.github.excalibase.support.Expect.status;
+import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.is;
 
 /**
@@ -106,5 +107,70 @@ class SameNameTablesAcrossSchemasE2ETest extends EngineIntegrationTest {
         http.get(REST + "/users?select=id,logs(id)", "Accept-Profile", "tenant_a")
                 .expect(status().is(300))
                 .expect(jsonPath("$.code", is("ambiguous_relationship")));
+    }
+
+    @Test
+    void rest_reverseEmbedQualifiedBySchema_picksThatSchemasTable() {
+        http.get(REST + "/users?select=id,tenant_b.logs(id)", "Accept-Profile", "tenant_a")
+                .expect(status().isOk())
+                .expect(jsonPath("$.data[0].logs[0].id", is(1)));
+    }
+
+    @Test
+    void rest_forwardEmbedQualifiedBySchema_picksThatSchemasTable() {
+        http.get(REST + "/audit?select=id,tenant_b.users(name)", "Accept-Profile", "tenant_a")
+                .expect(status().isOk())
+                .expect(jsonPath("$.data[0].users.name", is("from-b")));
+    }
+
+    @Test
+    void rest_ambiguousAnswer_suggestsHintsThatWork() {
+        http.get(REST + "/users?select=id,logs(id)", "Accept-Profile", "tenant_a")
+                .expect(status().is(300))
+                .expect(jsonPath("$.message", containsString("tenant_a.logs")))
+                .expect(jsonPath("$.message", containsString("tenant_b.logs")));
+    }
+
+    @Test
+    void rest_twoKeysToTheSameTable_withoutAHint_areAmbiguous_notTheFirstOne() {
+        http.get(REST + "/docs?select=id,users(name)", "Accept-Profile", "tenant_a")
+                .expect(status().is(300))
+                .expect(jsonPath("$.code", is("ambiguous_relationship")))
+                .expect(jsonPath("$.message", containsString("users!created_by")))
+                .expect(jsonPath("$.message", containsString("users!updated_by")));
+        http.get(REST + "/docs?select=id,users!updated_by(name)", "Accept-Profile", "tenant_a")
+                .expect(status().isOk())
+                .expect(jsonPath("$.data[0].users.name", is("from-a")));
+    }
+
+    @Test
+    void rest_hintNamingNoColumn_is400_notASilentlyDroppedEmbed() {
+        http.get(REST + "/docs?select=id,users!nope(name)", "Accept-Profile", "tenant_a")
+                .expect(status().isBadRequest())
+                .expect(jsonPath("$.code", is("unknown_relationship_hint")));
+    }
+
+    @Test
+    void rest_mixedCandidates_listOnlyNamesThatWork_andEveryOneReturns200() throws Exception {
+        String body = http.get(REST + "/mixed?select=id,users(name)", "Accept-Profile", "tenant_a")
+                .expect(status().is(300)).body();
+        String message = mapper.readTree(body).path("message").asText();
+        String[] options = message.substring(message.indexOf("use one of: ") + "use one of: ".length()).split(", ");
+
+        org.assertj.core.api.Assertions.assertThat(options).containsExactlyInAnyOrder(
+                "tenant_a.users!a_user", "tenant_a.users!created_by", "tenant_b.users");
+        for (String option : options) {
+            http.get(REST + "/mixed?select=id," + option + "(name)", "Accept-Profile", "tenant_a")
+                    .expect(status().isOk());
+        }
+    }
+
+    @Test
+    void rest_embedsOfOneTableInTwoSchemas_keepTheirWrittenKeys_soNeitherOverwritesTheOther() {
+        http.get(REST + "/audit?select=id,tenant_a.users!a_user(name),tenant_b.users!b_user(name)",
+                        "Accept-Profile", "tenant_a")
+                .expect(status().isOk())
+                .expect(jsonPath("$.data[0]['tenant_a.users'].name", is("from-a")))
+                .expect(jsonPath("$.data[0]['tenant_b.users'].name", is("from-b")));
     }
 }
