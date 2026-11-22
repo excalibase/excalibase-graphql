@@ -111,7 +111,7 @@ final class RealtimeGate {
             return new Opening(null, PermissionsUnavailableException.CODE, true);
         } catch (SubscriptionsUnsupportedException e) {
             return Opening.refused(e.getMessage());
-        } catch (ProjectPausedException e) {
+        } catch (ProjectPausedException _) {
             return new Opening(null, "project_paused", true);
         } catch (SchemaUnavailableException e) {
             return new Opening(null, "project_unavailable", true);

@@ -103,7 +103,7 @@ class PausedProjectIntegrationTest extends EngineIntegrationTest {
     }
 
     @Test
-    void rest_databaseRefusesConnections_isTheSame503() throws Exception {
+    void rest_databaseRefusesConnections_isTheSame503() {
         http.get("/" + UNREACHABLE + "/api/v1/things")
                 .expect(status().isServiceUnavailable())
                 .expect(jsonPath("$.errors[0].extensions.code", is("project_unavailable")))
@@ -119,7 +119,7 @@ class PausedProjectIntegrationTest extends EngineIntegrationTest {
     }
 
     @Test
-    void rest_provisioningSaysPaused_isTheSame503() throws Exception {
+    void rest_provisioningSaysPaused_isTheSame503() {
         http.get("/" + PAUSED + "/api/v1/things")
                 .expect(status().isServiceUnavailable())
                 .expect(jsonPath("$.errors[0].extensions.code", is("project_paused")))
