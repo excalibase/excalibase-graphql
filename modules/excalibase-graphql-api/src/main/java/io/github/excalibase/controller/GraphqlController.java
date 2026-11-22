@@ -176,7 +176,10 @@ public class GraphqlController {
         Optional<DataError> dataError = DataErrors.describe(e, dialect);
         if (dataError.isPresent()) {
             log.info("GraphQL request refused: {}", dataError.get().code());
-            return Reply.ok(Map.of(ERRORS_KEY, List.of(dataError.get().graphqlError())));
+            Map<String, Object> body = Map.of(ERRORS_KEY, List.of(dataError.get().graphqlError()));
+            return dataError.get().status() >= HttpStatus.INTERNAL_SERVER_ERROR.getCode()
+                    ? Reply.status(HttpStatus.valueOf(dataError.get().status())).body(body)
+                    : Reply.ok(body);
         }
         if (isRequestError(e)) {
             return Reply.ok(Map.of(ERRORS_KEY, List.of(Map.of(MESSAGE_KEY,

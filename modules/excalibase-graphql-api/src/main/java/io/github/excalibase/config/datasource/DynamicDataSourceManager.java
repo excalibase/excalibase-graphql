@@ -1,6 +1,7 @@
 package io.github.excalibase.config.datasource;
 
 import com.zaxxer.hikari.HikariDataSource;
+import com.zaxxer.hikari.pool.HikariPool;
 import io.github.excalibase.cache.TTLCache;
 import io.github.excalibase.schema.TenantEngineNotServedException;
 import io.github.excalibase.spi.SqlEngineFactory;
@@ -111,11 +112,21 @@ public class DynamicDataSourceManager {
         VaultCredentials creds = vaultService.fetchCredentials(orgSlug, projectId);
         requireServed(projectId, creds);
         log.info("created_datasource tenant={} engine={} url={}", projectId, creds.engine().type(), creds.jdbcUrl());
-        return new TenantDatabase(dataSourceFactory.apply(creds), creds.engine());
+        return new TenantDatabase(openPool(projectId, creds), creds.engine());
       });
     } catch (TenantEngineNotServedException e) {
       refusals.put(projectId, e);
       throw e;
+    }
+  }
+
+  /** A pool is opened with its first connection, so a database that is not there fails here, in words naming no host. */
+  private DataSource openPool(String projectId, VaultCredentials creds) {
+    try {
+      return dataSourceFactory.apply(creds);
+    } catch (HikariPool.PoolInitializationException e) {
+      log.warn("tenant_database_unreachable tenant={} engine={}: {}", projectId, creds.engine().type(), e.getMessage());
+      throw new TenantDatabaseUnreachableException(projectId, e);
     }
   }
 

@@ -50,9 +50,22 @@ class DataErrorsTest {
     @Test
     void aServerFault_isNotAClientError() {
         assertThat(DataErrors.describe(state("XX000"), generic)).isEmpty();
-        assertThat(DataErrors.describe(state("08006"), generic)).isEmpty();
         assertThat(DataErrors.describe(new SQLException("no state"), generic)).isEmpty();
         assertThat(DataErrors.describe(new IllegalStateException("boom"), generic)).isEmpty();
+    }
+
+    @Test
+    @DisplayName("a database that cannot be reached is a 503 project_unavailable, with none of the driver's text")
+    void anUnreachableDatabase_isServiceUnavailable() {
+        for (Throwable failure : new Throwable[] {state("08006"), state("08001"), state("57P01"), state("57P03"),
+                new RuntimeException("Failed to obtain JDBC Connection",
+                        new java.sql.SQLTransientConnectionException("pool - Connection is not available to 10.0.0.7"))}) {
+            DataError error = DataErrors.describe(failure, generic).orElseThrow();
+
+            assertThat(error.status()).isEqualTo(503);
+            assertThat(error.code()).isEqualTo(DataError.PROJECT_UNAVAILABLE);
+            assertThat(error.message()).isEqualTo("Project unavailable");
+        }
     }
 
     @Test

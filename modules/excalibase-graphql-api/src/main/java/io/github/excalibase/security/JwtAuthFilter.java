@@ -139,6 +139,8 @@ public class JwtAuthFilter implements Ordered {
                         PermissionsUnavailableException.CODE);
             } catch (UnknownProjectException e) {
                 return FilterErrors.write(HttpStatus.NOT_FOUND, "Project not found", "project_not_found");
+            } catch (ProjectPausedException e) {
+                return FilterErrors.write(HttpStatus.SERVICE_UNAVAILABLE, "Project paused", "project_paused");
             } catch (VaultCredentialException | SchemaUnavailableException e) {
                 return FilterErrors.write(HttpStatus.SERVICE_UNAVAILABLE, "Project unavailable",
                         "project_unavailable");

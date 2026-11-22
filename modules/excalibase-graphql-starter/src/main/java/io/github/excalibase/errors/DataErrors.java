@@ -3,6 +3,7 @@ package io.github.excalibase.errors;
 import io.github.excalibase.SqlDialect;
 
 import java.sql.SQLException;
+import java.sql.SQLTransientConnectionException;
 import java.util.Optional;
 
 /**
@@ -20,6 +21,9 @@ public final class DataErrors {
         Optional<DataError> raised = raisedByEngine(failure);
         if (raised.isPresent()) {
             return raised;
+        }
+        if (databaseUnreachable(failure)) {
+            return Optional.of(DataError.projectUnavailable());
         }
         return sqlException(failure).flatMap(sql -> dialect != null ? dialect.describeError(sql) : fromSqlState(sql));
     }
@@ -51,6 +55,26 @@ public final class DataErrors {
             return DataError.badRequest(DataError.INVALID_VALUE, "Invalid value");
         }
         return null;
+    }
+
+    /**
+     * The database could not be reached: a pooled connection that could not be had in time, a SQLSTATE of class 08
+     * (connection exception), or a server shutting down (57P01) or not yet accepting connections (57P03).
+     */
+    private static boolean databaseUnreachable(Throwable failure) {
+        for (Throwable current = failure; current != null; current = next(current)) {
+            if (current instanceof SQLTransientConnectionException) {
+                return true;
+            }
+            if (current instanceof SQLException sql && isConnectionState(sql.getSQLState())) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean isConnectionState(String state) {
+        return state != null && (state.startsWith("08") || "57P01".equals(state) || "57P03".equals(state));
     }
 
     private static Optional<DataError> raisedByEngine(Throwable failure) {

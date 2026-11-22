@@ -25,11 +25,14 @@ public record DataError(int status, String code, String message, String constrai
     public static final String PERMISSION_DENIED = "permission_denied";
     /** An embed names a table that more than one relationship leads to; the request must say which. */
     public static final String AMBIGUOUS_RELATIONSHIP = "ambiguous_relationship";
+    /** The project's database could not be reached: down, restarting, or shut down by a pause. */
+    public static final String PROJECT_UNAVAILABLE = "project_unavailable";
 
     private static final int BAD_REQUEST = 400;
     private static final int FORBIDDEN = 403;
     private static final int MULTIPLE_CHOICES = 300;
     private static final int CONFLICT = 409;
+    private static final int SERVICE_UNAVAILABLE = 503;
     private static final String KEY_CODE = "code";
     private static final String KEY_MESSAGE = "message";
     private static final String KEY_CONSTRAINT = "constraint";
@@ -56,6 +59,9 @@ public record DataError(int status, String code, String message, String constrai
     public static DataError ambiguousRelationship(String relation) {
         return new DataError(MULTIPLE_CHOICES, AMBIGUOUS_RELATIONSHIP, "More than one relationship fits '"
                 + relation + "'; name the foreign key column with " + relation + "!column", null, null);
+    /** The database is not there; says nothing of where it is or what the driver reported. */
+    public static DataError projectUnavailable() {
+        return new DataError(SERVICE_UNAVAILABLE, PROJECT_UNAVAILABLE, "Project unavailable", null, null);
     }
 
     public static DataError forbidden(String message, String column) {

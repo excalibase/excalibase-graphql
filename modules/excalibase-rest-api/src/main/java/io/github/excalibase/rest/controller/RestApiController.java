@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.node.NullNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.github.excalibase.SqlDialect;
 import io.github.excalibase.json.JsonFieldOrder;
+import io.github.excalibase.errors.DataError;
 import io.github.excalibase.errors.DataErrorException;
 import io.github.excalibase.rest.compiler.RestQueryCompiler;
 import io.github.excalibase.rest.service.OpenApiGenerator;
@@ -50,6 +51,9 @@ import io.micronaut.scheduling.TaskExecutors;
 import io.micronaut.scheduling.annotation.ExecuteOn;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.transaction.CannotCreateTransactionException;
 import org.springframework.transaction.TransactionStatus;
 import org.springframework.transaction.support.TransactionTemplate;
 
@@ -66,6 +70,7 @@ import static io.github.excalibase.compiler.SqlKeywords.*;
 @ExecuteOn(TaskExecutors.BLOCKING)
 public class RestApiController {
 
+    private static final Logger log = LoggerFactory.getLogger(RestApiController.class);
     private static final String IDENT_REGEX = "^[A-Za-z_]\\w{0,62}$";
 
     /** The logic parameters: each is one group of filters, AND- or OR-joined, possibly negated. */
@@ -428,6 +433,13 @@ public class RestApiController {
     @Error(exception = DataErrorException.class)
     public HttpResponse<Object> dataError(DataErrorException e) {
         return RestErrors.response(e.error());
+    }
+
+    /** The transaction could not begin because the project's database cannot be reached (a paused or stopped one). */
+    @Error(exception = CannotCreateTransactionException.class)
+    public HttpResponse<Object> databaseUnreachable(CannotCreateTransactionException e) {
+        log.warn("rest_database_unreachable: {}", e.getMessage());
+        return RestErrors.response(DataError.projectUnavailable());
     }
 
     /** A request naming a column, operator or shape this caller's schema does not have. */
