@@ -67,4 +67,11 @@ class ConnectionLossOnWriteIntegrationTest extends EngineIntegrationTest {
                 .expect(status().isServiceUnavailable())
                 .expect(jsonPath("$.errors[0].extensions.code", is("project_unavailable")));
     }
+
+    @Test
+    void rest_deferredForeignKeyFailingAtCommit_isAForeignKeyViolation_notAnInternalError() {
+        http.post(REST + "/deferred_child", "{\"id\":1,\"parent_id\":999}", "Content-Type", "application/json")
+                .expect(status().isBadRequest())
+                .expect(jsonPath("$.code", is("foreign_key_violation")));
+    }
 }

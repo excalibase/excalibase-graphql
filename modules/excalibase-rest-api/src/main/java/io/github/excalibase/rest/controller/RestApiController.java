@@ -339,7 +339,7 @@ public class RestApiController {
                 Math.clamp(paging("limit", first(readParams, "limit"), maxRows), 1, maxRows),
                 paging("offset", first(readParams, "offset"), 0), false);
         var compiled = compiler.compileFunctionSelect(query, call, params, !callable.returnsSet());
-        return executeInTx(compiled, new ErrorScope(dialect, parsed.allFilters()), rows -> {
+        return executeCallInTx(compiled, new ErrorScope(dialect, parsed.allFilters()), rows -> {
             List<?> data = rowsOf(rows.get("body"), parsed.columns);
             if (callable.returnsSet()) return Reply.ok(Map.of("data", data));
             // A JSON tree keeps "data": null; the API's non-null inclusion would drop it from a map.
@@ -491,6 +491,17 @@ public class RestApiController {
 
     private HttpResponse<Object> executeInTx(RestQueryCompiler.CompiledResult compiled, ErrorScope scope,
                                                QueryResultHandler handler) {
+        return executeInTx(compiled, scope, handler, answer -> answer);
+    }
+
+    /** A function call may write, so a commit it lost is of unknown outcome, never the answer it computed. */
+    private HttpResponse<Object> executeCallInTx(RestQueryCompiler.CompiledResult compiled, ErrorScope scope,
+                                                   QueryResultHandler handler) {
+        return executeInTx(compiled, scope, handler, answer -> RestErrors.response(DataError.commitUnknown()));
+    }
+
+    private HttpResponse<Object> executeInTx(RestQueryCompiler.CompiledResult compiled, ErrorScope scope,
+                                               QueryResultHandler handler, UnaryOperator<HttpResponse<Object>> commitLost) {
         return inTransaction(status -> {
             try {
                 var rows = namedJdbc.queryForMap(compiled.sql(), new MapSqlParameterSource(compiled.params()));
@@ -499,7 +510,7 @@ public class RestApiController {
                 status.setRollbackOnly();
                 return RestErrors.of(e, scope.dialect(), scope.filters(), "Query execution failed");
             }
-        }, answer -> answer);
+        }, commitLost);
     }
 
     private HttpResponse<Object> executeDml(RestQueryCompiler.CompiledResult compiled, ErrorScope scope, boolean rollback,
