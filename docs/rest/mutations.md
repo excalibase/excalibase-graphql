@@ -185,6 +185,9 @@ See [Functions](../features/functions.md).
 | `403` | `permission_check_failed` | A written row does not pass the role's permission `check` |
 | `404` | — | Missing `Accept-Profile` / `Content-Profile` header in multi-schema mode, or unknown table |
 | `409` | `unique_violation` | Primary key or unique constraint violation without `Prefer: resolution=merge-duplicates` (`constraint` names it) |
+| `500` | `commit_unknown` | The connection was lost while committing: the write may or may not have been applied. Do not retry blindly; read the data first |
+| `503` | `project_unavailable` | The project's database cannot be reached (down, restarting, or a pause not yet reported). Nothing was written: retry later |
+| `503` | `project_paused` | The project is paused. Retry later, after it is resumed |
 | `500` | `internal_error` | A fault on the server's side; the body says nothing more and the cause is logged |
 
 Errors return a JSON body with a stable `code`, a `message`, the same text in

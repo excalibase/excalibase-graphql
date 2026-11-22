@@ -46,3 +46,13 @@ CREATE FUNCTION no_note() RETURNS notes
 
 CREATE FUNCTION untracked_notes() RETURNS SETOF notes
     LANGUAGE sql STABLE AS $$ SELECT * FROM notes $$;
+
+-- A note whose body says so loses the connection at COMMIT, after the write was accepted.
+CREATE FUNCTION kill_own_connection() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+    PERFORM pg_terminate_backend(pg_backend_pid());
+    RETURN NEW;
+END $$;
+CREATE CONSTRAINT TRIGGER kill_at_commit AFTER INSERT ON notes
+    DEFERRABLE INITIALLY DEFERRED FOR EACH ROW WHEN (NEW.body = 'kill-at-commit')
+    EXECUTE FUNCTION kill_own_connection();

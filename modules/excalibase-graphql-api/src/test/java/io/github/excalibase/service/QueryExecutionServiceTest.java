@@ -24,6 +24,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -116,6 +117,26 @@ class QueryExecutionServiceTest {
         verify(connection).rollback();
         verify(connection, never()).commit();
         verify(connection).setAutoCommit(true);
+    }
+
+    @Test
+    @DisplayName("a connection lost while committing is commit_unknown, not an outage a client may retry")
+    void commitLostConnection_isCommitUnknown_evenWhenTheRollbackFailsToo() throws Exception {
+        Connection connection = mock(Connection.class);
+        when(dataSource.getConnection()).thenReturn(connection);
+        when(connection.getAutoCommit()).thenReturn(true);
+        doThrow(new java.sql.SQLException("connection closed", "08006")).when(connection).commit();
+        doThrow(new java.sql.SQLException("connection closed", "08003")).when(connection).rollback();
+        MutationExecutor exec = (c, p, jdbc) -> "{\"createUser\":{\"id\":7}}";
+
+        CompiledQuery write = twoPhase();
+        MapSqlParameterSource params = new MapSqlParameterSource();
+
+        assertThatThrownBy(() -> service.executeInContext(write, params, exec))
+                .isInstanceOfSatisfying(io.github.excalibase.errors.DataErrorException.class, e -> {
+                    assertThat(e.error().code()).isEqualTo("commit_unknown");
+                    assertThat(e.error().message()).doesNotContain("connection closed");
+                });
     }
 
     private static CompiledQuery twoPhase() {

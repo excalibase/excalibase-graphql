@@ -8,6 +8,7 @@ import io.github.excalibase.SqlDialect;
 import io.github.excalibase.json.JsonFieldOrder;
 import io.github.excalibase.errors.DataError;
 import io.github.excalibase.errors.DataErrorException;
+import io.github.excalibase.errors.DataErrors;
 import io.github.excalibase.rest.compiler.RestQueryCompiler;
 import io.github.excalibase.rest.service.OpenApiGenerator;
 import io.github.excalibase.rest.parser.FilterParser;
@@ -53,11 +54,17 @@ import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.dao.DataAccessException;
 import org.springframework.transaction.CannotCreateTransactionException;
+import org.springframework.transaction.TransactionSystemException;
 import org.springframework.transaction.TransactionStatus;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.util.*;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Function;
+import java.util.function.UnaryOperator;
 import java.util.stream.Collectors;
 
 import static io.github.excalibase.compiler.SqlKeywords.*;
@@ -332,7 +339,7 @@ public class RestApiController {
                 Math.clamp(paging("limit", first(readParams, "limit"), maxRows), 1, maxRows),
                 paging("offset", first(readParams, "offset"), 0), false);
         var compiled = compiler.compileFunctionSelect(query, call, params, !callable.returnsSet());
-        return executeInTx(compiled, new ErrorScope(dialect, parsed.allFilters()), rows -> {
+        return executeCallInTx(compiled, new ErrorScope(dialect, parsed.allFilters()), rows -> {
             List<?> data = rowsOf(rows.get("body"), parsed.columns);
             if (callable.returnsSet()) return Reply.ok(Map.of("data", data));
             // A JSON tree keeps "data": null; the API's non-null inclusion would drop it from a map.
@@ -442,6 +449,25 @@ public class RestApiController {
         return RestErrors.response(DataError.projectUnavailable());
     }
 
+    /** A commit that failed: when the connection was lost it, the write's outcome is unknown, never a retryable 503. */
+    @Error(exception = TransactionSystemException.class)
+    public HttpResponse<Object> transactionFailed(TransactionSystemException e) {
+        return transactionFailure(e);
+    }
+
+    /** The JDBC transaction manager reports a failed commit as a data access failure of its own. */
+    @Error(exception = DataAccessException.class)
+    public HttpResponse<Object> dataAccessFailed(DataAccessException e) {
+        return transactionFailure(e);
+    }
+
+    private HttpResponse<Object> transactionFailure(Exception e) {
+        log.error("rest_transaction_failed", e);
+        return DataErrors.describe(e, null).map(RestErrors::response)
+                .orElseGet(() -> Reply.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                        .body(Map.of(KEY_ERROR, "Mutation execution failed", "code", "internal_error")));
+    }
+
     /** A request naming a column, operator or shape this caller's schema does not have. */
     @Error(exception = IllegalArgumentException.class)
     public HttpResponse<Object> badRequest(IllegalArgumentException e) {
@@ -465,7 +491,18 @@ public class RestApiController {
 
     private HttpResponse<Object> executeInTx(RestQueryCompiler.CompiledResult compiled, ErrorScope scope,
                                                QueryResultHandler handler) {
-        return txTemplate.execute(status -> {
+        return executeInTx(compiled, scope, handler, answer -> answer);
+    }
+
+    /** A function call may write, so a commit it lost is of unknown outcome, never the answer it computed. */
+    private HttpResponse<Object> executeCallInTx(RestQueryCompiler.CompiledResult compiled, ErrorScope scope,
+                                                   QueryResultHandler handler) {
+        return executeInTx(compiled, scope, handler, answer -> RestErrors.response(DataError.commitUnknown()));
+    }
+
+    private HttpResponse<Object> executeInTx(RestQueryCompiler.CompiledResult compiled, ErrorScope scope,
+                                               QueryResultHandler handler, UnaryOperator<HttpResponse<Object>> commitLost) {
+        return inTransaction(status -> {
             try {
                 var rows = namedJdbc.queryForMap(compiled.sql(), new MapSqlParameterSource(compiled.params()));
                 return handler.handle(rows);
@@ -473,7 +510,7 @@ public class RestApiController {
                 status.setRollbackOnly();
                 return RestErrors.of(e, scope.dialect(), scope.filters(), "Query execution failed");
             }
-        });
+        }, commitLost);
     }
 
     private HttpResponse<Object> executeDml(RestQueryCompiler.CompiledResult compiled, ErrorScope scope, boolean rollback,
@@ -496,7 +533,7 @@ public class RestApiController {
 
     /** One transaction; empty when it lost a lock to a concurrent request, was rolled back, and may run again. */
     private Optional<HttpResponse<Object>> executeDmlOnce(Dml dml, WriteRetry.Run run) {
-        return txTemplate.execute(status -> {
+        return inTransaction(status -> {
             try {
                 boolean represent = dml.maxAffected() != null || preferContains(dml.prefer(), PREFER_REPRESENTATION);
                 String json = executeDmlQuery(dml.compiled(), represent);
@@ -508,7 +545,34 @@ public class RestApiController {
                 status.setRollbackOnly();
                 return dmlFailed(e, dml, run);
             }
-        });
+        }, answer -> Optional.of(RestErrors.response(DataError.commitUnknown())));
+    }
+
+    /**
+     * Runs {@code body} in a transaction. When the answer was already made and only the transaction's end failed on a
+     * connection that is gone, the answer stands if the transaction was being rolled back anyway (the write never
+     * happened); if it was being committed, the outcome is unknown and {@code commitLost} says so. A failure before an
+     * answer existed is the caller's to map.
+     */
+    private <T> T inTransaction(Function<TransactionStatus, T> body,
+                                UnaryOperator<T> commitLost) {
+        AtomicReference<T> answer = new AtomicReference<>();
+        AtomicBoolean rolledBack = new AtomicBoolean();
+        try {
+            return txTemplate.execute(status -> {
+                T made = body.apply(status);
+                answer.set(made);
+                rolledBack.set(status.isRollbackOnly());
+                return made;
+            });
+        } catch (TransactionSystemException e) {
+            T made = answer.get();
+            if (made == null) {
+                throw e;
+            }
+            log.warn("rest_transaction_end_failed rolledBack={}: {}", rolledBack.get(), e.getMessage());
+            return rolledBack.get() ? made : commitLost.apply(made);
+        }
     }
 
     /** The answer to a failed mutation; empty when it lost a lock and may run again. */

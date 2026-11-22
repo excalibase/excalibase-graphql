@@ -28,12 +28,17 @@ public record DataError(int status, String code, String message, String constrai
     /** The project's database could not be reached: down, restarting, or shut down by a pause. */
     public static final String PROJECT_UNAVAILABLE = "project_unavailable";
     public static final String UNKNOWN_RELATIONSHIP_HINT = "unknown_relationship_hint";
+    /** The project is paused on purpose; like {@link #PROJECT_UNAVAILABLE}, it means retry later. */
+    public static final String PROJECT_PAUSED = "project_paused";
+    /** The connection was lost while committing: the write may or may not have been applied. Never retry blindly. */
+    public static final String COMMIT_UNKNOWN = "commit_unknown";
 
     private static final int BAD_REQUEST = 400;
     private static final int FORBIDDEN = 403;
     private static final int MULTIPLE_CHOICES = 300;
     private static final int CONFLICT = 409;
     private static final int SERVICE_UNAVAILABLE = 503;
+    private static final int INTERNAL_ERROR_STATUS = 500;
     private static final String KEY_CODE = "code";
     private static final String KEY_MESSAGE = "message";
     private static final String KEY_CONSTRAINT = "constraint";
@@ -71,6 +76,17 @@ public record DataError(int status, String code, String message, String constrai
     /** The database is not there; says nothing of where it is or what the driver reported. */
     public static DataError projectUnavailable() {
         return new DataError(SERVICE_UNAVAILABLE, PROJECT_UNAVAILABLE, "Project unavailable", null, null);
+    }
+
+    /** The project is paused; the database comes back when it is resumed. */
+    public static DataError projectPaused() {
+        return new DataError(SERVICE_UNAVAILABLE, PROJECT_PAUSED, "Project paused", null, null);
+    }
+
+    /** The connection was lost at commit; says nothing of what was written. */
+    public static DataError commitUnknown() {
+        return new DataError(INTERNAL_ERROR_STATUS, COMMIT_UNKNOWN,
+                "The outcome of the request is unknown; check the data before retrying", null, null);
     }
 
     public static DataError forbidden(String message, String column) {

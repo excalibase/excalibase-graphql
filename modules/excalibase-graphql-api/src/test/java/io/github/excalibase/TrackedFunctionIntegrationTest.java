@@ -254,6 +254,13 @@ class TrackedFunctionIntegrationTest extends EngineIntegrationTest {
     }
 
     @Test
+    void rest_aWritingFunctionThatLosesItsConnectionAtCommit_isCommitUnknown_notSuccess() throws Exception {
+        restPost("add_note", "{\"p_id\":900,\"p_body\":\"kill-at-commit\"}")
+                .expect(status().is(500))
+                .expect(jsonPath("$.code").value("commit_unknown"));
+    }
+
+    @Test
     void aSingleRowFunction_answersAnObject_orNull() throws Exception {
         graphql("{ publicFirstNote { id body } publicNoNote { id } }")
                 .expect(jsonPath("$.errors").doesNotExist())
