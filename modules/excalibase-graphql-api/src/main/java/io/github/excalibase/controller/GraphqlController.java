@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import graphql.GraphQLException;
 import graphql.language.Document;
+import graphql.language.OperationDefinition;
 import io.github.excalibase.SqlDialect;
 import io.github.excalibase.compiler.ParsedQueries;
 import io.github.excalibase.compiler.SqlCompilationException;
@@ -129,10 +130,10 @@ public class GraphqlController {
                     }
                     SqlCompiler.CompiledQuery compiled = state.compiler().compile(dataPart.get(), variables);
                     return merge(introspection, SelectionOrder.apply(
-                            dispatchCompiled(compiled, state, finalUserId, finalClaims), dataPart.get()));
+                            dispatchCompiled(compiled, state, finalUserId, finalClaims, isMutation(dataPart.get())), dataPart.get()));
                 }
                 SqlCompiler.CompiledQuery compiled = state.compiler().compile(document, variables);
-                return SelectionOrder.apply(dispatchCompiled(compiled, state, finalUserId, finalClaims), document);
+                return SelectionOrder.apply(dispatchCompiled(compiled, state, finalUserId, finalClaims, isMutation(document)), document);
             } catch (Exception e) {
                 return errorResponse(e, state == null ? null : state.compiler().dialect());
             } catch (StackOverflowError e) {
@@ -229,16 +230,23 @@ public class GraphqlController {
         return Reply.ok(body);
     }
 
+    private static boolean isMutation(Document document) {
+        return document.getDefinitionsOfType(OperationDefinition.class).stream()
+                .anyMatch(operation -> operation.getOperation() == OperationDefinition.Operation.MUTATION);
+    }
+
     private HttpResponse<Object> dispatchCompiled(SqlCompiler.CompiledQuery compiled,
                                                     GraphqlSchemaManager.EngineState state,
-                                                    String userId, JwtClaims claims) throws SQLException, JsonProcessingException {
+                                                    String userId, JwtClaims claims, boolean mutation)
+            throws SQLException, JsonProcessingException {
         if (compiled.isSequenced()) {
             return queryExecutor.executeSequence(compiled);
         }
         MapSqlParameterSource params = new MapSqlParameterSource(compiled.params());
         // A write and its read-back share one connection and transaction of the project's own database.
         boolean hasCaller = (userId != null && !userId.isBlank()) || claims != null;
-        if (compiled.isTwoPhase() || hasCaller) {
+        // A write always runs in a transaction it commits itself, so a connection lost at commit is told apart from one lost before it.
+        if (compiled.isTwoPhase() || hasCaller || mutation) {
             return queryExecutor.executeInContext(compiled, params, state.mutationExecutor());
         }
         return queryExecutor.executeQuery(compiled, params);

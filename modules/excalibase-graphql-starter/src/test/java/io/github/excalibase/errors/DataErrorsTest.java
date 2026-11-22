@@ -5,6 +5,10 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 
+import org.springframework.dao.DataAccessResourceFailureException;
+import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.transaction.TransactionSystemException;
+import java.sql.SQLTransientConnectionException;
 import java.sql.SQLException;
 import java.util.Map;
 import java.util.Optional;
@@ -59,7 +63,7 @@ class DataErrorsTest {
     void anUnreachableDatabase_isServiceUnavailable() {
         for (Throwable failure : new Throwable[] {state("08006"), state("08001"), state("57P01"), state("57P03"),
                 new RuntimeException("Failed to obtain JDBC Connection",
-                        new java.sql.SQLTransientConnectionException("pool - Connection is not available to 10.0.0.7"))}) {
+                        new SQLTransientConnectionException("pool - Connection is not available to 10.0.0.7"))}) {
             DataError error = DataErrors.describe(failure, generic).orElseThrow();
 
             assertThat(error.status()).isEqualTo(503);
@@ -83,7 +87,7 @@ class DataErrorsTest {
     @DisplayName("an unknown transaction outcome is commit_unknown with no retry invited, never a 503")
     void unknownTransactionOutcome_isCommitUnknown() {
         for (Throwable failure : new Throwable[] {state("08007"),
-                new org.springframework.transaction.TransactionSystemException("Could not commit JDBC transaction",
+                new TransactionSystemException("Could not commit JDBC transaction",
                         state("08006"))}) {
             DataError error = DataErrors.describe(failure, generic).orElseThrow();
 
@@ -94,8 +98,39 @@ class DataErrorsTest {
     }
 
     @Test
+    @DisplayName("the JDBC transaction manager's own failed commit, even hidden behind a failed rollback, is commit_unknown")
+    void springSevenCommitFailure_isCommitUnknown() {
+        var commit = new DataAccessResourceFailureException("JDBC commit; connection lost",
+                state("08006"));
+        var hiddenByRollback = new TransactionSystemException("JDBC rollback failed",
+                new SQLException("Connection is closed"));
+        hiddenByRollback.initApplicationException(commit);
+
+        assertThat(DataErrors.describe(commit, generic).orElseThrow().code()).isEqualTo(DataError.COMMIT_UNKNOWN);
+        assertThat(DataErrors.describe(hiddenByRollback, generic).orElseThrow().code())
+                .isEqualTo(DataError.COMMIT_UNKNOWN);
+    }
+
+    @Test
+    void aCommitRefusedForAConstraint_isNotAnUnknownOutcome() {
+        var refused = new DataIntegrityViolationException("JDBC commit; duplicate",
+                state("23505"));
+
+        assertThat(DataErrors.describe(refused, generic).orElseThrow().code()).isEqualTo(DataError.UNIQUE_VIOLATION);
+    }
+
+    @Test
+    void aStatementFailure_hiddenByAFailedRollback_isStillAnOutage() {
+        var hidden = new TransactionSystemException("JDBC rollback failed",
+                new SQLException("Connection is closed"));
+        hidden.initApplicationException(state("57P01"));
+
+        assertThat(DataErrors.describe(hidden, generic).orElseThrow().code()).isEqualTo(DataError.PROJECT_UNAVAILABLE);
+    }
+
+    @Test
     void aFailedRollback_isNotAnUnknownOutcome() {
-        var failure = new org.springframework.transaction.TransactionSystemException(
+        var failure = new TransactionSystemException(
                 "Could not roll back JDBC transaction", state("08006"));
 
         assertThat(DataErrors.describe(failure, generic).orElseThrow().code())

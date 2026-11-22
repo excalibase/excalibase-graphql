@@ -15,6 +15,8 @@ import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.jdbc.datasource.SingleConnectionDataSource;
 import jakarta.inject.Singleton;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import javax.sql.DataSource;
 import java.sql.Connection;
@@ -34,6 +36,8 @@ import java.util.Map;
  */
 @Singleton
 public class QueryExecutionService {
+
+    private static final Logger log = LoggerFactory.getLogger(QueryExecutionService.class);
 
     private final NamedParameterJdbcTemplate namedJdbc;
     private final DataSource dataSource;
@@ -89,7 +93,7 @@ public class QueryExecutionService {
                 rollbackQuietly(conn, e);
                 throw e;
             } finally {
-                conn.setAutoCommit(autoCommit);
+                restoreAutoCommit(conn, autoCommit);
             }
         }
     }
@@ -111,7 +115,7 @@ public class QueryExecutionService {
                 rollbackQuietly(conn, e);
                 throw e;
             } finally {
-                conn.setAutoCommit(autoCommit);
+                restoreAutoCommit(conn, autoCommit);
             }
         }
     }
@@ -123,9 +127,18 @@ public class QueryExecutionService {
         } catch (SQLException e) {
             if (DataErrors.describe(e, null).filter(error -> DataError.PROJECT_UNAVAILABLE.equals(error.code())
                     || DataError.COMMIT_UNKNOWN.equals(error.code())).isPresent()) {
-                throw new DataErrorException(DataError.commitUnknown());
+                throw new DataErrorException(DataError.commitUnknown(), e);
             }
             throw e;
+        }
+    }
+
+    /** On a connection that was lost this fails too, and must not replace the failure that lost it. */
+    private static void restoreAutoCommit(Connection conn, boolean autoCommit) {
+        try {
+            conn.setAutoCommit(autoCommit);
+        } catch (SQLException e) {
+            log.debug("autocommit not restored: {}", e.getMessage());
         }
     }
 
