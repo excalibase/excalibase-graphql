@@ -11,3 +11,11 @@ CREATE TABLE transfer (id INT PRIMARY KEY, from_a INT, from_b INT, to_a INT, to_
                        FOREIGN KEY (from_a, from_b) REFERENCES parent (a, b),
                        FOREIGN KEY (to_a, to_b) REFERENCES parent (a, b));
 INSERT INTO transfer VALUES (1, 1, 2, 2, 1);
+
+-- two composite keys that share their first column and differ in the second
+CREATE TABLE tparent (tenant INT, id INT, name TEXT NOT NULL, PRIMARY KEY (tenant, id));
+INSERT INTO tparent VALUES (1, 1, 'p1'), (1, 2, 'p2'), (2, 1, 'q1');
+CREATE TABLE tchild (id INT PRIMARY KEY, tenant INT, a_id INT, b_id INT,
+                     FOREIGN KEY (tenant, a_id) REFERENCES tparent (tenant, id),
+                     FOREIGN KEY (tenant, b_id) REFERENCES tparent (tenant, id));
+INSERT INTO tchild VALUES (1, 1, 1, 2), (2, 1, 2, 1);

@@ -11,6 +11,8 @@ import java.util.Map;
 import static io.github.excalibase.support.Expect.jsonPath;
 import static io.github.excalibase.support.Expect.status;
 import static org.hamcrest.Matchers.contains;
+import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.not;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.is;
 
@@ -75,6 +77,46 @@ class CompositeForeignKeyEmbedIntegrationTest extends EngineIntegrationTest {
         http.get(REST + "/transfer?select=id,parent(name)")
                 .expect(status().is(300))
                 .expect(jsonPath("$.code", is("ambiguous_relationship")));
+    }
+
+    @Test
+    void rest_keysSharingTheirFirstColumn_suggestHintsThatTellThemApart_andEachResolves() {
+        http.get(REST + "/tchild?select=id,tparent(name)")
+                .expect(status().is(300))
+                .expect(jsonPath("$.message", containsString("tparent!a_id")))
+                .expect(jsonPath("$.message", containsString("tparent!b_id")))
+                .expect(jsonPath("$.message", not(containsString("tparent!tenant"))));
+        http.get(REST + "/tchild?select=id,tparent!a_id(name)&order=id.asc")
+                .expect(status().isOk())
+                .expect(jsonPath("$.data[*].tparent.name", contains("p1", "p2")));
+        http.get(REST + "/tchild?select=id,tparent!b_id(name)&order=id.asc")
+                .expect(status().isOk())
+                .expect(jsonPath("$.data[*].tparent.name", contains("p2", "p1")));
+    }
+
+    @Test
+    void rest_reverseKeysSharingTheirFirstColumn_suggestHintsThatTellThemApart_andEachResolves() {
+        http.get(REST + "/tparent?select=tenant,id,tchild(id)&tenant=eq.1&id=eq.1")
+                .expect(status().is(300))
+                .expect(jsonPath("$.message", containsString("tchild!a_id")))
+                .expect(jsonPath("$.message", containsString("tchild!b_id")))
+                .expect(jsonPath("$.message", not(containsString("tchild!tenant"))));
+        http.get(REST + "/tparent?select=id,tchild!a_id(id)&tenant=eq.1&id=eq.1")
+                .expect(status().isOk())
+                .expect(jsonPath("$.data[0].tchild[*].id", contains(1)));
+        http.get(REST + "/tparent?select=id,tchild!b_id(id)&tenant=eq.1&id=eq.1")
+                .expect(status().isOk())
+                .expect(jsonPath("$.data[0].tchild[*].id", contains(2)));
+    }
+
+    @Test
+    void rest_reverseHintMayNameAnyColumnOfTheKey_notOnlyTheFirst() {
+        http.get(REST + "/parent?select=a,b,transfer!to_b(id)&a=eq.2&b=eq.1")
+                .expect(status().isOk())
+                .expect(jsonPath("$.data[0].transfer[*].id", contains(1)));
+        http.get(REST + "/parent?select=a,b,transfer!from_b(id)&a=eq.1&b=eq.2")
+                .expect(status().isOk())
+                .expect(jsonPath("$.data[0].transfer[*].id", contains(1)));
     }
 
     @Test

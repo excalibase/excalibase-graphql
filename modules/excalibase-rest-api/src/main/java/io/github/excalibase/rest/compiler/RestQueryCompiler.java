@@ -1089,7 +1089,7 @@ public class RestQueryCompiler {
             fitsWithoutHint = true;
             if (fkHint == null || fk.fkColumns().contains(fkHint)) fits.add(fk);
         }
-        return only(fits, fitsWithoutHint, relName, fkHint, SchemaInfo.FkInfo::refTable, SchemaInfo.FkInfo::fkColumn);
+        return only(fits, fitsWithoutHint, relName, fkHint, SchemaInfo.FkInfo::refTable, SchemaInfo.FkInfo::fkColumns);
     }
 
     private SchemaInfo.ReverseFkInfo findReverseFk(String table, String relName, String fkHint) {
@@ -1103,7 +1103,7 @@ public class RestQueryCompiler {
             if (fkHint == null || rfk.fkColumns().contains(fkHint)) fits.add(rfk);
         }
         return only(fits, fitsWithoutHint, relName, fkHint, SchemaInfo.ReverseFkInfo::childTable,
-                SchemaInfo.ReverseFkInfo::fkColumn);
+                SchemaInfo.ReverseFkInfo::fkColumns);
     }
 
     /**
@@ -1111,7 +1111,8 @@ public class RestQueryCompiler {
      * the table with a column hint when it has several. Keys into one table are told apart by column alone.
      */
     private static <T> List<String> options(List<T> fits, String relName, Function<T, String> table,
-                                            Function<T, String> column) {
+                                            Function<T, List<String>> columns) {
+        Function<T, String> column = fit -> hintColumn(fit, fits, table, columns);
         if (fits.stream().map(table).distinct().count() == 1) {
             return fits.stream().map(fit -> relName + "!" + column.apply(fit)).toList();
         }
@@ -1121,8 +1122,20 @@ public class RestQueryCompiler {
                 : table.apply(fit) + "!" + column.apply(fit)).toList();
     }
 
+    /**
+     * The column that names one key among the keys into its table: the first of its columns no other of them uses, so
+     * keys sharing a leading column are told apart by the one they differ in. A key with none keeps its first column.
+     */
+    private static <T> String hintColumn(T fit, List<T> fits, Function<T, String> table,
+                                         Function<T, List<String>> columns) {
+        return columns.apply(fit).stream()
+                .filter(column -> fits.stream().filter(other -> other != fit && table.apply(other).equals(table.apply(fit)))
+                        .noneMatch(other -> columns.apply(other).contains(column)))
+                .findFirst().orElse(columns.apply(fit).getFirst());
+    }
+
     private static <T> T only(List<T> fits, boolean relationExists, String relName, String fkHint,
-                              Function<T, String> table, Function<T, String> column) {
+                              Function<T, String> table, Function<T, List<String>> column) {
         if (fits.isEmpty()) {
             if (relationExists && fkHint != null) {
                 throw new DataErrorException(DataError.unknownRelationshipHint(relName, fkHint));
