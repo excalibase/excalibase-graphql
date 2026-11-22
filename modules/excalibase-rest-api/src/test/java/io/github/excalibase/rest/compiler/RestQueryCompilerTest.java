@@ -723,6 +723,33 @@ class RestQueryCompilerTest {
     }
 
     @Test
+    @DisplayName("a nested embed's unknown column is refused, not written into the SQL")
+    void nestedEmbedUnknownColumn_refused() {
+      var orders = new RestQueryCompiler.EmbedSpec("orders", List.of("id", "x\\"), null,
+          List.of(new RestQueryCompiler.EmbedSpec("products", List.of("id"))));
+      TableAccess access = TableAccess.enforcing(Map.of(
+          "public.products", new TableAccess.Rights(Set.of(RlsOp.SELECT), Set.of("id", "name"), Set.of(), 5, false),
+          "public.orders", new TableAccess.Rights(Set.of(RlsOp.SELECT), Set.of("id", "product_id"), Set.of(), 5, false)));
+      RestQueryCompiler role = new RestQueryCompiler(schema, dialect, "public", 30, access);
+
+      var failure = assertThrows(IllegalArgumentException.class, () -> role.compileSelect(new RestQueryCompiler.SelectQuery(
+          "public.products", List.of("id"), List.of(), List.of(), List.of(orders), null, 10, 0, false)));
+      assertTrue(failure.getMessage().contains("Unknown column"), failure.getMessage());
+    }
+
+    @Test
+    @DisplayName("an unenforced nested embed leaves an unknown column out of the SQL (Postgres control)")
+    void nestedEmbedUnknownColumn_ignoredWhenUnrestricted() {
+      var orders = new RestQueryCompiler.EmbedSpec("orders", List.of("id", "x'\\"), null,
+          List.of(new RestQueryCompiler.EmbedSpec("products", List.of("id"))));
+
+      String sql = compiler.compileSelect(new RestQueryCompiler.SelectQuery("public.products", List.of("id"),
+          List.of(), List.of(), List.of(orders), null, 10, 0, false)).sql();
+
+      assertFalse(sql.contains("x'"), sql);
+    }
+
+    @Test
     @DisplayName("a column outside the view is refused wherever it is named")
     void unknownColumns_refused() {
       RestQueryCompiler role = roleCompiler();

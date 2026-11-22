@@ -52,6 +52,14 @@ class MysqlDialectTest {
     }
 
     @Test
+    @DisplayName("a string literal escapes the backslash MySQL reads as an escape, and doubles quotes")
+    void stringLiteralEscapesBackslash() {
+        assertThat(dialect.stringLiteral("a\\b")).isEqualTo("'a\\\\b'");
+        assertThat(dialect.stringLiteral("a'b")).isEqualTo("'a''b'");
+        assertThat(dialect.stringLiteral("\\'x")).isEqualTo("'\\\\''x'");
+    }
+
+    @Test
     @DisplayName("an ENUM column answers its label as stored")
     void enumAnswersItsLabel() {
         assertThat(dialect.enumToText("a.`size`")).isEqualTo("a.`size`");
