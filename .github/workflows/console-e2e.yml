@@ -1,7 +1,8 @@
 name: Console browser test
 
-# One Playwright spec against a real engine: sign in, view, edit, save, a stale save, errors, markup as text,
-# export, and a read-only source. Separate from the Maven build; it only needs the engine jar and Postgres.
+# Playwright specs against real engines: the old console (sign in, view, edit, save, a stale save, errors, markup as
+# text, export, a read-only source) and the new one under its real policy. Separate from the Maven build; it only
+# needs the engine jar (built here with the new console in it) and Postgres.
 on:
   push:
     branches: [ main ]
@@ -80,8 +81,15 @@ jobs:
     - name: Shared Maven cache
       uses: ./.github/actions/maven-cache
 
-    - name: Build the engine jar
-      run: mvn --batch-mode -q -pl modules/excalibase-graphql-api -am package -DskipTests
+    - name: Cache npm packages of the new console
+      uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+      with:
+        path: ~/.npm
+        key: ${{ runner.os }}-console-ui-npm-${{ hashFiles('modules/excalibase-graphql-api/console-ui/package-lock.json') }}
+
+    # -Pconsole-ui installs its own Node, then lints, tests (Vitest) and builds the new console into the jar
+    - name: Build the engine jar with the new console
+      run: mvn --batch-mode -q -pl modules/excalibase-graphql-api -am package -DskipTests -Pconsole-ui
 
     - name: Set up Node.js
       uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0

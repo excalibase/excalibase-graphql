@@ -3,8 +3,7 @@ const path = require("node:path");
 const { test, expect } = require("@playwright/test");
 
 const SECRET = "e2e-admin-secret-0123456789-abcdefghijklmnop";
-const WRITABLE = "http://localhost:10001";
-const READ_ONLY = "http://localhost:10011";
+const { WRITABLE, READ_ONLY } = require("../ports");
 const HEADER = { "X-Excalibase-Admin-Secret": SECRET };
 const EXAMPLE = fs.readFileSync(path.join(__dirname, "..", "..", "deploy", "standalone", "metadata", "permissions.yaml"), "utf8");
 const MARKUP = `<img src=x onerror="window.__pwned=1"><script>window.__pwned=1</script>`;

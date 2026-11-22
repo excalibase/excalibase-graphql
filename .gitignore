@@ -52,3 +52,7 @@ build/
 ### MkDocs ###
 site/
 /scripts/results/**
+
+# The new console: its build output and the Node the console-ui profile installs
+modules/excalibase-graphql-api/console-ui/node_modules/
+modules/excalibase-graphql-api/console-ui/dist/

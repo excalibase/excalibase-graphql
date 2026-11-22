@@ -2,7 +2,7 @@ package io.github.excalibase.http;
 
 import io.github.excalibase.admin.AdminGuard;
 import io.github.excalibase.admin.AdminSettings;
-import io.github.excalibase.admin.ConsoleAssets;
+import io.github.excalibase.admin.ConsoleSite;
 import io.github.excalibase.config.ws.ClientAddress;
 import io.github.excalibase.security.KnownProjectFilter;
 import io.micronaut.core.annotation.Nullable;
@@ -14,6 +14,7 @@ import io.micronaut.http.MediaType;
 import io.micronaut.http.annotation.Filter;
 import io.micronaut.http.annotation.RequestFilter;
 import io.micronaut.http.annotation.ServerFilter;
+import jakarta.inject.Inject;
 
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
@@ -39,10 +40,18 @@ public class AdminPortFilter implements Ordered {
 
     private final AdminSettings settings;
     private final AdminGuard guard;
+    private final ConsoleSite site;
 
+    /** For a unit test: the plain-script console's files only. */
     public AdminPortFilter(AdminSettings settings, @Nullable AdminGuard guard) {
+        this(settings, guard, ConsoleSite.legacyOnly());
+    }
+
+    @Inject
+    public AdminPortFilter(AdminSettings settings, @Nullable AdminGuard guard, @Nullable ConsoleSite site) {
         this.settings = settings;
         this.guard = guard;
+        this.site = site;
     }
 
     @Override
@@ -67,8 +76,8 @@ public class AdminPortFilter implements Ordered {
     }
 
     /** The page and its listed files are marked and passed on; any other console path is a 404, never a project's. */
-    private static HttpResponse<Object> page(HttpRequest<?> request, String target) {
-        if (!ConsoleAssets.isServed(target)) {
+    private HttpResponse<Object> page(HttpRequest<?> request, String target) {
+        if (site == null || !site.isServed(target)) {
             return notFound(request);
         }
         request.getAttributes().put(KnownProjectFilter.ADMIN_ATTR, Boolean.TRUE);
