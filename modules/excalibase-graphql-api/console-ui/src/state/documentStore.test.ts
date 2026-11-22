@@ -1,5 +1,7 @@
+import { parse } from 'yaml';
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 import { ApiError, adminApi, type Metadata } from '../api/adminApi';
+import { serialize } from '../model/docmodel';
 import { DocumentStore } from './documentStore';
 
 vi.mock('../api/adminApi', async (original) => {
@@ -9,10 +11,12 @@ vi.mock('../api/adminApi', async (original) => {
 
 const api = vi.mocked(adminApi);
 const PLAIN = JSON.stringify({ format: 1, projectId: 'app', tables: [] }, null, 2) + '\n';
+const THEIRS = JSON.stringify({ format: 1, projectId: 'app', tables: [] });
 const COMMENTED = '# keep me\nformat: 1\nprojectId: app\ntables: []\n';
 const meta = (text: string | null, extra: Partial<Metadata> = {}): Metadata =>
   ({ sourceVersion: 's1', version: 'v1', source: 'file', writable: true, text, ...extra });
-// A tiny engine: /parse understands the two documents this file uses, plus whatever JSON it is given.
+// A tiny engine: /parse reads JSON and YAML the way the real one does, unless a test makes it misread YAML.
+let misread = false;
 const parseText = async (text: string) => {
   if (text.trimStart().startsWith('{')) {
     return { valid: true as const, tree: JSON.parse(text) };
@@ -20,7 +24,7 @@ const parseText = async (text: string) => {
   if (text.includes('surprise')) {
     return { valid: false as const, errors: ['surprise: unknown key'] };
   }
-  return { valid: true as const, tree: { format: 1, projectId: 'app', tables: [] } };
+  return { valid: true as const, tree: misread ? { format: 1, projectId: 'misread', tables: [] } : parse(text, { version: '1.1' }) };
 };
 
 async function loaded(text: string, extra: Partial<Metadata> = {}): Promise<DocumentStore> {
@@ -32,6 +36,7 @@ async function loaded(text: string, extra: Partial<Metadata> = {}): Promise<Docu
 
 beforeEach(() => {
   vi.resetAllMocks();
+  misread = false;
   api.parse.mockImplementation(parseText);
 });
 
@@ -62,16 +67,18 @@ describe('the document store', () => {
     expect(store.snapshot().rewriteLoses).toBe(false);
   });
 
-  test('a grid tick over a commented file counts as a comment loss', async () => {
+  test('a grid tick over a commented file keeps the comments and is not a loss', async () => {
     const store = await loaded(COMMENTED);
     await store.readTree();
 
     store.toggle('public.todos', 'anon', 'select', true);
 
-    expect(store.snapshot().rewriteLoses).toBe(true);
+    expect(store.snapshot().draft).toContain('# keep me');
+    expect(store.snapshot().draft).toContain('role: anon');
+    expect(store.snapshot().rewriteLoses).toBe(false);
   });
 
-  test('a comment typed between two grid ticks is counted too', async () => {
+  test('a comment typed between two grid ticks is kept by the second', async () => {
     const store = await loaded(PLAIN);
     await store.readTree();
     store.toggle('public.todos', 'anon', 'select', true);
@@ -80,7 +87,44 @@ describe('the document store', () => {
 
     store.toggle('public.todos', 'anon', 'insert', true);
 
-    expect(store.snapshot().rewriteLoses).toBe(true);
+    expect(store.snapshot().draft).toContain('# keep me');
+    expect(store.snapshot().rewriteLoses).toBe(false);
+  });
+
+  test('a JSON file stays JSON the way the grid writes it', async () => {
+    const store = await loaded(PLAIN);
+    await store.readTree();
+
+    store.toggle('public.todos', 'anon', 'select', true);
+
+    expect(store.snapshot().draft).toBe(serialize(JSON.parse(store.snapshot().draft)));
+  });
+
+  test('if the engine reads the patched text differently, the save falls back to the grid JSON and warns about the comments', async () => {
+    const store = await loaded(COMMENTED);
+    await store.readTree();
+    store.toggle('public.todos', 'anon', 'select', true);
+    misread = true;
+
+    await store.save();
+
+    expect(JSON.parse(store.snapshot().draft).tables).toHaveLength(1);
+    expect(store.snapshot().dialog).toMatchObject({ kind: 'save', comment: true });
+    expect(api.putMetadata).not.toHaveBeenCalled();
+  });
+
+  test('a patched text the engine reads as intended is what is written, byte for byte', async () => {
+    const store = await loaded(COMMENTED);
+    await store.readTree();
+    store.toggle('public.todos', 'anon', 'select', true);
+    const patched = store.snapshot().draft;
+    api.putMetadata.mockResolvedValue({ version: 'v2' });
+    api.getMetadata.mockResolvedValue(meta(patched, { sourceVersion: 's2' }));
+
+    await store.save();
+    await store.confirm(false);
+
+    expect(api.putMetadata).toHaveBeenCalledWith(patched, 's1');
   });
 
   test('a tick with no tree changes nothing and asks for the tree again', async () => {
@@ -144,9 +188,8 @@ describe('the document store', () => {
   test('cancel writes nothing and the next save asks again', async () => {
     const store = await loaded(COMMENTED);
     await store.readTree();
-    store.toggle('t', 'user', 'select', false);
     store.toggle('t', 'user', 'delete', true);
-    store.toggle('t', 'user', 'delete', false);
+    misread = true;
     await store.save();
 
     store.cancel();
@@ -157,13 +200,13 @@ describe('the document store', () => {
   });
 
   test('Do not ask again silences the comment notice for the session, never a widening', async () => {
-    const store = await loaded(PLAIN);
-    store.edit('# note\n' + JSON.stringify({ format: 1, projectId: 'app', tables: [] }).replace(/^/, ''));
+    const store = await loaded(COMMENTED);
     await store.readTree();
     store.toggle('t', 'anon', 'select', true);
+    misread = true;
     await store.save();
     api.putMetadata.mockResolvedValue({ version: 'v2' });
-    api.getMetadata.mockResolvedValue(meta(PLAIN, { sourceVersion: 's2' }));
+    api.getMetadata.mockResolvedValue(meta(COMMENTED, { sourceVersion: 's2' }));
     await store.confirm(true);
     expect(store.snapshot().skipRewriteWarning).toBe(true);
 
@@ -200,11 +243,11 @@ describe('the document store', () => {
     const store = await loaded(PLAIN);
     store.edit(PLAIN + ' ');
     api.putMetadata.mockRejectedValueOnce(new ApiError(409, 'version_conflict', { currentVersion: 's9' }));
-    api.getMetadata.mockResolvedValue(meta('theirs', { sourceVersion: 's9' }));
+    api.getMetadata.mockResolvedValue(meta(THEIRS, { sourceVersion: 's9' }));
 
     await store.save();
     expect(store.snapshot().outcome).toEqual({ kind: 'conflict', currentVersion: 's9' });
-    expect(store.snapshot().theirs?.text).toBe('theirs');
+    expect(store.snapshot().theirs?.text).toBe(THEIRS);
     store.overwrite();
 
     expect(store.snapshot().meta?.sourceVersion).toBe('s9');

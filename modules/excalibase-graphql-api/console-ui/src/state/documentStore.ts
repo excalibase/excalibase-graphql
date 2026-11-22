@@ -3,6 +3,7 @@
 import { ApiError, adminApi, type HistoryText, type Metadata } from '../api/adminApi';
 import { describeChanges, rewriteLosesText, roleProblem, columnRoles, serialize, setOperation, widens, withJwt,
   type Change, type Operation, type Tree } from '../model/docmodel';
+import { patchYaml, treesEqual } from '../model/yamlPatch';
 import { UNREACHABLE, classify, describeFailure, restoreFailure, type Note, type Outcome } from '../messages';
 
 const CHANGE_LIST_TIMEOUT_MS = 5000;
@@ -22,6 +23,8 @@ export interface DocState {
   treeErrors: string[];
   addedRoles: string[];
   rewriteLoses: boolean;
+  /** Set while the draft is the original text with the grid's changes patched in, until the engine has read it. */
+  patch: { intended: Tree; original: string; base: Tree } | null;
   skipRewriteWarning: boolean;
   busy: boolean;
   outcome: Outcome | null;
@@ -34,7 +37,7 @@ export interface DocState {
 
 const INITIAL: DocState = {
   loaded: false, meta: null, draft: '', dirty: false, docVersion: 0, tree: null, treeErrors: [], addedRoles: [],
-  rewriteLoses: false, skipRewriteWarning: false, busy: false, outcome: null, theirs: null, dialog: null,
+  rewriteLoses: false, patch: null, skipRewriteWarning: false, busy: false, outcome: null, theirs: null, dialog: null,
   historyNote: null, failure: null, sessionEnded: false,
 };
 
@@ -69,7 +72,7 @@ export class DocumentStore {
   async load(): Promise<void> {
     try {
       const meta = await adminApi.getMetadata();
-      this.set({ meta, draft: textOf(meta), tree: null, rewriteLoses: false, loaded: true, failure: null,
+      this.set({ meta, draft: textOf(meta), tree: null, rewriteLoses: false, patch: null, loaded: true, failure: null,
         docVersion: this.state.docVersion + 1 });
     } catch (failure) {
       this.fail(failure);
@@ -77,11 +80,11 @@ export class DocumentStore {
   }
 
   edit(text: string): void {
-    this.set({ draft: text, tree: null, outcome: null });
+    this.set({ draft: text, tree: null, outcome: null, patch: null });
   }
 
   discard(): void {
-    this.set({ draft: textOf(this.state.meta), tree: null, rewriteLoses: false, outcome: null, docVersion: this.state.docVersion + 1 });
+    this.set({ draft: textOf(this.state.meta), tree: null, rewriteLoses: false, patch: null, outcome: null, docVersion: this.state.docVersion + 1 });
   }
 
   /** The tree of the draft. Text typed while the engine was reading is not overwritten by the older answer: read again. */
@@ -104,12 +107,41 @@ export class DocumentStore {
   }
 
   /**
-   * The grid and the token form write the document anew. Each rewrite checks the text it replaces, so a comment typed
-   * between two of them is counted; a tree that cannot be had counts as a loss.
+   * The grid and the token form change the tree. A YAML text gets just those changes patched in, so its comments stay;
+   * the engine's reading of the result is checked before a save. JSON, or a text that cannot be patched, is written
+   * anew, and a comment lost that way counts: a comment typed between two edits is counted too.
    */
-  private rewriteFrom(tree: Tree): void {
-    const loses = this.state.rewriteLoses || this.state.tree === null || rewriteLosesText(this.state.draft, this.state.tree);
-    this.set({ tree, draft: serialize(tree), rewriteLoses: loses, outcome: null });
+  private rewriteFrom(tree: Tree, before: Tree): void {
+    const { draft, patch, rewriteLoses } = this.state;
+    const patched = draft.trimStart().startsWith('{') ? null : patchYaml(draft, tree);
+    if (patched !== null) {
+      this.set({ tree, draft: patched, patch: { intended: tree, original: patch?.original ?? draft, base: patch?.base ?? before }, outcome: null });
+      return;
+    }
+    const original = patch?.original ?? draft;
+    const base = patch?.base ?? before;
+    this.set({ tree, draft: serialize(tree), patch: null, rewriteLoses: rewriteLoses || rewriteLosesText(original, base), outcome: null });
+  }
+
+  /** The patched draft as the engine reads it. A different reading means the patch is not trusted: the grid's JSON is written. */
+  private async verifyPatch(): Promise<void> {
+    const patch = this.state.patch;
+    if (!patch) {
+      return;
+    }
+    let trusted = false;
+    try {
+      const answer = await adminApi.parse(this.state.draft, AbortSignal.timeout(CHANGE_LIST_TIMEOUT_MS));
+      trusted = answer.valid && treesEqual(answer.tree, patch.intended);
+    } catch {
+      trusted = false;
+    }
+    if (trusted) {
+      this.set({ patch: null });
+      return;
+    }
+    this.set({ draft: serialize(patch.intended), patch: null, rewriteLoses: this.state.rewriteLoses || rewriteLosesText(patch.original, patch.base),
+      docVersion: this.state.docVersion + 1 });
   }
 
   /** A click on a grid drawn before the tree was dropped (a save drops it) has nothing to edit: the tree is read again. */
@@ -119,7 +151,7 @@ export class DocumentStore {
       void this.readTree();
       return;
     }
-    this.rewriteFrom(setOperation(tree, table, role, operation, on));
+    this.rewriteFrom(setOperation(tree, table, role, operation, on), tree);
   }
 
   /** Returns the reason the role is refused, or null when it became a column. */
@@ -136,7 +168,7 @@ export class DocumentStore {
     if (!tree) {
       return false;
     }
-    this.rewriteFrom(withJwt(tree, Object.keys(section).length > 0 ? section : null));
+    this.rewriteFrom(withJwt(tree, Object.keys(section).length > 0 ? section : null), tree);
     this.set({ docVersion: this.state.docVersion + 1 });
     return true;
   }
@@ -148,6 +180,7 @@ export class DocumentStore {
     }
     this.set({ busy: true });
     try {
+      await this.verifyPatch();
       const { changes, invalid } = await this.changesBetween(this.state.meta.text, this.state.draft);
       const comment = this.state.rewriteLoses && !this.state.skipRewriteWarning;
       // Fails closed: a list that could not be built asks. A text the engine refuses goes on, and its errors are shown.
