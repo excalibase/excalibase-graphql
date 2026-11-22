@@ -4,6 +4,7 @@ import io.github.excalibase.metadata.AdminMetadataView;
 import io.github.excalibase.metadata.DocumentHistory;
 import io.github.excalibase.metadata.DocumentValidation;
 import io.github.excalibase.metadata.SaveOutcome;
+import io.github.excalibase.metadata.SchemaCheck;
 import io.micronaut.http.HttpResponse;
 import io.micronaut.http.HttpStatus;
 
@@ -28,6 +29,16 @@ final class MetadataSave {
 
     static HttpResponse<Map<String, Object>> respond(AdminMetadataView metadata, AdminConfig.ValidationSettings rules,
                                                      String ifMatch, byte[] document) {
+        return respond(metadata, rules, ifMatch, document, null);
+    }
+
+    /**
+     * @param schemaCheck the rules the live schema does not fit, or null when it is not known. It only adds
+     *                    {@code warnings} to a save that succeeded: it never refuses or delays one.
+     */
+    static HttpResponse<Map<String, Object>> respond(AdminMetadataView metadata, AdminConfig.ValidationSettings rules,
+                                                     String ifMatch, byte[] document,
+                                                     SchemaCheck schemaCheck) {
         if (metadata.document().isEmpty()) {
             return failure(HttpStatus.NOT_FOUND, "no_metadata_source");
         }
@@ -38,11 +49,21 @@ final class MetadataSave {
             return failure(HttpStatus.PRECONDITION_REQUIRED, "if_match_required");
         }
         DocumentValidation.Result checked = DocumentValidation.validate(document, rules.reserved(), rules.projectId(),
-                rules.envJwtConfigured());
+                rules.envJwtConfigured(), System::getenv, schemaCheck);
         if (!checked.valid()) {
             return HttpResponse.<Map<String, Object>>status(HttpStatus.UNPROCESSABLE_ENTITY).body(checked.toMap());
         }
-        return answer(metadata.save(new String(document, StandardCharsets.UTF_8), version(ifMatch)));
+        return withWarnings(answer(metadata.save(new String(document, StandardCharsets.UTF_8), version(ifMatch))), checked);
+    }
+
+    private static HttpResponse<Map<String, Object>> withWarnings(HttpResponse<Map<String, Object>> saved,
+                                                                  DocumentValidation.Result checked) {
+        if (saved.code() != HttpStatus.OK.getCode() || checked.warnings().isEmpty()) {
+            return saved;
+        }
+        Map<String, Object> body = new LinkedHashMap<>(saved.body());
+        body.put("warnings", checked.warnings());
+        return HttpResponse.ok(body);
     }
 
     /**
@@ -51,6 +72,12 @@ final class MetadataSave {
      */
     static HttpResponse<Map<String, Object>> restore(AdminMetadataView metadata, AdminConfig.ValidationSettings rules,
                                                      String ifMatch, String id) {
+        return restore(metadata, rules, ifMatch, id, null);
+    }
+
+    static HttpResponse<Map<String, Object>> restore(AdminMetadataView metadata, AdminConfig.ValidationSettings rules,
+                                                     String ifMatch, String id,
+                                                     SchemaCheck schemaCheck) {
         Optional<DocumentHistory> history = metadata.history();
         if (history.isEmpty()) {
             return failure(HttpStatus.NOT_FOUND, "history_unavailable");
@@ -59,7 +86,7 @@ final class MetadataSave {
         if (entry.isEmpty()) {
             return failure(HttpStatus.NOT_FOUND, "history_entry_not_found");
         }
-        return respond(metadata, rules, ifMatch, entry.get().text().getBytes(StandardCharsets.UTF_8));
+        return respond(metadata, rules, ifMatch, entry.get().text().getBytes(StandardCharsets.UTF_8), schemaCheck);
     }
 
     /** An ETag as a client quotes it: {@code "abc"} names the version {@code abc}. A weak tag names none (RFC 9110). */

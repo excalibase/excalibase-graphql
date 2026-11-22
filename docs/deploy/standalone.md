@@ -85,6 +85,7 @@ The console is a page and a small API for editing the document. It is off by def
 | Setting | Meaning |
 |---|---|
 | `EXCALIBASE_CONSOLE_ENABLED` | `true` or `false`. Anything else refuses the start. Default `false`. |
+| `EXCALIBASE_CONSOLE_UI` | `legacy` or `next`: which console `/console` serves. Default `legacy`. With `next` the old console stays at `/console/legacy`. Anything else refuses the start, and so does `next` in a jar built without the new console (`mvn -Pconsole-ui package`). |
 | `EXCALIBASE_ADMIN_PORT` | The admin listener. Default `10001`. Must differ from the public and management ports. |
 | `EXCALIBASE_ADMIN_SECRET` or `EXCALIBASE_ADMIN_SECRET_FILE` | Required when the console is on. At least 32 printable ASCII characters. Set one, not both. |
 | `EXCALIBASE_ADMIN_MAX_FAILURES` | Wrong or missing secrets allowed per client address. Default `10`. |
@@ -96,6 +97,22 @@ The console is a page and a small API for editing the document. It is off by def
 - Failed attempts are counted per TCP peer address. A blocked address gets `429` with `Retry-After`.
 - Hosted mode (a policy URL or a provisioning URL is set) refuses to start with the console on.
 - The engine refuses to start if the console is on and the secret is missing, too short, or the port clashes.
+
+### Warnings
+
+`POST /_admin/v1/validate`, `POST /_admin/v1/parse` and a successful save carry a `warnings` list when the document
+names a table or column the database does not have, or writes to a view. Each warning has a `code`, the `role`, the `table`, the `operation` and a `message`. The document is still valid and a save
+still goes through, because a table may be created after the document: but until it exists the engine drops that
+rule, so the role has no access to it. The codes are:
+
+| Code | Meaning |
+|---|---|
+| `unknown_table` | The table does not exist; every rule for it is dropped. |
+| `unknown_column` | A column in a column list, filter, check or preset does not exist; that operation is dropped. |
+| `needs_select` | An update or delete rule has no usable select rule beside it; it is dropped. |
+| `not_writable` | An insert, update or delete rule on a view; the engine does not write to views. |
+
+A restore from History carries the same list. There is no `warnings` key when everything fits or the schema is not loaded yet.
 
 ### Saving
 

@@ -1,5 +1,5 @@
 import { h } from "/console/dom.js";
-import { changeList, historyWarning } from "/console/editor.js";
+import { changeList, historyWarning, warningList } from "/console/editor.js";
 import { widens } from "/console/docmodel.js";
 import { lineDiff, withContext } from "/console/diff.js";
 
@@ -52,7 +52,8 @@ function noteView(note) {
     return null;
   }
   if (note.kind === "ok") {
-    return h("div", {}, h("p", { class: "ok", role: "status" }, note.text), note.historyMissed ? historyWarning() : null);
+    return h("div", {}, h("p", { class: "ok", role: "status" }, note.text), note.historyMissed ? historyWarning() : null,
+      warningList(note.warnings, "Restored, but the database does not fit everything in it:"));
   }
   return h("div", { class: "error", role: "alert" }, h("p", {}, note.text),
     note.errors ? h("ul", {}, note.errors.map((message) => h("li", {}, message))) : null);

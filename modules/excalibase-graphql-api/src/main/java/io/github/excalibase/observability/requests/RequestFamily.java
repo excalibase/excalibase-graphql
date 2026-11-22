@@ -9,8 +9,6 @@ public enum RequestFamily {
     GRAPHQL("graphql"),
     REST("rest");
 
-    private static final String GRAPHQL_SUFFIX = "/graphql";
-
     private final String tag;
 
     RequestFamily(String tag) {
@@ -26,6 +24,6 @@ public enum RequestFamily {
         if (ProjectPath.fromUri(uri) == null) {
             return Optional.empty();
         }
-        return Optional.of(uri.endsWith(GRAPHQL_SUFFIX) ? GRAPHQL : REST);
+        return Optional.of(ProjectPath.isGraphql(uri) ? GRAPHQL : REST);
     }
 }

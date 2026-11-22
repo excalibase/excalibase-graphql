@@ -5,8 +5,10 @@ import io.github.excalibase.support.FreePort;
 import io.micronaut.context.ApplicationContext;
 import org.junit.jupiter.api.Test;
 
+import java.util.HashMap;
 import java.util.Map;
 
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /** A real context start, so the property names behind the checks are pinned too. */
@@ -52,5 +54,20 @@ class AdminStartupRefusalTest {
         Map<String, Object> properties = consoleOn("excalibase.console.enabled", "yes", true);
 
         assertThatThrownBy(() -> start(properties)).hasStackTraceContaining("EXCALIBASE_CONSOLE_ENABLED must be true or false");
+    }
+
+    @Test
+    void anUnknownConsoleUiRefusesToStart() {
+        Map<String, Object> properties = consoleOn("excalibase.console.ui", "fancy", true);
+
+        assertThatThrownBy(() -> start(properties)).hasStackTraceContaining("EXCALIBASE_CONSOLE_UI must be legacy or next");
+    }
+
+    @Test
+    void aBadConsoleUiIsIgnoredWhileTheConsoleIsOff() {
+        Map<String, Object> properties = new HashMap<>(consoleOn("excalibase.console.ui", "fancy", true));
+        properties.put("excalibase.console.enabled", "false");
+
+        assertThatCode(() -> start(properties)).doesNotThrowAnyException();
     }
 }

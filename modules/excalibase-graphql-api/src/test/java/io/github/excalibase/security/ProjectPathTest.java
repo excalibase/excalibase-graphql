@@ -38,4 +38,23 @@ class ProjectPathTest {
         assertThat(ProjectPath.fromUri("//graphql")).isNull();
         assertThat(ProjectPath.fromUri("proj-abc/graphql")).isNull();
     }
+
+    @Test
+    @DisplayName("EXC-737: a REST table named like a route word is a REST path of its project, not the GraphQL route")
+    void reservedWordTablesAreRestPaths() {
+        assertThat(ProjectPath.fromUri("/proj-abc/api/v1/graphql")).isEqualTo("proj-abc");
+        assertThat(ProjectPath.fromUri("/proj-abc/api/v1/realtime")).isEqualTo("proj-abc");
+        assertThat(ProjectPath.isGraphql("/proj-abc/api/v1/graphql")).isFalse();
+        assertThat(ProjectPath.isGraphql("/proj-abc/graphql")).isTrue();
+    }
+
+    @Test
+    @DisplayName("a path that only contains a route word somewhere is not project-shaped")
+    void routeWordsElsewhereAreNoProject() {
+        assertThat(ProjectPath.fromUri("/proj-abc/x/graphql")).isNull();
+        assertThat(ProjectPath.fromUri("/proj-abc/x/api/v1/orders")).isNull();
+        assertThat(ProjectPath.fromUri("/proj-abc/api/v1x")).isNull();
+        assertThat(ProjectPath.fromUri("/proj-abc/graphql/")).isNull();
+        assertThat(ProjectPath.isGraphql("/proj-abc/x/graphql")).isFalse();
+    }
 }
