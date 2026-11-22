@@ -17,7 +17,7 @@ class RestEmbedResolutionTest {
 
     private static SchemaInfo schema() {
         SchemaInfo schema = new SchemaInfo();
-        for (String table : List.of(DOCS, "a.users", "b.users", "a.logs", "b.logs")) {
+        for (String table : List.of(DOCS, "a.mixed", "a.users", "b.users", "a.logs", "b.logs")) {
             schema.addColumn(table, "id", "integer");
             schema.addColumn(table, "name", "text");
             schema.setTableSchema(table, table.substring(0, 1));
@@ -29,6 +29,12 @@ class RestEmbedResolutionTest {
         schema.addColumn("b.logs", "user_id", "integer");
         schema.addForeignKey(DOCS, "created_by", "a.users", "id");
         schema.addForeignKey(DOCS, "updated_by", "a.users", "id");
+        schema.addColumn("a.mixed", "a_user", "integer");
+        schema.addColumn("a.mixed", "created_by", "integer");
+        schema.addColumn("a.mixed", "b_user", "integer");
+        schema.addForeignKey("a.mixed", "a_user", "a.users", "id");
+        schema.addForeignKey("a.mixed", "created_by", "a.users", "id");
+        schema.addForeignKey("a.mixed", "b_user", "b.users", "id");
         schema.addForeignKey("a.logs", "user_id", "a.users", "id");
         schema.addForeignKey("b.logs", "user_id", "a.users", "id");
         return schema;
@@ -59,6 +65,19 @@ class RestEmbedResolutionTest {
 
         assertThat(error.code()).isEqualTo(DataError.AMBIGUOUS_RELATIONSHIP);
         assertThat(error.message()).contains("a.logs", "b.logs");
+    }
+
+    @Test
+    void candidatesAcrossTables_listAKeyedNameForATableWithSeveralKeys_andTheBareQualifiedNameOtherwise() {
+        DataError error = refusal("a.mixed", "users", null);
+
+        assertThat(error.message()).contains("a.users!a_user", "a.users!created_by", "b.users")
+                .doesNotContain("use one of: a.users,");
+    }
+
+    @Test
+    void aQualifiedEmbed_comesBackUnderItsTableName() {
+        assertThat(sql("a.users", "b.logs", null)).contains("'logs'").doesNotContain("'b.logs'");
     }
 
     @Test

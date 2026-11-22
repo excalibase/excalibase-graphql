@@ -954,16 +954,29 @@ public class RestQueryCompiler {
             String ia = ALIAS_R + counter.getAndIncrement();
             String oa = ALIAS_R + counter.getAndIncrement();
             var fwd = findForwardFk(table, embed.relationName(), embed.fkHint());
-            if (fwd != null) entries.add(buildForwardEmbed(embed, fwd, ia, oa, parentAlias, counter, params));
+            String key = embedKey(embed, embeds);
+            if (fwd != null) entries.add(buildForwardEmbed(embed, key, fwd, ia, oa, parentAlias, counter, params));
             else {
                 var rev = findReverseFk(table, embed.relationName(), embed.fkHint());
-                if (rev != null) entries.add(buildReverseEmbed(embed, rev, ia, oa, parentAlias, counter, params));
+                if (rev != null) entries.add(buildReverseEmbed(embed, key, rev, ia, oa, parentAlias, counter, params));
             }
         }
         return entries;
     }
 
-    private String buildForwardEmbed(EmbedSpec embed, SchemaInfo.FkInfo fk, String ia, String oa,
+    /**
+     * The JSON key an embed comes back under: its table name, even when it was named with its schema, unless another
+     * embed of the same select would then share the key, in which case the name as written.
+     */
+    private static String embedKey(EmbedSpec embed, List<EmbedSpec> siblings) {
+        String written = embed.relationName();
+        String bare = written.substring(written.lastIndexOf('.') + 1);
+        boolean taken = siblings.stream().anyMatch(other -> other != embed
+                && other.relationName().substring(other.relationName().lastIndexOf('.') + 1).equals(bare));
+        return taken ? written : bare;
+    }
+
+    private String buildForwardEmbed(EmbedSpec embed, String key, SchemaInfo.FkInfo fk, String ia, String oa,
                                      String parentAlias, AtomicInteger counter, Map<String, Object> params) {
         String refTable = resolveTable(fk.refTable());
         List<String> childEntries = buildEmbedEntries(fk.refTable(), embed.children(), oa, counter, params);
@@ -975,13 +988,13 @@ public class RestQueryCompiler {
         StringBuilder ew = new StringBuilder(ia + DOT + dialect.quoteIdentifier(fk.refColumn())
             + ASSIGN + parentAlias + DOT + dialect.quoteIdentifier(fk.fkColumn()));
         appendRls(ew, fk.refTable(), ia, RlsOp.SELECT, params);
-        return sqlString(embed.relationName()) + COMMA_SEP + parens(
+        return sqlString(key) + COMMA_SEP + parens(
             SELECT + rowExpr + FROM
             + parens(innerSel + FROM + refTable + SPACE + ia + WHERE + ew)
             + SPACE + oa);
     }
 
-    private String buildReverseEmbed(EmbedSpec embed, SchemaInfo.ReverseFkInfo rev, String ia, String oa,
+    private String buildReverseEmbed(EmbedSpec embed, String key, SchemaInfo.ReverseFkInfo rev, String ia, String oa,
                                      String parentAlias, AtomicInteger counter, Map<String, Object> params) {
         String childTable = resolveTable(rev.childTable());
         List<String> childEntries = buildEmbedEntries(rev.childTable(), embed.children(), oa, counter, params);
@@ -995,10 +1008,10 @@ public class RestQueryCompiler {
         String children = parens(innerSel + FROM + childTable + SPACE + ia + WHERE + ew + roleLimit(rev.childTable()))
                 + SPACE + oa;
         if (!dialect.supportsRowToJson()) {
-            return sqlString(embed.relationName()) + COMMA_SEP
+            return sqlString(key) + COMMA_SEP
                     + parens(SELECT + dialect.coalesceArray(dialect.aggregateArray(rowExpr)) + FROM + children);
         }
-        return sqlString(embed.relationName()) + COMMA_SEP + COALESCE + parens(
+        return sqlString(key) + COMMA_SEP + COALESCE + parens(
             parens(SELECT + FN_JSON_AGG + parens(rowExpr) + FROM + children) + COMMA_SEP + EMPTY_JSON_ARRAY);
     }
 
@@ -1074,6 +1087,21 @@ public class RestQueryCompiler {
                 SchemaInfo.ReverseFkInfo::fkColumn);
     }
 
+    /**
+     * Embed names that each pick exactly one of {@code fits}: the table, schema-qualified, when it has one key, and
+     * the table with a column hint when it has several. Keys into one table are told apart by column alone.
+     */
+    private static <T> List<String> options(List<T> fits, String relName, Function<T, String> table,
+                                            Function<T, String> column) {
+        if (fits.stream().map(table).distinct().count() == 1) {
+            return fits.stream().map(fit -> relName + "!" + column.apply(fit)).toList();
+        }
+        Map<String, Long> keysPerTable = fits.stream().collect(
+                java.util.stream.Collectors.groupingBy(table, LinkedHashMap::new, java.util.stream.Collectors.counting()));
+        return fits.stream().map(fit -> keysPerTable.get(table.apply(fit)) == 1 ? table.apply(fit)
+                : table.apply(fit) + "!" + column.apply(fit)).toList();
+    }
+
     private static <T> T only(List<T> fits, boolean relationExists, String relName, String fkHint,
                               Function<T, String> table, Function<T, String> column) {
         if (fits.isEmpty()) {
@@ -1083,10 +1111,7 @@ public class RestQueryCompiler {
             return null;
         }
         if (fits.size() > 1) {
-            boolean differentTables = fits.stream().map(table).distinct().count() > 1;
-            List<String> options = fits.stream()
-                    .map(fit -> differentTables ? table.apply(fit) : relName + "!" + column.apply(fit)).toList();
-            throw new DataErrorException(DataError.ambiguousRelationship(relName, options));
+            throw new DataErrorException(DataError.ambiguousRelationship(relName, options(fits, relName, table, column)));
         }
         return fits.getFirst();
     }
