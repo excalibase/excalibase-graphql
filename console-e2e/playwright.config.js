@@ -8,8 +8,9 @@ const DATABASE = process.env.E2E_DATABASE_URL || "jdbc:postgresql://localhost:55
 const SECRET = "e2e-admin-secret-0123456789-abcdefghijklmnop";
 const WORK = path.join(__dirname, ".work");
 
-// The same engine three times: one with a writable file source, one with a read-only url source, and one serving the
-// new console (EXCALIBASE_CONSOLE_UI=next) from its own copy of the document, each on its own ports.
+// The same engine four times: a writable file source and a read-only url source behind the old console, and the same
+// two behind the new one (EXCALIBASE_CONSOLE_UI=next, the writable one with its own copy of the document), each on
+// its own ports.
 function engine({ name, port, adminPort, managementPort, source, ui = "legacy" }) {
   return {
     name,
@@ -17,7 +18,7 @@ function engine({ name, port, adminPort, managementPort, source, ui = "legacy" }
     url: `http://localhost:${adminPort}/console`,
     timeout: 120_000,
     reuseExistingServer: false,
-    stdout: "ignore",
+    stdout: process.env.E2E_DEBUG ? "pipe" : "ignore", stderr: "pipe",
     env: {
       SERVER_PORT: String(port),
       MANAGEMENT_SERVER_PORT: String(managementPort),
@@ -58,6 +59,9 @@ module.exports = defineConfig({
     engine({ name: "next", port: ports.next.port, adminPort: ports.next.admin, managementPort: ports.next.management,
       ui: "next",
       source: { METADATA_SOURCE: "file", METADATA_FILE_PATH: path.join(WORK, "permissions-next.yaml"),
-        METADATA_FILE_POLL_INTERVAL_MS: "200" } })
+        METADATA_FILE_POLL_INTERVAL_MS: "200" } }),
+    engine({ name: "next-read-only", port: ports.nextReadOnly.port, adminPort: ports.nextReadOnly.admin,
+      managementPort: ports.nextReadOnly.management, ui: "next",
+      source: { METADATA_SOURCE: "url", METADATA_URL_LOCATION: `http://localhost:${ports.staticPort}/permissions.yaml` } })
   ]
 });

@@ -5,6 +5,14 @@ const { NEXT, staticPort } = require("../ports");
 // a closed port would fail the same way with no policy at all. no-cors makes an allowed fetch succeed (an opaque answer).
 const OTHER_ORIGIN = `http://127.0.0.1:${staticPort}/permissions.yaml`;
 
+const SECRET = "e2e-admin-secret-0123456789-abcdefghijklmnop";
+const signIn = async (page) => {
+  await page.goto(NEXT + "/console");
+  await page.getByLabel("Admin secret").fill(SECRET);
+  await page.getByRole("button", { name: "Sign in" }).click();
+  await expect(page.getByRole("navigation", { name: "Console sections" })).toBeVisible();
+};
+
 // The new console under the engine's real policy. A page that mounts is not enough: every browser-reported
 // violation of the policy counts, so a feature that quietly needs an inline style or a string eval fails here.
 const watchViolations = (page) => page.addInitScript(() => {
@@ -22,8 +30,10 @@ test("the new console loads and mounts its editor without breaking the policy", 
   page.on("console", (message) => message.type() === "error" && consoleErrors.push(message.text()));
 
   await page.goto(NEXT + "/console");
-
   await expect(page.getByRole("heading", { name: "Excalibase console" })).toBeVisible();
+  await signIn(page);
+  await page.evaluate(() => { window.location.hash = "#/permissions/document"; });
+
   await expect(page.locator(".cm-editor")).toBeVisible();
   await expect(page.locator(".cm-content")).toContainText("projectId: my-app");
   expect(await violations(page)).toEqual([]);
@@ -32,7 +42,8 @@ test("the new console loads and mounts its editor without breaking the policy", 
 
 test("typing, selecting, bracket matching, folding and the completion popup break nothing", async ({ page }) => {
   await watchViolations(page);
-  await page.goto(NEXT + "/console");
+  await signIn(page);
+  await page.evaluate(() => { window.location.hash = "#/permissions/document"; });
   const content = page.locator(".cm-content");
   await content.click();
 
