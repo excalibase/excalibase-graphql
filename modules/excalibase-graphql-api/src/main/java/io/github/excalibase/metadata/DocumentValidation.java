@@ -16,7 +16,6 @@ import java.nio.charset.StandardCharsets;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.function.Function;
 import java.util.function.UnaryOperator;
 
 /**
@@ -99,7 +98,7 @@ public final class DocumentValidation {
      */
     public static Result validate(byte[] body, ReservedSchemas reserved, String projectId, boolean envJwtConfigured,
                                   UnaryOperator<String> environment,
-                                  Function<PermissionSet, List<RuleProblem>> schemaCheck) {
+                                  SchemaCheck schemaCheck) {
         if (body == null || body.length == 0) {
             return refused("the document is empty");
         }
@@ -133,7 +132,7 @@ public final class DocumentValidation {
 
     public static Map<String, Object> tree(byte[] body, ReservedSchemas reserved, String projectId,
                                            boolean envJwtConfigured,
-                                           Function<PermissionSet, List<RuleProblem>> schemaCheck) {
+                                           SchemaCheck schemaCheck) {
         Result checked = validate(body, reserved, projectId, envJwtConfigured, System::getenv, schemaCheck);
         Map<String, Object> answer = checked.toMap();
         if (checked.valid()) {
@@ -143,13 +142,12 @@ public final class DocumentValidation {
         return answer;
     }
 
-    private static List<Warning> warnings(PermissionSet permissions,
-                                          Function<PermissionSet, List<RuleProblem>> schemaCheck) {
+    private static List<Warning> warnings(PermissionSet permissions, SchemaCheck schemaCheck) {
         if (schemaCheck == null) {
             return List.of();
         }
         try {
-            return schemaCheck.apply(permissions).stream().map(Warning::of).toList();
+            return schemaCheck.problems(permissions).stream().map(Warning::of).toList();
         } catch (RuntimeException e) {
             // a schema that is reloading or a database with no permission dialect says nothing: no warning, never a refusal
             log.warn("validate_schema_check_skipped reason={}", e.getClass().getSimpleName());

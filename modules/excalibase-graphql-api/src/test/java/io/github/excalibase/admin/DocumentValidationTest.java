@@ -3,6 +3,7 @@ package io.github.excalibase.admin;
 import io.github.excalibase.access.RuleProblem;
 import io.github.excalibase.metadata.DocumentValidation;
 import io.github.excalibase.metadata.MetadataDocumentParser;
+import io.github.excalibase.metadata.SchemaCheck;
 import io.github.excalibase.schema.ReservedSchemas;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -15,8 +16,6 @@ import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
-import java.util.function.Function;
-import io.github.excalibase.permissions.PermissionSet;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assumptions.assumeThat;
@@ -192,7 +191,7 @@ class DocumentValidationTest {
 
     // --- warnings: the schema does not fit a rule; never a refusal ---
 
-    private static DocumentValidation.Result withSchema(String text, Function<PermissionSet, List<RuleProblem>> check) {
+    private static DocumentValidation.Result withSchema(String text, SchemaCheck check) {
         return DocumentValidation.validate(bytes(text), RESERVED, "demo", false, System::getenv, check);
     }
 

@@ -5,7 +5,6 @@ import org.junit.jupiter.api.Test;
 
 import java.util.List;
 
-import static io.github.excalibase.access.AccessFixture.AUDIT;
 import static io.github.excalibase.access.AccessFixture.CUSTOMERS;
 import static io.github.excalibase.access.AccessFixture.ORDERS;
 import static io.github.excalibase.access.AccessFixture.entry;

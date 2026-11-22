@@ -5,6 +5,7 @@ import io.github.excalibase.metadata.AdminMetadataView;
 import io.github.excalibase.metadata.DocumentHistory;
 import io.github.excalibase.metadata.MetadataSource;
 import io.github.excalibase.metadata.SaveOutcome;
+import io.github.excalibase.metadata.SchemaCheck;
 import io.github.excalibase.permissions.PermissionSet;
 import io.github.excalibase.schema.ReservedSchemas;
 import io.micronaut.http.HttpResponse;
@@ -16,7 +17,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicInteger;
-import java.util.function.Function;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -69,7 +69,7 @@ class MetadataSaveWarningsTest {
         });
     }
 
-    private static final Function<PermissionSet, List<RuleProblem>> ONE_PROBLEM = document -> List.of(
+    private static final SchemaCheck ONE_PROBLEM = document -> List.of(
             new RuleProblem("user", "public.orders", "table", "unknown_table", "no such table"));
 
     @Test

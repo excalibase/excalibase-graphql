@@ -1,11 +1,10 @@
 package io.github.excalibase.admin;
 
-import io.github.excalibase.access.RuleProblem;
 import io.github.excalibase.metadata.AdminMetadataView;
 import io.github.excalibase.metadata.DocumentHistory;
 import io.github.excalibase.metadata.DocumentValidation;
 import io.github.excalibase.metadata.SaveOutcome;
-import io.github.excalibase.permissions.PermissionSet;
+import io.github.excalibase.metadata.SchemaCheck;
 import io.micronaut.http.HttpResponse;
 import io.micronaut.http.HttpStatus;
 
@@ -14,7 +13,6 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.function.Function;
 
 /**
  * The checks and answers of {@code PUT /_admin/v1/metadata}, in the order that keeps a bad request from reaching the
@@ -40,7 +38,7 @@ final class MetadataSave {
      */
     static HttpResponse<Map<String, Object>> respond(AdminMetadataView metadata, AdminConfig.ValidationSettings rules,
                                                      String ifMatch, byte[] document,
-                                                     Function<PermissionSet, List<RuleProblem>> schemaCheck) {
+                                                     SchemaCheck schemaCheck) {
         if (metadata.document().isEmpty()) {
             return failure(HttpStatus.NOT_FOUND, "no_metadata_source");
         }
@@ -79,7 +77,7 @@ final class MetadataSave {
 
     static HttpResponse<Map<String, Object>> restore(AdminMetadataView metadata, AdminConfig.ValidationSettings rules,
                                                      String ifMatch, String id,
-                                                     Function<PermissionSet, List<RuleProblem>> schemaCheck) {
+                                                     SchemaCheck schemaCheck) {
         Optional<DocumentHistory> history = metadata.history();
         if (history.isEmpty()) {
             return failure(HttpStatus.NOT_FOUND, "history_unavailable");
