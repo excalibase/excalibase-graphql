@@ -338,9 +338,9 @@ public class PostgresSchemaLoader implements SchemaLoader {
     }
 
     /**
-     * A foreign key is kept only when the table it points at is in a loaded schema. Its target is named by
-     * table alone further on, so a key into a schema that was not loaded (an internal one) would otherwise
-     * bind to a same-named table of a loaded schema.
+     * A foreign key is kept only when the table it points at is in a loaded schema, and it keeps the schema of
+     * that table: a key into a schema that was not loaded (an internal one) is dropped, and one into a loaded
+     * schema never binds to a same-named table of another.
      */
     private void handleForeignKeyRow(JsonNode node, String schema, String[] loadedSchemas,
                                      Map<String, String[]> fkTables,
@@ -353,7 +353,7 @@ public class PostgresSchemaLoader implements SchemaLoader {
         String fromCol = node.get("from_column").asText();
         String toTable = node.get("to_table").asText();
         String toCol = node.get("to_column").asText();
-        fkTables.putIfAbsent(constraintKey, new String[]{fromTable, toTable, schema});
+        fkTables.putIfAbsent(constraintKey, new String[]{fromTable, toTable, schema, node.get("to_schema").asText()});
         fkColumns.computeIfAbsent(constraintKey, k -> new ArrayList<>())
                 .add(new String[]{fromCol, toCol});
     }
@@ -405,15 +405,16 @@ public class PostgresSchemaLoader implements SchemaLoader {
             String fromTable = tables[0];
             String toTable = tables[1];
             String fkSchema = tables[2];
+            String toSchema = tables[3];
             SchemaInfo info = perSchema.get(fkSchema);
             if (info == null) continue;
             List<String[]> colPairs = entry.getValue();
             if (colPairs.size() == 1) {
-                info.addForeignKey(fromTable, colPairs.get(0)[0], toTable, colPairs.get(0)[1]);
+                info.addForeignKey(fromTable, colPairs.get(0)[0], toSchema, toTable, colPairs.get(0)[1]);
             } else {
                 List<String> fkCols = colPairs.stream().map(p -> p[0]).toList();
                 List<String> refCols = colPairs.stream().map(p -> p[1]).toList();
-                info.addCompositeForeignKey(fromTable, fkCols, toTable, refCols);
+                info.addCompositeForeignKey(fromTable, fkCols, toSchema, toTable, refCols);
             }
         }
     }

@@ -208,19 +208,30 @@ public class SchemaInfo {
     }
 
     public void addForeignKey(String fromTable, String fromCol, String toTable, String toCol) {
+        addForeignKey(fromTable, fromCol, null, toTable, toCol);
+    }
+
+    /** As above, for a key whose target {@code toTable} is known to live in {@code toSchema}. */
+    public void addForeignKey(String fromTable, String fromCol, String toSchema, String toTable, String toCol) {
         relationshipAliases.set(null);
         String fwdFieldName = fkColumnFieldName(fromTable, fromCol);
         forwardFks.put(fromTable + "." + fwdFieldName,
-                new FkInfo(List.of(fromCol), toTable, List.of(toCol)));
+                new FkInfo(List.of(fromCol), toTable, List.of(toCol), toSchema));
         addReverseFk(toTable, new ReverseFkInfo(fromTable, List.of(fromCol), List.of(toCol)));
     }
 
     public void addCompositeForeignKey(String fromTable, List<String> fromCols,
                                  String toTable, List<String> toCols) {
+        addCompositeForeignKey(fromTable, fromCols, null, toTable, toCols);
+    }
+
+    /** As above, for a key whose target {@code toTable} is known to live in {@code toSchema}. */
+    public void addCompositeForeignKey(String fromTable, List<String> fromCols,
+                                 String toSchema, String toTable, List<String> toCols) {
         relationshipAliases.set(null);
         String fwdFieldName = fkFieldName(toTable);
         forwardFks.put(fromTable + "." + fwdFieldName,
-                new FkInfo(fromCols, toTable, toCols));
+                new FkInfo(fromCols, toTable, toCols, toSchema));
         addReverseFk(toTable, new ReverseFkInfo(fromTable, fromCols, toCols));
     }
 
@@ -454,7 +465,15 @@ public class SchemaInfo {
     /** Read-only snapshot of all installed extensions (extname → extversion). */
     public Map<String, String> getExtensions() { return Collections.unmodifiableMap(extensions); }
 
-    public record FkInfo(List<String> fkColumns, String refTable, List<String> refColumns) {
+    /**
+     * A key's target. {@code refSchema} is set only by a loader that reads a whole database at once, where
+     * the key may name a schema other than its own; it is null once the schemas are merged and
+     * {@code refTable} is the qualified name.
+     */
+    public record FkInfo(List<String> fkColumns, String refTable, List<String> refColumns, String refSchema) {
+        public FkInfo(List<String> fkColumns, String refTable, List<String> refColumns) {
+            this(fkColumns, refTable, refColumns, null);
+        }
         /** Convenience for single-column FK */
         public String fkColumn() { return fkColumns.get(0); }
         public String refColumn() { return refColumns.get(0); }

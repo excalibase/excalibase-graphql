@@ -70,7 +70,7 @@ final class MultiSchemaLoader {
                 String fromTable = fkKey.substring(0, fkKey.lastIndexOf('.'));
                 SchemaInfo.FkInfo fk = entry.getValue();
                 String compoundFrom = schema + "." + fromTable;
-                String compoundTo = findCompoundKey(target, fk.refTable(), schemaList, schema);
+                String compoundTo = findCompoundKey(target, fk, schemaList, schema);
                 if (compoundTo != null && target.hasTable(compoundFrom)) {
                     if (fk.isComposite()) {
                         target.addCompositeForeignKey(compoundFrom, fk.fkColumns(), compoundTo, fk.refColumns());
@@ -82,7 +82,18 @@ final class MultiSchemaLoader {
         }
     }
 
-    private String findCompoundKey(SchemaInfo schemaInfo, String rawTable, List<String> allSchemas, String preferredSchema) {
+    /**
+     * The merged name of the table {@code fk} points at. A key that names its schema binds there and nowhere
+     * else, even when another loaded schema has a table of the same name; one that does not is looked for
+     * in its own schema first.
+     */
+    private String findCompoundKey(SchemaInfo schemaInfo, SchemaInfo.FkInfo fk, List<String> allSchemas,
+                                   String preferredSchema) {
+        String rawTable = fk.refTable();
+        if (fk.refSchema() != null) {
+            String named = fk.refSchema() + "." + rawTable;
+            return schemaInfo.hasTable(named) ? named : null;
+        }
         if (preferredSchema != null) {
             String candidate = preferredSchema + "." + rawTable;
             if (schemaInfo.hasTable(candidate)) return candidate;

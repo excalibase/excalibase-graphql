@@ -23,9 +23,12 @@ public record DataError(int status, String code, String message, String constrai
     public static final String RAISED_EXCEPTION = "raised_exception";
     public static final String INVALID_VALUE = "invalid_value";
     public static final String PERMISSION_DENIED = "permission_denied";
+    /** An embed names a table that more than one relationship leads to; the request must say which. */
+    public static final String AMBIGUOUS_RELATIONSHIP = "ambiguous_relationship";
 
     private static final int BAD_REQUEST = 400;
     private static final int FORBIDDEN = 403;
+    private static final int MULTIPLE_CHOICES = 300;
     private static final int CONFLICT = 409;
     private static final String KEY_CODE = "code";
     private static final String KEY_MESSAGE = "message";
@@ -47,6 +50,12 @@ public record DataError(int status, String code, String message, String constrai
 
     public static DataError badRequest(String code, String message, String constraint, String column) {
         return new DataError(BAD_REQUEST, code, message, constraint, column);
+    }
+
+    /** Several relationships fit {@code relation}; a key hint ({@code relation!column}) picks one. */
+    public static DataError ambiguousRelationship(String relation) {
+        return new DataError(MULTIPLE_CHOICES, AMBIGUOUS_RELATIONSHIP, "More than one relationship fits '"
+                + relation + "'; name the foreign key column with " + relation + "!column", null, null);
     }
 
     public static DataError forbidden(String message, String column) {
