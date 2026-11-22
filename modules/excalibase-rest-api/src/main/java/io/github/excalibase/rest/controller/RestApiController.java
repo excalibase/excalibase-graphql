@@ -8,6 +8,7 @@ import io.github.excalibase.SqlDialect;
 import io.github.excalibase.json.JsonFieldOrder;
 import io.github.excalibase.errors.DataError;
 import io.github.excalibase.errors.DataErrorException;
+import io.github.excalibase.errors.DataErrors;
 import io.github.excalibase.rest.compiler.RestQueryCompiler;
 import io.github.excalibase.rest.service.OpenApiGenerator;
 import io.github.excalibase.rest.parser.FilterParser;
@@ -54,6 +55,7 @@ import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.transaction.CannotCreateTransactionException;
+import org.springframework.transaction.TransactionSystemException;
 import org.springframework.transaction.TransactionStatus;
 import org.springframework.transaction.support.TransactionTemplate;
 
@@ -440,6 +442,15 @@ public class RestApiController {
     public HttpResponse<Object> databaseUnreachable(CannotCreateTransactionException e) {
         log.warn("rest_database_unreachable: {}", e.getMessage());
         return RestErrors.response(DataError.projectUnavailable());
+    }
+
+    /** A commit that failed: when the connection was lost it, the write's outcome is unknown, never a retryable 503. */
+    @Error(exception = TransactionSystemException.class)
+    public HttpResponse<Object> transactionFailed(TransactionSystemException e) {
+        log.error("rest_transaction_failed", e);
+        return DataErrors.describe(e, null).map(RestErrors::response)
+                .orElseGet(() -> Reply.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                        .body(Map.of("error", "Mutation execution failed", "code", "internal_error")));
     }
 
     /** A request naming a column, operator or shape this caller's schema does not have. */

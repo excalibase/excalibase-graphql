@@ -4,6 +4,9 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.excalibase.compiler.SqlCompiler;
 import io.github.excalibase.compiler.WriteRetry;
+import io.github.excalibase.errors.DataError;
+import io.github.excalibase.errors.DataErrorException;
+import io.github.excalibase.errors.DataErrors;
 import io.github.excalibase.spi.MutationExecutor;
 import io.github.excalibase.utils.SqlUtils;
 import io.github.excalibase.http.Reply;
@@ -80,10 +83,10 @@ public class QueryExecutionService {
             try {
                 conn.setAutoCommit(false);
                 HttpResponse<Object> result = dispatchInsideTx(conn, compiled, params, mutationExecutor);
-                conn.commit();
+                commit(conn);
                 return result;
             } catch (SQLException | JsonProcessingException | RuntimeException e) {
-                conn.rollback();
+                rollbackQuietly(conn, e);
                 throw e;
             } finally {
                 conn.setAutoCommit(autoCommit);
@@ -102,14 +105,36 @@ public class QueryExecutionService {
             try {
                 conn.setAutoCommit(false);
                 String json = new MutationSequenceRunner(conn, compiled.params()).run(compiled.sequence());
-                conn.commit();
+                commit(conn);
                 return wrapResult(json);
             } catch (SQLException | JsonProcessingException | RuntimeException e) {
-                conn.rollback();
+                rollbackQuietly(conn, e);
                 throw e;
             } finally {
                 conn.setAutoCommit(autoCommit);
             }
+        }
+    }
+
+    /** A connection lost at commit leaves the write's outcome unknown, which the client must be told apart from a refusal. */
+    private static void commit(Connection conn) throws SQLException {
+        try {
+            conn.commit();
+        } catch (SQLException e) {
+            if (DataErrors.describe(e, null).filter(error -> DataError.PROJECT_UNAVAILABLE.equals(error.code())
+                    || DataError.COMMIT_UNKNOWN.equals(error.code())).isPresent()) {
+                throw new DataErrorException(DataError.commitUnknown());
+            }
+            throw e;
+        }
+    }
+
+    /** The rollback of a dead connection must not hide the failure that made it necessary. */
+    private static void rollbackQuietly(Connection conn, Exception failure) {
+        try {
+            conn.rollback();
+        } catch (SQLException e) {
+            failure.addSuppressed(e);
         }
     }
 

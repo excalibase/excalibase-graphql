@@ -4,7 +4,9 @@ import io.github.excalibase.SqlDialect;
 
 import java.sql.SQLException;
 import java.sql.SQLTransientConnectionException;
+import org.springframework.transaction.TransactionSystemException;
 import java.util.Optional;
+import java.util.Set;
 
 /**
  * Turns a failed request into the {@link DataError} its client should see, or nothing when the failure is
@@ -14,6 +16,9 @@ import java.util.Optional;
  */
 public final class DataErrors {
 
+    private static final Set<String> UNREACHABLE_STATES =
+            Set.of("08001", "08003", "08004", "08006", "08S01", "57P01", "57P03");
+
     private DataErrors() {
     }
 
@@ -21,6 +26,9 @@ public final class DataErrors {
         Optional<DataError> raised = raisedByEngine(failure);
         if (raised.isPresent()) {
             return raised;
+        }
+        if (commitOutcomeUnknown(failure)) {
+            return Optional.of(DataError.commitUnknown());
         }
         if (databaseUnreachable(failure)) {
             return Optional.of(DataError.projectUnavailable());
@@ -58,23 +66,37 @@ public final class DataErrors {
     }
 
     /**
-     * The database could not be reached: a pooled connection that could not be had in time, a SQLSTATE of class 08
-     * (connection exception), or a server shutting down (57P01) or not yet accepting connections (57P03).
+     * The database could not be reached: a pooled connection that could not be had in time, or a connection that
+     * was refused (08001, 08004), lost (08003, 08006, MySQL 08S01) or is going away (57P01, 57P03). Other class 08
+     * states, such as a protocol violation by the client's own request, are not an outage.
      */
     private static boolean databaseUnreachable(Throwable failure) {
         for (Throwable current = failure; current != null; current = next(current)) {
             if (current instanceof SQLTransientConnectionException) {
                 return true;
             }
-            if (current instanceof SQLException sql && isConnectionState(sql.getSQLState())) {
+            if (current instanceof SQLException sql && sql.getSQLState() != null && UNREACHABLE_STATES.contains(sql.getSQLState())) {
                 return true;
             }
         }
         return false;
     }
 
-    private static boolean isConnectionState(String state) {
-        return state != null && (state.startsWith("08") || "57P01".equals(state) || "57P03".equals(state));
+    /**
+     * The connection was lost while committing (SQLSTATE 08007, or Spring's failed commit): the write may have been
+     * applied, so the client must not retry it blindly. A failed rollback is not this: nothing was kept.
+     */
+    private static boolean commitOutcomeUnknown(Throwable failure) {
+        for (Throwable current = failure; current != null; current = next(current)) {
+            if (current instanceof SQLException sql && "08007".equals(sql.getSQLState())) {
+                return true;
+            }
+            if (current instanceof TransactionSystemException && current.getMessage() != null
+                    && current.getMessage().startsWith("Could not commit")) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static Optional<DataError> raisedByEngine(Throwable failure) {

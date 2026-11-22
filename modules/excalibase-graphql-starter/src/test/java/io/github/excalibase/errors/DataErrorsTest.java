@@ -69,6 +69,40 @@ class DataErrorsTest {
     }
 
     @Test
+    @DisplayName("only a refused, lost or shutting-down connection is an outage; a client-side 08 error is not")
+    void connectionClass_isNarrowedToRefusedLostAndShutdown() {
+        assertThat(DataErrors.describe(state("08P01"), generic)).isEmpty();
+        assertThat(DataErrors.describe(state("08000"), generic)).isEmpty();
+        assertThat(DataErrors.describe(state("08003"), generic).orElseThrow().code())
+                .isEqualTo(DataError.PROJECT_UNAVAILABLE);
+        assertThat(DataErrors.describe(state("08004"), generic).orElseThrow().code())
+                .isEqualTo(DataError.PROJECT_UNAVAILABLE);
+    }
+
+    @Test
+    @DisplayName("an unknown transaction outcome is commit_unknown with no retry invited, never a 503")
+    void unknownTransactionOutcome_isCommitUnknown() {
+        for (Throwable failure : new Throwable[] {state("08007"),
+                new org.springframework.transaction.TransactionSystemException("Could not commit JDBC transaction",
+                        state("08006"))}) {
+            DataError error = DataErrors.describe(failure, generic).orElseThrow();
+
+            assertThat(error.code()).isEqualTo(DataError.COMMIT_UNKNOWN);
+            assertThat(error.status()).isEqualTo(500);
+            assertThat(error.message()).doesNotContain("secret");
+        }
+    }
+
+    @Test
+    void aFailedRollback_isNotAnUnknownOutcome() {
+        var failure = new org.springframework.transaction.TransactionSystemException(
+                "Could not roll back JDBC transaction", state("08006"));
+
+        assertThat(DataErrors.describe(failure, generic).orElseThrow().code())
+                .isEqualTo(DataError.PROJECT_UNAVAILABLE);
+    }
+
+    @Test
     void anErrorTheEngineRaised_isReturnedAsIs() {
         DataError raised = DataError.invalidValue("id", "Invalid value for column 'id'");
 
