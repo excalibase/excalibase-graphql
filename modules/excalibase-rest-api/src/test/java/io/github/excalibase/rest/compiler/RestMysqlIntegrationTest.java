@@ -276,6 +276,20 @@ class RestMysqlIntegrationTest {
         }
 
         @Test
+        @SuppressWarnings("unchecked")
+        void nestedEmbedIgnoresColumnsThePlainTableLacks() throws Exception {
+            for (String hostile : List.of("x\\", "a'b", "\\'||sleep(2)||'", "\\' or sleep(2) or '")) {
+                var items = new RestQueryCompiler.EmbedSpec("order_items", List.of("product_id"));
+                var orders = new RestQueryCompiler.EmbedSpec("orders", List.of(hostile, "total"), null, List.of(items));
+                List<Map<String, Object>> customers = rows(compiler.compileSelect(query("test.customer",
+                        List.of("customer_id"), List.of(), List.of(orders),
+                        List.of(new RestQueryCompiler.OrderBySpec("customer_id", "ASC", null)))));
+                var aliceOrders = (List<Map<String, Object>>) customers.getFirst().get("orders");
+                assertEquals(java.util.Set.of("total", "order_items"), aliceOrders.getFirst().keySet(), hostile);
+            }
+        }
+
+        @Test
         void refusesAnUnknownFilterColumn() {
             var typo = query("test.customer", List.of(), List.of(filter("frist_name", "eq", "Alice")), List.of(), null);
             var failure = assertThrows(IllegalArgumentException.class, () -> compiler.compileSelect(typo));
