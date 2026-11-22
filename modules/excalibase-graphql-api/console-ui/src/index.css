@@ -1,0 +1,39 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --canvas: #f6f5f3;
+  --surface: #ffffff;
+  --sunken: #efedea;
+  --line: #dedbd6;
+  --ink: #1d1c1a;
+  --ink-soft: #6a665f;
+  --accent: #3b4bd8;
+  --accent-strong: #2e3bb0;
+  --accent-wash: #e9ebfb;
+  --danger: #b42318;
+  --warn: #b54708;
+  --ok: #067647;
+}
+
+@layer base {
+  html, body, #root { height: 100%; }
+  body { @apply bg-canvas font-sans text-sm text-ink antialiased; }
+  button { @apply cursor-pointer; }
+  button:disabled { @apply cursor-not-allowed opacity-50; }
+  :focus-visible { @apply outline-2 outline-offset-2 outline-accent; }
+}
+
+@layer components {
+  .btn { @apply inline-flex items-center gap-1.5 rounded-md border border-accent bg-accent px-3 py-1.5 font-medium text-white hover:bg-accent-strong; }
+  .btn-quiet { @apply inline-flex items-center gap-1.5 rounded-md border border-line bg-surface px-3 py-1.5 font-medium text-ink hover:bg-sunken; }
+  .btn-danger { @apply inline-flex items-center gap-1.5 rounded-md border border-danger bg-danger px-3 py-1.5 font-medium text-white; }
+  .btn-link { @apply bg-transparent p-0 font-medium text-accent underline-offset-2 hover:underline; }
+  .field { @apply w-full rounded-md border border-line bg-surface px-2.5 py-1.5 text-ink placeholder:text-soft; }
+  .card { @apply rounded-lg border border-line bg-surface; }
+  .cell { @apply border-b border-line px-3 py-2 text-left align-top; }
+  .hint { @apply text-xs text-soft; }
+  .diff-add { background: rgb(6 118 71 / 0.14); }
+  .diff-del { background: rgb(180 35 24 / 0.14); }
+}

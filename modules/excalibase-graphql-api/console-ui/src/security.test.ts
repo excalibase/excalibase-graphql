@@ -53,7 +53,15 @@ describe('the console source', () => {
     BANNED.forEach((token) => expect(text, token).not.toContain(token));
   });
 
-  test('sessionStorage appears nowhere yet: the secret has no place to rest until adminApi owns it', () => {
-    sources(SRC).forEach((path) => expect(readFileSync(path, 'utf8')).not.toContain('sessionStorage'));
+  test('sessionStorage is touched by one file only: the module that owns the admin secret', () => {
+    const users = sources(SRC).filter((path) => readFileSync(path, 'utf8').includes('sessionStorage')).map((path) => path.slice(SRC.length));
+
+    expect(users).toEqual([join('api', 'adminApi.ts')]);
+  });
+
+  test('the admin secret header is named in one file only', () => {
+    const users = sources(SRC).filter((path) => !path.includes(join('src', 'test')) && readFileSync(path, 'utf8').includes('X-Excalibase-Admin-Secret')).map((path) => path.slice(SRC.length));
+
+    expect(users).toEqual([join('api', 'adminApi.ts')]);
   });
 });
