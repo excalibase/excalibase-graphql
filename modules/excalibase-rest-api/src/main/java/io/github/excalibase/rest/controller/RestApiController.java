@@ -725,14 +725,7 @@ public class RestApiController {
     }
 
     private List<JsonNode> parseJsonList(Object body) {
-        if (body == null) return List.of();
-        try {
-            List<JsonNode> rows = new ArrayList<>();
-            mapper.readTree(body.toString()).forEach(rows::add);
-            return rows;
-        } catch (Exception _) {
-            return List.of();
-        }
+        return DatabaseRows.parse(mapper, body);
     }
 
     /** The order a read's fields are answered in: the selected columns, or the table's, then the embeds. */
