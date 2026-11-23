@@ -91,13 +91,17 @@ class SqliteWriteGateTest {
         Path file = Files.createTempFile("gate", ".db");
         create(file);
         Connection first = open(file);
-        first.setAutoCommit(false);
-        try (Statement statement = first.createStatement()) {
-            statement.executeUpdate("INSERT INTO t VALUES (1, 1)");
-        }
-        first.close();
-        try (Connection second = open(file); Statement statement = second.createStatement()) {
-            assertThat(statement.executeUpdate("INSERT INTO t VALUES (2, 2)")).isEqualTo(1);
+        try (Connection stillOpen = open(file); Connection second = open(file)) {
+            first.setAutoCommit(false);
+            try (Statement statement = first.createStatement()) {
+                statement.executeUpdate("INSERT INTO t VALUES (1, 1)");
+            }
+            first.close();
+
+            assertThat(SqliteWriteGate.kept("jdbc:sqlite:" + file)).as("another connection keeps the gate").isTrue();
+            try (Statement statement = second.createStatement()) {
+                assertThat(statement.executeUpdate("INSERT INTO t VALUES (2, 2)")).isEqualTo(1);
+            }
         } finally {
             Files.deleteIfExists(file);
         }
