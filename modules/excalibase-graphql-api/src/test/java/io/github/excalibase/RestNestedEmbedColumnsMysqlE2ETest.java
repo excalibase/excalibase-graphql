@@ -34,10 +34,21 @@ class RestNestedEmbedColumnsMysqlE2ETest extends EngineIntegrationTest {
     @Test
     void aColumnTheTableLacksIsNeverASyntaxError() {
         for (String column : List.of("x\\", "a'b", "\\'||sleep(2)||'", "\\' or sleep(2) or '")) {
-            HttpAnswer answer = embed(column);
+            HttpAnswer answer = embed("title," + column);
+            assertEquals(200, answer.status(), column);
             assertFalse(answer.status() >= 500, column + " => " + answer.status());
             assertFalse(answer.body().toLowerCase().contains("syntax"), column + " => " + answer.body());
         }
+    }
+
+    @Test
+    void anEmbedNamingOnlyUnknownColumnsIsRefused() {
+        assertEquals(400, embed("nope").status());
+    }
+
+    @Test
+    void aQuotedNameReads() {
+        assertEquals(200, embed("\"title\"").status());
     }
 
     @Test

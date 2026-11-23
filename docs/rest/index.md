@@ -88,6 +88,21 @@ as GraphQL's selection set:
 GET /api/v1/issues?select=id,title,status&limit=5
 ```
 
+Names in `select` (columns, aliases, embed names and `!hints`) are read against an allowlist: a letter (any script) or
+underscore, then letters, digits, `_` or `$`, up to 64 characters; an embed may also be `schema.table`. A name outside
+it is written in double quotes, which also take space, `.`, `#` and `-` (never a quote, backslash, comma, parenthesis,
+colon, `!` or control character): `?select="first name","p.q","2fa"`. A quoted name reaches the database only as a
+column checked against the table, so it names a column that exists or is dropped.
+
+By default a name outside the allowlist still passes, as before, and is dropped if the table has no such column; the
+engine logs one warning per kind of mismatch, never the name. An embed whose named columns the table has none of is a
+`400` in every mode, never the whole table.
+
+Set `app.rest.strict-select-names=true` (`APP_REST_STRICT_SELECT_NAMES`) to refuse them with a `400` instead.
+Breaking in strict mode: an unquoted name that starts with a digit or `$` (`2fa`, `$sys`) or holds a space, hyphen,
+dot or any other character outside the allowlist (`x-y`, `Owner Ref` as a hint), a name over 64 characters, an empty
+item (`id,,name`), and an embed written `a.b.c`. Quote the name to keep using it.
+
 ## Embedding related rows
 
 `?select=id,users(name)` embeds the rows a foreign key leads to (or from). When more than one relationship fits

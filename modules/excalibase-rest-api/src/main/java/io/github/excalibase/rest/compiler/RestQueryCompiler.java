@@ -1048,11 +1048,17 @@ public class RestQueryCompiler {
         return named.isEmpty() ? new ArrayList<>(known) : named;
     }
 
-    /** When access is enforced, a column the table lacks is a mistake to answer, never to drop. */
+    /**
+     * A column the table lacks is a mistake to answer when access is enforced; otherwise it is dropped, unless
+     * that leaves the embed with none of the columns it named, which would widen it to the whole table.
+     */
     private void requireKnownColumns(EmbedSpec embed, String table) {
-        if (!access.enforced()) return;
+        if (embed.columns().contains(STAR)) return;
         Set<String> known = schemaInfo.getColumns(table);
-        embed.columns().stream().filter(column -> !STAR.equals(column) && !known.contains(column)).findFirst()
+        boolean refuseAny = access.enforced();
+        boolean noneKnown = !embed.columns().isEmpty() && embed.columns().stream().noneMatch(known::contains);
+        if (!refuseAny && !noneKnown) return;
+        embed.columns().stream().filter(column -> !known.contains(column)).findFirst()
                 .ifPresent(column -> {
                     throw new IllegalArgumentException("Unknown column '" + column + "' on " + table);
                 });
