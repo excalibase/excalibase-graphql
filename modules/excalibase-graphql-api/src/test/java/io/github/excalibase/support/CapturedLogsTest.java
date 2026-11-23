@@ -24,7 +24,7 @@ class CapturedLogsTest {
 
     @Test
     @DisplayName("reading the captured events while another thread logs never fails")
-    void readWhileLogging() throws Exception {
+    void readWhileLogging() {
         Logger logger = (Logger) LoggerFactory.getLogger("captured-logs-test");
         logger.setLevel(Level.INFO);
         CapturedLogs captured = new CapturedLogs();
@@ -67,7 +67,7 @@ class CapturedLogsTest {
     private static void awaitUninterruptibly(CountDownLatch latch) {
         try {
             latch.await();
-        } catch (InterruptedException interrupted) {
+        } catch (InterruptedException _) {
             Thread.currentThread().interrupt();
         }
     }
