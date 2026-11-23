@@ -43,6 +43,20 @@ class WebSocketCloseCodesIntegrationTest extends EngineIntegrationTest {
     }
 
     @Test
+    @DisplayName("after its close frame the server keeps the connection until the client answers with its own")
+    void connectionStaysOpenUntilTheClientAnswersTheClose() throws IOException {
+        try (RawWebSocket socket = RawWebSocket.connect(http.base(), PATH, null)) {
+            assertThat(socket.readFrame().opcode()).isEqualTo(RawWebSocket.CLOSE);
+
+            assertThat(socket.serverClosedWithin(500)).as("closed before the client answered").isFalse();
+
+            socket.sendClose(4408);
+
+            assertThat(socket.serverClosedWithin(5000)).as("closed after the client answered").isTrue();
+        }
+    }
+
+    @Test
     @DisplayName("a permission change closes an open socket with 1012")
     void permissionChangeClosesWith1012() throws IOException {
         try (RawWebSocket socket = RawWebSocket.connect(http.base(), PATH,
