@@ -1,5 +1,6 @@
-server:
-  port: 0  # Use random port for testing to avoid conflicts
+micronaut:
+  server:
+    port: -1  # a free port: the application's own 10000 is a developer's engine, which a test must not take
 
 spring:
   application:
