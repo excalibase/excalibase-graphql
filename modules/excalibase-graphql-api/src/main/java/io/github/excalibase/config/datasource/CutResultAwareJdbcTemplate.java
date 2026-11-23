@@ -4,6 +4,8 @@ import io.github.excalibase.errors.ResultTooLarge;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.Collection;
+import java.util.Map;
+import java.util.Objects;
 import javax.sql.DataSource;
 import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -42,11 +44,16 @@ public class CutResultAwareJdbcTemplate extends JdbcTemplate {
         super.handleWarnings(statement);
     }
 
-    /** No answer: nothing, or a list with no row, or only rows with no value. */
+    /** No answer: nothing, or a list with no row, or only rows with no value (a REST read answers one row map). */
     private static boolean isMissing(Object answer) {
         if (answer instanceof Collection<?> rows) {
-            return rows.stream().allMatch(row -> row == null);
+            return rows.stream().allMatch(CutResultAwareJdbcTemplate::isMissingRow);
         }
         return answer == null;
+    }
+
+    /** A row of no value: nothing, or a row map (a REST read's) whose every value is null. */
+    private static boolean isMissingRow(Object row) {
+        return row == null || row instanceof Map<?, ?> values && values.values().stream().allMatch(Objects::isNull);
     }
 }

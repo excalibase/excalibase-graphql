@@ -84,4 +84,27 @@ class CutResultAwareJdbcTemplateTest {
 
         assertThat(template.queryForObject("SELECT ?", String.class, 1)).isNull();
     }
+
+    @Test
+    void aNullAnswerLeavesNothingBehind_forTheNextWriteOnTheSameThread() throws Exception {
+        answers(null);
+        when(statement.getWarnings()).thenReturn(warnings(3));
+        assertThat(template.queryForObject("SELECT ?", String.class, 1)).isNull();
+
+        when(statement.getWarnings()).thenReturn(warnings(FULL));
+
+        assertThat(template.update("INSERT INTO t SELECT ?", 1)).isEqualTo(1500);
+    }
+
+    @Test
+    void aRowWhoseEveryValueIsNull_isAMissingAnswer() throws Exception {
+        ResultSetMetaData metadata = rows.getMetaData();
+        when(metadata.getColumnName(1)).thenReturn("body");
+        when(metadata.getColumnLabel(1)).thenReturn("body");
+        when(rows.next()).thenReturn(true, false);
+        when(rows.getObject(1)).thenReturn(null);
+        when(statement.getWarnings()).thenReturn(warnings(FULL));
+
+        assertThatThrownBy(() -> template.queryForMap("SELECT ?", 1)).isInstanceOf(DataErrorException.class);
+    }
 }

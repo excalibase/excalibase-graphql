@@ -56,6 +56,8 @@ class MysqlLargeResultIntegrationTest extends EngineIntegrationTest {
                 + ", FOREIGN KEY (owner_id) REFERENCES owner (id)) DEFAULT CHARSET latin1");
         jdbc.execute("INSERT INTO wide (id, owner_id, " + String.join(", ", names) + ") WITH RECURSIVE seq(n) AS (SELECT 1 UNION ALL"
                 + " SELECT n + 1 FROM seq WHERE n < " + ROWS + ") SELECT n, 1, " + String.join(", ", values) + " FROM seq");
+        // Every row of this view raises a conversion warning: past 1,024 of them MySQL no longer keeps the packet one.
+        jdbc.execute("CREATE VIEW flood AS SELECT * FROM wide WHERE c1 + 0 >= 0");
         Map<String, String> properties = EngineProperties.isolated();
         properties.put("spring.datasource.url", mysql.getJdbcUrl());
         properties.put("spring.datasource.username", mysql.getUsername());
@@ -151,5 +153,15 @@ class MysqlLargeResultIntegrationTest extends EngineIntegrationTest {
         HttpAnswer read = http.get(REST + "note");
         assertThat(read.status()).as(read.body()).isEqualTo(200);
         assertThat(MAPPER.readTree(read.body()).get("data").get(0).get("body").asText()).isEqualTo(text);
+    }
+
+    @Test
+    void aBigResultBuriedUnderWarnings_isRefused_asJson() throws Exception {
+        assertRefusedAsTooLarge(http.get(REST + "flood?select=*&order=id.asc&limit=1000"));
+    }
+
+    @Test
+    void aBigResultBuriedUnderWarnings_isRefused_asCsv() throws Exception {
+        assertRefusedAsTooLarge(http.get(REST + "flood?select=*&order=id.asc&limit=1000", "Accept", "text/csv"));
     }
 }

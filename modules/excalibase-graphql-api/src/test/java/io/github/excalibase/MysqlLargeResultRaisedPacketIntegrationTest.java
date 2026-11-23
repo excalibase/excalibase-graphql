@@ -43,4 +43,21 @@ class MysqlLargeResultRaisedPacketIntegrationTest extends MysqlLargeResultIntegr
         assertThat(answer.status()).as(answer.body().length() + " bytes").isEqualTo(200);
         assertThat(new ObjectMapper().readTree(answer.body()).get("data").get(0).get("tag").asText()).isEqualTo("u");
     }
+
+    @Override
+    @Test
+    void aBigResultBuriedUnderWarnings_isRefused_asJson() throws Exception {
+        HttpAnswer answer = http.get("/test-proj/api/v1/flood?select=*&order=id.asc&limit=1000");
+
+        assertThat(answer.status()).isEqualTo(200);
+        assertThat(new ObjectMapper().readTree(answer.body()).get("data").size()).isEqualTo(1000);
+    }
+
+    @Override
+    @Test
+    void aBigResultBuriedUnderWarnings_isRefused_asCsv() throws Exception {
+        HttpAnswer answer = http.get("/test-proj/api/v1/flood?select=*&order=id.asc&limit=1000", "Accept", "text/csv");
+
+        assertThat(answer.status()).isEqualTo(200);
+    }
 }
