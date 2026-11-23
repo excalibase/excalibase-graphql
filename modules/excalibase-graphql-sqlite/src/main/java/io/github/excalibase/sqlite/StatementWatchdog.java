@@ -100,7 +100,8 @@ final class StatementWatchdog {
         String name = method.getName();
         if (watched.target() instanceof Connection) {
             switch (name) {
-                case "commit", "rollback", "close" -> gate.end();
+                case "commit", "rollback" -> gate.end();
+                case "close" -> gate.close();
                 case "setAutoCommit" -> gate.autoCommitSet(Boolean.TRUE.equals(args[0]));
                 default -> { }
             }
