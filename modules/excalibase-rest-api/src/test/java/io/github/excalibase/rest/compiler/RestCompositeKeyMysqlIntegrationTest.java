@@ -122,9 +122,9 @@ class RestCompositeKeyMysqlIntegrationTest {
     @Test
     @SuppressWarnings("unchecked")
     void keysSharingTheirFirstColumn_areToldApartByTheHintsTheErrorSuggests() throws Exception {
-        var ambiguous = assertThrows(DataErrorException.class,
-                () -> rows("tchild", List.of("id"), new RestQueryCompiler.EmbedSpec("tparent", List.of("name")),
-                        new RestQueryCompiler.OrderBySpec("id", "ASC", null)));
+        var unhinted = new RestQueryCompiler.EmbedSpec("tparent", List.of("name"));
+        var byId = new RestQueryCompiler.OrderBySpec("id", "ASC", null);
+        var ambiguous = assertThrows(DataErrorException.class, () -> rows("tchild", List.of("id"), unhinted, byId));
         assertThat(ambiguous.getMessage()).contains("tparent!a_id", "tparent!b_id").doesNotContain("tparent!tenant");
 
         var viaA = rows("tchild", List.of("id"), new RestQueryCompiler.EmbedSpec("tparent", List.of("name"), "a_id"),
