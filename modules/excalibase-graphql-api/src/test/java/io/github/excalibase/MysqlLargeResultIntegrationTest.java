@@ -46,6 +46,9 @@ class MysqlLargeResultIntegrationTest extends EngineIntegrationTest {
             names.add("c" + column);
             values.add("CONCAT('v', n, '-', " + column + ")");
         }
+        jdbc.execute("CREATE TABLE note (id INT PRIMARY KEY, body TEXT)");
+        jdbc.execute("CREATE TABLE big (id INT PRIMARY KEY, tag VARCHAR(10), a LONGTEXT, b LONGTEXT)");
+        jdbc.execute("INSERT INTO big VALUES (1, 't', REPEAT('x', 700000), REPEAT('y', 700000))");
         jdbc.execute("CREATE TABLE owner (id INT PRIMARY KEY)");
         jdbc.execute("INSERT INTO owner VALUES (1)");
         definitions.add("owner_id INT");
@@ -120,5 +123,33 @@ class MysqlLargeResultIntegrationTest extends EngineIntegrationTest {
         HttpAnswer answer = http.get(REST + "wide?select=id,c1&order=id.asc&limit=1000");
         assertThat(answer.status()).isEqualTo(200);
         assertThat(MAPPER.readTree(answer.body()).get("data").size()).isEqualTo(1000);
+    }
+
+    private void assertRefusedAsTooLarge(HttpAnswer answer) throws Exception {
+        assertThat(answer.status()).as(answer.body()).isEqualTo(413);
+        assertThat(MAPPER.readTree(answer.body()).get("code").asText()).isEqualTo("result_too_large");
+    }
+
+    @Test
+    void aSingleRowTooBigForOneAnswer_isRefused_notAnEmptyList() throws Exception {
+        assertRefusedAsTooLarge(http.get(REST + "big?id=eq.1"));
+    }
+
+    @Test
+    void aWriteWhoseRepresentationIsTooBig_isRefused_andNothingIsWritten() throws Exception {
+        assertRefusedAsTooLarge(http.patchJson(REST + "big?id=eq.1", Map.of("tag", "u"), "Prefer", "return=representation"));
+
+        HttpAnswer after = http.get(REST + "big?id=eq.1&select=id,tag");
+        assertThat(MAPPER.readTree(after.body()).get("data").get(0).get("tag").asText()).isEqualTo("t");
+    }
+
+    @Test
+    void textThatLooksLikeAnEngineMarker_isJustText() throws Exception {
+        String text = "~excalibase_result_too_large~";
+        assertThat(http.postJson(REST + "note", Map.of("id", 1, "body", text)).status()).isEqualTo(201);
+
+        HttpAnswer read = http.get(REST + "note");
+        assertThat(read.status()).as(read.body()).isEqualTo(200);
+        assertThat(MAPPER.readTree(read.body()).get("data").get(0).get("body").asText()).isEqualTo(text);
     }
 }

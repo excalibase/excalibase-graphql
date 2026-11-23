@@ -9,8 +9,6 @@ import io.github.excalibase.json.JsonFieldOrder;
 import io.github.excalibase.errors.DataError;
 import io.github.excalibase.errors.DataErrorException;
 import io.github.excalibase.errors.DataErrors;
-import io.github.excalibase.errors.ResultTooLarge;
-import com.fasterxml.jackson.core.JsonProcessingException;
 import io.github.excalibase.rest.compiler.RestQueryCompiler;
 import io.github.excalibase.rest.service.OpenApiGenerator;
 import io.github.excalibase.rest.parser.FilterParser;
@@ -837,7 +835,6 @@ public class RestApiController {
      * non-null inclusion, and each row's fields are put in {@code keys}' order.
      */
     private Object parseJson(String json, List<String> keys) {
-        ResultTooLarge.check(json);
         try {
             JsonNode tree = mapper.readTree(json);
             if (!tree.isArray()) return JsonFieldOrder.ordered(tree, keys);
@@ -858,15 +855,7 @@ public class RestApiController {
     }
 
     private List<JsonNode> parseJsonList(Object body) {
-        if (body == null) return List.of();
-        ResultTooLarge.check(body.toString());
-        try {
-            List<JsonNode> rows = new ArrayList<>();
-            mapper.readTree(body.toString()).forEach(rows::add);
-            return rows;
-        } catch (JsonProcessingException unreadable) {
-            throw new IllegalStateException("the database's answer is not JSON", unreadable);
-        }
+        return DatabaseRows.parse(mapper, body);
     }
 
     /** The order a read's fields are answered in: the selected columns, or the table's, then the embeds, each likewise. */

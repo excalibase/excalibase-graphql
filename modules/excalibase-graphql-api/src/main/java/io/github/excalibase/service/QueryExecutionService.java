@@ -4,10 +4,11 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.excalibase.compiler.SqlCompiler;
 import io.github.excalibase.compiler.WriteRetry;
-import io.github.excalibase.errors.ResultTooLarge;
 import io.github.excalibase.errors.DataError;
 import io.github.excalibase.errors.DataErrorException;
 import io.github.excalibase.errors.DataErrors;
+import io.github.excalibase.errors.ResultTooLarge;
+import io.github.excalibase.config.datasource.CutResultAwareJdbcTemplate;
 import io.github.excalibase.spi.MutationExecutor;
 import io.github.excalibase.utils.SqlUtils;
 import io.github.excalibase.http.Reply;
@@ -55,7 +56,6 @@ public class QueryExecutionService {
     public HttpResponse<Object> executeQuery(SqlCompiler.CompiledQuery compiled,
                                                MapSqlParameterSource params) throws JsonProcessingException {
         String json = namedJdbc.queryForObject(compiled.sql(), params, String.class);
-        ResultTooLarge.checkRead(json);
         return wrapResult(json);
     }
 
@@ -66,37 +66,29 @@ public class QueryExecutionService {
     public HttpResponse<Object> executeInContext(SqlCompiler.CompiledQuery compiled,
                                                    MapSqlParameterSource params,
                                                    MutationExecutor mutationExecutor) throws SQLException, JsonProcessingException {
-        return executeInContext(compiled, params, mutationExecutor, false);
-    }
-
-    /** As above; {@code read} when the request only reads, so that an answer the database could not build is refused. */
-    public HttpResponse<Object> executeInContext(SqlCompiler.CompiledQuery compiled,
-                                                   MapSqlParameterSource params,
-                                                   MutationExecutor mutationExecutor, boolean read)
-            throws SQLException, JsonProcessingException {
-        return executeInContext(compiled, params, mutationExecutor, new WriteRetry.Run(), read);
+        return executeInContext(compiled, params, mutationExecutor, new WriteRetry.Run());
     }
 
     private HttpResponse<Object> executeInContext(SqlCompiler.CompiledQuery compiled, MapSqlParameterSource params,
-                                                    MutationExecutor mutationExecutor, WriteRetry.Run run, boolean read)
+                                                    MutationExecutor mutationExecutor, WriteRetry.Run run)
             throws SQLException, JsonProcessingException {
         try {
-            return executeOnce(compiled, params, mutationExecutor, read);
+            return executeOnce(compiled, params, mutationExecutor);
         } catch (SQLException | JsonProcessingException | RuntimeException e) {
             if (!run.retry(e)) throw e;
         }
-        return executeInContext(compiled, params, mutationExecutor, run, read);
+        return executeInContext(compiled, params, mutationExecutor, run);
     }
 
     /** One transaction; a database that lost a lock to a concurrent request rolled it back, so it can run again. */
     private HttpResponse<Object> executeOnce(SqlCompiler.CompiledQuery compiled, MapSqlParameterSource params,
-                                             MutationExecutor mutationExecutor, boolean read)
+                                             MutationExecutor mutationExecutor)
             throws SQLException, JsonProcessingException {
         try (Connection conn = dataSource.getConnection()) {
             boolean autoCommit = conn.getAutoCommit();
             try {
                 conn.setAutoCommit(false);
-                HttpResponse<Object> result = dispatchInsideTx(conn, compiled, params, mutationExecutor, read);
+                HttpResponse<Object> result = dispatchInsideTx(conn, compiled, params, mutationExecutor);
                 commit(conn);
                 return result;
             } catch (SQLException | JsonProcessingException | RuntimeException e) {
@@ -164,20 +156,19 @@ public class QueryExecutionService {
     private HttpResponse<Object> dispatchInsideTx(Connection conn,
                                                     SqlCompiler.CompiledQuery compiled,
                                                     MapSqlParameterSource params,
-                                                    MutationExecutor mutationExecutor, boolean read)
-            throws SQLException, JsonProcessingException {
+                                                    MutationExecutor mutationExecutor) throws SQLException, JsonProcessingException {
         if (compiled.isTwoPhase()) {
             return executeTwoPhaseOn(conn, compiled, params, mutationExecutor);
         }
-        return executePlainOn(conn, compiled, read);
+        return executePlainOn(conn, compiled);
     }
 
     // ------------------------------------------------------------------------
     // Per-branch implementations against a shared Connection.
     // ------------------------------------------------------------------------
 
-    private HttpResponse<Object> executePlainOn(Connection conn, SqlCompiler.CompiledQuery compiled, boolean read)
-            throws SQLException, JsonProcessingException {
+    private HttpResponse<Object> executePlainOn(Connection conn,
+                                                  SqlCompiler.CompiledQuery compiled) throws SQLException, JsonProcessingException {
         SqlUtils.ResolvedSql resolvedSql = SqlUtils.resolveNamedParams(compiled.sql(), compiled.params());
         String json;
         try (PreparedStatement pstmt = conn.prepareStatement(resolvedSql.sql())) {
@@ -186,10 +177,8 @@ public class QueryExecutionService {
             }
             try (var rs = pstmt.executeQuery()) {
                 json = rs.next() ? rs.getString(1) : null;
+                ResultTooLarge.refuseIfCut(pstmt.getWarnings());
             }
-        }
-        if (read) {
-            ResultTooLarge.checkRead(json);
         }
         return wrapResult(json);
     }
@@ -201,7 +190,7 @@ public class QueryExecutionService {
         // Wrap the active connection so the existing MutationExecutor SPI works
         // inside our manual transaction. suppressClose=true keeps lifecycle ours.
         SingleConnectionDataSource scds = new SingleConnectionDataSource(conn, true);
-        NamedParameterJdbcTemplate connBoundJdbc = new NamedParameterJdbcTemplate(scds);
+        NamedParameterJdbcTemplate connBoundJdbc = new NamedParameterJdbcTemplate(new CutResultAwareJdbcTemplate(scds));
         String json = mutationExecutor.execute(compiled, params, connBoundJdbc);
         return wrapResult(json);
     }
@@ -211,7 +200,6 @@ public class QueryExecutionService {
      * written row the role may not read answers {@code "field": null}, not a missing key.
      */
     private HttpResponse<Object> wrapResult(String json) throws JsonProcessingException {
-        ResultTooLarge.check(json);
         if (json != null) {
             return Reply.ok(Map.of("data", objectMapper.readTree(json)));
         }
