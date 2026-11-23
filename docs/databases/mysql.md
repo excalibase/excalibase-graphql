@@ -98,3 +98,17 @@ leaves a row that already holds the key as it is instead of updating it.
 ```
 
 The shape is the same as PostgreSQL's: nested per column.
+
+## Large results
+
+MySQL builds a read's answer as one JSON value, and gives `NULL` (with only a warning) when that value is larger than
+`max_allowed_packet`. The engine reads the warning and answers `413` with the code `result_too_large` ("The result is too
+large to return in one response"): select fewer columns or lower the limit, or raise `max_allowed_packet`. It never
+answers an empty list for a result it could not build.
+
+Limit: MySQL keeps only the first `max_error_count` (1,024 by default) warnings of a statement. A read that raises that
+many warnings itself (a view or function that warns for every row it scans) can lose the one saying the result was cut. When
+such a read also comes back with no rows, the engine cannot tell "matched nothing" from "cut", and answers `413`
+`result_too_large` with the message "The result could not be confirmed complete: the database raised more warnings than it
+reports". Raising `max_error_count` per session needs a privilege a project's database user does not have, so the engine
+does not set it. Writes are not affected.

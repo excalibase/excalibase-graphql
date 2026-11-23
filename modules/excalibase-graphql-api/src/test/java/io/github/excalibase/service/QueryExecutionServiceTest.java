@@ -3,6 +3,7 @@ package io.github.excalibase.service;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.excalibase.compiler.SqlCompiler.CompiledQuery;
 import io.github.excalibase.compiler.TwoPhaseWrite;
+import io.github.excalibase.errors.DataErrorException;
 import io.github.excalibase.spi.MutationExecutor;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -16,6 +17,9 @@ import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 
 import javax.sql.DataSource;
 import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLWarning;
 import java.sql.Statement;
 import java.util.Map;
 
@@ -137,6 +141,70 @@ class QueryExecutionServiceTest {
                     assertThat(e.error().code()).isEqualTo("commit_unknown");
                     assertThat(e.error().message()).doesNotContain("connection closed");
                 });
+    }
+
+    private static final SQLWarning CUT = new SQLWarning("Result of json_arrayagg() was larger than max_allowed_packet",
+            "HY000", 1301);
+
+    private PreparedStatement preparedReturning(String json, SQLWarning warning) throws Exception {
+        Connection connection = mock(Connection.class);
+        when(dataSource.getConnection()).thenReturn(connection);
+        when(connection.getAutoCommit()).thenReturn(true);
+        PreparedStatement statement = mock(PreparedStatement.class);
+        when(connection.prepareStatement(anyString())).thenReturn(statement);
+        ResultSet rows = mock(ResultSet.class);
+        when(statement.executeQuery()).thenReturn(rows);
+        when(rows.next()).thenReturn(true);
+        when(rows.getString(1)).thenReturn(json);
+        when(statement.getWarnings()).thenReturn(warning);
+        return statement;
+    }
+
+    @Test
+    @DisplayName("a signed-in read the database cut short is result_too_large, not empty data")
+    void callerRead_cutShort_isRefused() throws Exception {
+        preparedReturning(null, CUT);
+        CompiledQuery read = selectQuery("SELECT 1");
+        MapSqlParameterSource none = new MapSqlParameterSource();
+        MutationExecutor unused = (c, p, jdbc) -> null;
+
+        assertThatThrownBy(() -> service.executeInContext(read, none, unused))
+                .isInstanceOfSatisfying(DataErrorException.class,
+                        refused -> assertThat(refused.error().code()).isEqualTo("result_too_large"));
+    }
+
+    @Test
+    @DisplayName("a write that cut its own answer short is refused and rolled back too")
+    void twoPhaseWrite_cutShort_isRefused() throws Exception {
+        Connection connection = mock(Connection.class);
+        when(dataSource.getConnection()).thenReturn(connection);
+        when(connection.getAutoCommit()).thenReturn(true);
+        Statement statement = mock(Statement.class);
+        when(connection.createStatement()).thenReturn(statement);
+        when(statement.getWarnings()).thenReturn(CUT);
+        MutationExecutor exec = (c, p, jdbc) -> {
+            jdbc.getJdbcTemplate().execute("SELECT 1");
+            return "{\"createUser\":{\"id\":7}}";
+        };
+        CompiledQuery write = twoPhase();
+        MapSqlParameterSource none = new MapSqlParameterSource();
+
+        assertThatThrownBy(() -> service.executeInContext(write, none, exec))
+                .isInstanceOfSatisfying(DataErrorException.class,
+                        refused -> assertThat(refused.error().code()).isEqualTo("result_too_large"));
+        verify(connection).rollback();
+        verify(connection, never()).commit();
+    }
+
+    @Test
+    @DisplayName("an answer with no warning and no value is still no data: only the warning is a refusal")
+    void callerRead_noValueNoWarning_isEmptyData() throws Exception {
+        preparedReturning(null, null);
+
+        HttpResponse<Object> response = service.executeInContext(selectQuery("SELECT 1"), new MapSqlParameterSource(),
+                (c, p, jdbc) -> null);
+
+        assertThat(response.body()).isEqualTo(Map.of("data", Map.of()));
     }
 
     private static CompiledQuery twoPhase() {

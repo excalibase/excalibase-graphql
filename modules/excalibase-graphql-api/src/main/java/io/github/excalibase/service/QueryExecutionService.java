@@ -7,6 +7,8 @@ import io.github.excalibase.compiler.WriteRetry;
 import io.github.excalibase.errors.DataError;
 import io.github.excalibase.errors.DataErrorException;
 import io.github.excalibase.errors.DataErrors;
+import io.github.excalibase.errors.ResultTooLarge;
+import io.github.excalibase.config.datasource.CutResultAwareJdbcTemplate;
 import io.github.excalibase.spi.MutationExecutor;
 import io.github.excalibase.utils.SqlUtils;
 import io.github.excalibase.http.Reply;
@@ -175,6 +177,7 @@ public class QueryExecutionService {
             }
             try (var rs = pstmt.executeQuery()) {
                 json = rs.next() ? rs.getString(1) : null;
+                ResultTooLarge.refuseIfCut(pstmt.getWarnings(), json == null);
             }
         }
         return wrapResult(json);
@@ -187,7 +190,7 @@ public class QueryExecutionService {
         // Wrap the active connection so the existing MutationExecutor SPI works
         // inside our manual transaction. suppressClose=true keeps lifecycle ours.
         SingleConnectionDataSource scds = new SingleConnectionDataSource(conn, true);
-        NamedParameterJdbcTemplate connBoundJdbc = new NamedParameterJdbcTemplate(scds);
+        NamedParameterJdbcTemplate connBoundJdbc = new NamedParameterJdbcTemplate(new CutResultAwareJdbcTemplate(scds));
         String json = mutationExecutor.execute(compiled, params, connBoundJdbc);
         return wrapResult(json);
     }
