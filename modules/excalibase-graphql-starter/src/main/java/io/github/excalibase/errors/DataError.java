@@ -23,6 +23,9 @@ public record DataError(int status, String code, String message, String constrai
     public static final String RAISED_EXCEPTION = "raised_exception";
     public static final String INVALID_VALUE = "invalid_value";
     public static final String PERMISSION_DENIED = "permission_denied";
+    /** The answer is bigger than the database can hand back as one value; a narrower select or a lower limit fits. */
+    public static final String RESULT_TOO_LARGE = "result_too_large";
+    private static final int PAYLOAD_TOO_LARGE = 413;
 
     private static final int BAD_REQUEST = 400;
     private static final int FORBIDDEN = 403;
@@ -47,6 +50,18 @@ public record DataError(int status, String code, String message, String constrai
 
     public static DataError badRequest(String code, String message, String constraint, String column) {
         return new DataError(BAD_REQUEST, code, message, constraint, column);
+    }
+
+    /** A read whose rows the database could not return as one value (MySQL's max_allowed_packet). */
+    public static DataError resultTooLarge() {
+        return new DataError(PAYLOAD_TOO_LARGE, RESULT_TOO_LARGE,
+                "The result is too large to return in one response; select fewer columns or lower the limit", null, null);
+    }
+
+    /** No rows beside a warning list so full that the one saying they were cut may be missing from it. */
+    public static DataError resultUnconfirmed() {
+        return new DataError(PAYLOAD_TOO_LARGE, RESULT_TOO_LARGE,
+                "The result could not be confirmed complete: the database raised more warnings than it reports", null, null);
     }
 
     public static DataError forbidden(String message, String column) {

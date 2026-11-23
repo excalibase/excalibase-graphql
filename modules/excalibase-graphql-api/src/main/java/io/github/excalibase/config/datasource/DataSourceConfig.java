@@ -104,7 +104,7 @@ public class DataSourceConfig {
 
     @Singleton
     JdbcTemplate jdbcTemplate(DataSource dataSource) {
-        return new JdbcTemplate(dataSource);
+        return new CutResultAwareJdbcTemplate(dataSource);
     }
 
     @Singleton
