@@ -85,7 +85,7 @@ final class SqliteWriteGate {
         Path resolved = Path.of(path).toAbsolutePath().normalize();
         try {
             return resolved.toRealPath().toString();
-        } catch (IOException missing) {
+        } catch (IOException _) {
             return resolved.toString();
         }
     }

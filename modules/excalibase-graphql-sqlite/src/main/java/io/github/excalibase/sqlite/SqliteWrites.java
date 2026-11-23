@@ -6,10 +6,14 @@ import java.util.Set;
 /** Tells whether a statement takes SQLite's write lock, reading only what the statement says, never what it quotes. */
 final class SqliteWrites {
 
-    private static final Set<String> STATEMENT_WRITES = Set.of("INSERT", "UPDATE", "DELETE", "REPLACE", "CREATE", "DROP",
+    private static final String INSERT = "INSERT";
+    private static final String UPDATE = "UPDATE";
+    private static final String DELETE = "DELETE";
+    private static final String REPLACE = "REPLACE";
+    private static final Set<String> CTE_BODY_WRITES = Set.of(INSERT, UPDATE, DELETE, REPLACE);
+    private static final Set<String> STATEMENT_WRITES = Set.of(INSERT, UPDATE, DELETE, REPLACE, "CREATE", "DROP",
             "ALTER", "VACUUM", "REINDEX");
-    private static final Set<String> CTE_BODY_WRITES = Set.of("INSERT", "UPDATE", "DELETE", "REPLACE");
-    private static final Set<String> CTE_BODY_STARTS = Set.of("SELECT", "VALUES", "INSERT", "UPDATE", "DELETE", "REPLACE");
+    private static final Set<String> CTE_BODY_STARTS = Set.of("SELECT", "VALUES", INSERT, UPDATE, DELETE, REPLACE);
 
     private SqliteWrites() {
     }

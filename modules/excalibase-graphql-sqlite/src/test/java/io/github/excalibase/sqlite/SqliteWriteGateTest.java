@@ -141,7 +141,7 @@ class SqliteWriteGateTest {
         Thread waiter = Thread.ofVirtual().start(() -> {
             try (Statement run = other.createStatement()) {
                 statement.run(run);
-            } catch (SQLException ignored) {
+            } catch (SQLException _) {
                 // the wait is what is measured, not how it ends
             }
         });
