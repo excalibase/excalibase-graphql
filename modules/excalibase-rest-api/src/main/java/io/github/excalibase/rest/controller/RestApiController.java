@@ -163,7 +163,7 @@ public class RestApiController {
     private HttpResponse<Object> handleSingular(RequestContext ctx, ParsedParams parsed) {
         var compiled = ctx.compiler().compileSelect(new RestQueryCompiler.SelectQuery(ctx.tableKey(), parsed.columns, parsed.filters, parsed.orConditions, parsed.embeds, parsed.orderSpecs, 2, 0, false));
         return executeInTx(compiled, ctx.scope(parsed.allFilters()), rows -> {
-            List<?> data = rowsOf(rows.get("body"), responseKeys(ctx, parsed));
+            List<?> data = rowsOf(rows.get("body"), responseShape(ctx, parsed));
             if (data.size() != 1) {
                 return Reply.status(HttpStatus.NOT_ACCEPTABLE).contentType(SINGULAR_TYPE)
                         .body(errorBody("not_acceptable", "Expected 1 row, got " + data.size()));
@@ -185,7 +185,7 @@ public class RestApiController {
         String orderCol = parsed.orderSpecs.isEmpty() ? null : parsed.orderSpecs.get(0).column();
         var query = new RestQueryCompiler.SelectQuery(ctx.tableKey(), parsed.columns, parsed.filters, parsed.orConditions, parsed.embeds, parsed.orderSpecs, fetchLimit + 1, 0, false, after, orderCol);
         return executeInTx(ctx.compiler().compileSelect(query), ctx.scope(parsed.allFilters()), rows -> {
-            List<?> data = rowsOf(rows.get("body"), responseKeys(ctx, parsed));
+            List<?> data = rowsOf(rows.get("body"), responseShape(ctx, parsed));
             boolean hasNext = data.size() > fetchLimit;
             return Reply.ok(Map.of("data", hasNext ? data.subList(0, fetchLimit) : data, "pageInfo", Map.of("hasNextPage", hasNext)));
         });
@@ -205,7 +205,7 @@ public class RestApiController {
         var compiled = ctx.compiler().compileSelect(new RestQueryCompiler.SelectQuery(ctx.tableKey(), parsed.columns, parsed.filters, parsed.orConditions, parsed.embeds, parsed.orderSpecs, clamped, offset, count));
         var resp = executeInTx(compiled, ctx.scope(parsed.allFilters()), rows -> {
             var response = new LinkedHashMap<String, Object>();
-            response.put("data", limit == 0 ? List.of() : rowsOf(rows.get("body"), responseKeys(ctx, parsed)));
+            response.put("data", limit == 0 ? List.of() : rowsOf(rows.get("body"), responseShape(ctx, parsed)));
             if (count && rows.containsKey("total_count")) {
                 long total = ((Number) rows.get("total_count")).longValue();
                 response.put("pagination", Map.of("total", total, "limit", limit == 0 ? 0 : clamped, "offset", offset));
@@ -848,7 +848,11 @@ public class RestApiController {
     }
 
     private List<JsonNode> rowsOf(Object body, List<String> keys) {
-        return parseJsonList(body).stream().map(row -> JsonFieldOrder.ordered(row, keys)).toList();
+        return rowsOf(body, JsonFieldOrder.Shape.flat(keys));
+    }
+
+    private List<JsonNode> rowsOf(Object body, JsonFieldOrder.Shape shape) {
+        return parseJsonList(body).stream().map(row -> JsonFieldOrder.ordered(row, shape)).toList();
     }
 
     private List<JsonNode> parseJsonList(Object body) {
@@ -862,12 +866,9 @@ public class RestApiController {
         }
     }
 
-    /** The order a read's fields are answered in: the selected columns, or the table's, then the embeds. */
-    private static List<String> responseKeys(RequestContext ctx, ParsedParams parsed) {
-        List<String> keys = new ArrayList<>(parsed.columns.isEmpty()
-                ? ctx.schemaInfo().getColumns(ctx.tableKey()) : parsed.columns);
-        keys.addAll(EmbedKeys.of(parsed.embeds, RestQueryCompiler.EmbedSpec::relationName, RestQueryCompiler.EmbedSpec::alias));
-        return keys;
+    /** The order a read's fields are answered in: the selected columns, or the table's, then the embeds, each likewise. */
+    private static JsonFieldOrder.Shape responseShape(RequestContext ctx, ParsedParams parsed) {
+        return ctx.compiler().shapeOf(ctx.tableKey(), parsed.columns, parsed.embeds);
     }
 
     private static RestQueryCompiler.EmbedSpec toCompilerEmbed(SelectParser.EmbedSpec e) {

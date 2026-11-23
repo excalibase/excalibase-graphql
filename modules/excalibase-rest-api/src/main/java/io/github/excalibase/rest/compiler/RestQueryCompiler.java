@@ -6,6 +6,7 @@ import io.github.excalibase.compiler.KeyedWrites;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.excalibase.DialectFeature;
 import io.github.excalibase.SqlDialect;
+import io.github.excalibase.json.JsonFieldOrder;
 import io.github.excalibase.compiler.VectorSearchBuilder;
 import io.github.excalibase.schema.SchemaInfo;
 import io.github.excalibase.schema.TableAccess;
@@ -946,6 +947,39 @@ public class RestQueryCompiler {
         sql.append(COMMA_SEP).append(parens(SELECT + COUNT_ALL + FROM + quotedTable + (cw.isEmpty() ? "" : WHERE + cw))).append(AS_TOTAL_COUNT);
     }
 
+
+    /**
+     * The order a read's rows are answered in: the selected columns ({@code *} meaning the table's, in its order), then
+     * the embeds, each laid out the same way. The database's JSON type keeps its own key order, not the table's.
+     */
+    public JsonFieldOrder.Shape shapeOf(String table, List<String> selected, List<EmbedSpec> embeds) {
+        Set<String> keys = new LinkedHashSet<>();
+        if (selected == null || selected.isEmpty()) {
+            keys.addAll(schemaInfo.getColumns(table));
+        }
+        for (String column : selected == null ? List.<String>of() : selected) {
+            if (STAR.equals(column)) keys.addAll(schemaInfo.getColumns(table));
+            else keys.add(column);
+        }
+        Map<String, JsonFieldOrder.Shape> embedded = new LinkedHashMap<>();
+        List<EmbedSpec> nested = embeds == null ? List.of() : embeds;
+        List<String> names = EmbedKeys.of(nested, EmbedSpec::relationName, EmbedSpec::alias);
+        for (int position = 0; position < nested.size(); position++) {
+            EmbedSpec embed = nested.get(position);
+            String target = embeddedTable(table, embed);
+            if (target == null) continue;
+            keys.add(names.get(position));
+            embedded.put(names.get(position), shapeOf(target, embed.columns(), embed.children()));
+        }
+        return new JsonFieldOrder.Shape(List.copyOf(keys), embedded);
+    }
+
+    private String embeddedTable(String table, EmbedSpec embed) {
+        var forward = findForwardFk(table, embed.relationName(), embed.fkHint());
+        if (forward != null) return forward.refTable();
+        var reverse = findReverseFk(table, embed.relationName(), embed.fkHint());
+        return reverse == null ? null : reverse.childTable();
+    }
 
     /** An embed's alias must not be one of the columns its select answers, all of the table's when it selects {@code *}. */
     private void requireNoAliasOverColumn(String table, List<String> selected, List<EmbedSpec> embeds) {
