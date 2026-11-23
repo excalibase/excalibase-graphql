@@ -15,12 +15,27 @@ public final class ResultTooLarge {
     private ResultTooLarge() {
     }
 
-    /** Throws the refusal when {@code warning}, the first of a statement's warnings or null, says a result was cut. */
-    public static void refuseIfCut(SQLWarning warning) {
+    /**
+     * MySQL keeps only the first max_error_count (1,024 by default) warnings of a statement; a full list may have
+     * dropped the one that matters, and the answer then reads as no rows.
+     */
+    static final int WARNINGS_KEPT = 1024;
+
+    /**
+     * Throws the refusal when {@code warning}, the first of a statement's warnings or null, says a result was cut, or
+     * when the answer is missing and the list is so full that the warning may have been dropped from it. A full list
+     * beside a real answer, or beside no answer at all (a write), is not a refusal.
+     */
+    public static void refuseIfCut(SQLWarning warning, boolean answerMissing) {
+        int count = 0;
         for (SQLWarning current = warning; current != null; current = current.getNextWarning()) {
+            count++;
             if (current.getErrorCode() == PACKET_OVERFLOWED) {
                 throw new DataErrorException(DataError.resultTooLarge());
             }
+        }
+        if (answerMissing && count >= WARNINGS_KEPT) {
+            throw new DataErrorException(DataError.resultTooLarge());
         }
     }
 }

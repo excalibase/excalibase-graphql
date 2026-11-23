@@ -177,7 +177,7 @@ public class QueryExecutionService {
             }
             try (var rs = pstmt.executeQuery()) {
                 json = rs.next() ? rs.getString(1) : null;
-                ResultTooLarge.refuseIfCut(pstmt.getWarnings());
+                ResultTooLarge.refuseIfCut(pstmt.getWarnings(), json == null);
             }
         }
         return wrapResult(json);
