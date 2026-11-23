@@ -9,7 +9,6 @@ import io.github.excalibase.json.JsonFieldOrder;
 import io.github.excalibase.errors.DataError;
 import io.github.excalibase.errors.DataErrorException;
 import io.github.excalibase.errors.DataErrors;
-import io.github.excalibase.rest.compiler.EmbedKeys;
 import io.github.excalibase.rest.compiler.RestQueryCompiler;
 import io.github.excalibase.rest.service.OpenApiGenerator;
 import io.github.excalibase.rest.parser.FilterParser;

@@ -43,6 +43,7 @@ public class MysqlSchemaLoader implements SchemaLoader {
 
     private static final String COL_TABLE_NAME = "table_name";
     private static final String COL_COLUMN_NAME = "column_name";
+    private static final String COL_POSITION = "position";
     private static final String COL_TABLE_SCHEMA = "table_schema";
     private static final String COL_DATA_TYPE = "data_type";
     private static final String COL_COLUMN_TYPE = "column_type";
@@ -182,7 +183,7 @@ public class MysqlSchemaLoader implements SchemaLoader {
         private static final Comparator<JsonNode> DECLARED = Comparator
                 .comparing((JsonNode node) -> node.get(COL_TABLE_SCHEMA).asText())
                 .thenComparing(node -> node.get(COL_TABLE_NAME).asText())
-                .thenComparingInt(node -> node.get("position").asInt());
+                .thenComparingInt(node -> node.get(COL_POSITION).asInt());
 
         final List<JsonNode> columns = new ArrayList<>();
         final List<JsonNode> primaryKeyParts = new ArrayList<>();
@@ -241,7 +242,7 @@ public class MysqlSchemaLoader implements SchemaLoader {
                 case "column" -> introspected.columns.add(node);
                 case "pk" -> introspected.primaryKeyParts.add(node);
                 case "fk" -> keyColumns.add(new KeyColumn(schema, node.get(COL_TABLE_NAME).asText(),
-                        node.get("constraint_name").asText(), node.get("position").asInt(),
+                        node.get("constraint_name").asText(), node.get(COL_POSITION).asInt(),
                         node.get("from_column").asText(), node.get("to_schema").asText(),
                         node.get("to_table").asText(), node.get("to_column").asText()));
                 case "view" -> info.addView(node.get(COL_TABLE_NAME).asText());
@@ -310,7 +311,7 @@ public class MysqlSchemaLoader implements SchemaLoader {
             WHERE kcu.TABLE_SCHEMA = ? AND kcu.REFERENCED_TABLE_NAME IS NOT NULL
               AND kcu.REFERENCED_TABLE_SCHEMA = ?
             """, (RowCallbackHandler) rs -> keyColumns.add(new KeyColumn(schema, rs.getString("from_table"),
-                    rs.getString("constraint_name"), rs.getInt("position"), rs.getString("from_column"),
+                    rs.getString("constraint_name"), rs.getInt(COL_POSITION), rs.getString("from_column"),
                     rs.getString("to_schema"), rs.getString("to_table"), rs.getString("to_column"))), schema, schema);
         addForeignKeys(keyColumns, ignored -> info);
     }
