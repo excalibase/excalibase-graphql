@@ -105,6 +105,12 @@ public record DataError(int status, String code, String message, String constrai
                 "The result is too large to return in one response; select fewer columns or lower the limit", null, null);
     }
 
+    /** No rows beside a warning list so full that the one saying they were cut may be missing from it. */
+    public static DataError resultUnconfirmed() {
+        return new DataError(PAYLOAD_TOO_LARGE, RESULT_TOO_LARGE,
+                "The result could not be confirmed complete: the database raised more warnings than it reports", null, null);
+    }
+
     /** The connection was lost at commit; says nothing of what was written. */
     public static DataError commitUnknown() {
         return new DataError(INTERNAL_ERROR_STATUS, COMMIT_UNKNOWN,

@@ -3,6 +3,7 @@ package io.github.excalibase.errors;
 import java.sql.SQLWarning;
 import org.junit.jupiter.api.Test;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -41,8 +42,9 @@ class ResultTooLargeTest {
     }
 
     @Test
-    void theCutWarning_isRefused() {
-        assertThatThrownBy(() -> ResultTooLarge.refuseIfCut(cut(), false)).isInstanceOf(DataErrorException.class);
+    void theCutWarning_isRefused_asTooLarge() {
+        assertThatThrownBy(() -> ResultTooLarge.refuseIfCut(cut(), false)).isInstanceOfSatisfying(DataErrorException.class,
+                refused -> assertThat(refused.error().message()).contains("too large"));
     }
 
     @Test
@@ -55,21 +57,22 @@ class ResultTooLargeTest {
 
     @Test
     void aFullWarningListWithNoAnswer_isRefused_becauseTheCutWarningMayHaveBeenDropped() {
-        SQLWarning full = chainOf(ResultTooLarge.WARNINGS_KEPT, null);
+        SQLWarning full = chainOf(ResultTooLarge.MAX_ERROR_COUNT, null);
 
-        assertThatThrownBy(() -> ResultTooLarge.refuseIfCut(full, true)).isInstanceOf(DataErrorException.class);
+        assertThatThrownBy(() -> ResultTooLarge.refuseIfCut(full, true)).isInstanceOfSatisfying(DataErrorException.class,
+                refused -> assertThat(refused.error().message()).contains("could not be confirmed complete"));
     }
 
     @Test
     void aFullWarningListWithARealAnswer_isNotRefused() {
-        SQLWarning full = chainOf(ResultTooLarge.WARNINGS_KEPT, null);
+        SQLWarning full = chainOf(ResultTooLarge.MAX_ERROR_COUNT, null);
 
         assertThatCode(() -> ResultTooLarge.refuseIfCut(full, false)).doesNotThrowAnyException();
     }
 
     @Test
     void aListJustUnderTheLimit_isNotRefused() {
-        SQLWarning almost = chainOf(ResultTooLarge.WARNINGS_KEPT - 1, null);
+        SQLWarning almost = chainOf(ResultTooLarge.MAX_ERROR_COUNT - 1, null);
 
         assertThatCode(() -> ResultTooLarge.refuseIfCut(almost, true)).doesNotThrowAnyException();
     }

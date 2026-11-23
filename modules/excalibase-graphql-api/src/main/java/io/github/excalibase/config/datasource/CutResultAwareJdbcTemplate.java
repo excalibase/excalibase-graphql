@@ -19,6 +19,10 @@ import org.springframework.jdbc.core.ResultSetExtractor;
  */
 public class CutResultAwareJdbcTemplate extends JdbcTemplate {
 
+    /** The column every compiled read answers in, and what an empty answer of it reads. */
+    private static final String ANSWER = "body";
+    private static final String NO_ROWS = "[]";
+
     private final ThreadLocal<Boolean> answerMissing = new ThreadLocal<>();
 
     public CutResultAwareJdbcTemplate(DataSource dataSource) {
@@ -52,8 +56,19 @@ public class CutResultAwareJdbcTemplate extends JdbcTemplate {
         return answer == null;
     }
 
-    /** A row of no value: nothing, or a row map (a REST read's) whose every value is null. */
+    /**
+     * A row of no value: nothing, or a row map (a REST read's) whose answer column holds no rows: NULL, or the empty
+     * array a dialect coalesces a NULL aggregate into. With a full warning list the two cannot be told from a read
+     * that matched nothing, so that is refused too.
+     */
     private static boolean isMissingRow(Object row) {
-        return row == null || row instanceof Map<?, ?> values && values.values().stream().allMatch(Objects::isNull);
+        if (row == null) {
+            return true;
+        }
+        if (row instanceof Map<?, ?> values) {
+            return values.values().stream().allMatch(Objects::isNull)
+                    || values.containsKey(ANSWER) && (values.get(ANSWER) == null || NO_ROWS.equals(values.get(ANSWER)));
+        }
+        return false;
     }
 }

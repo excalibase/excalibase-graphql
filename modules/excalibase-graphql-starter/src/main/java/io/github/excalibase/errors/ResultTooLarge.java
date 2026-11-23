@@ -16,10 +16,11 @@ public final class ResultTooLarge {
     }
 
     /**
-     * MySQL keeps only the first max_error_count (1,024 by default) warnings of a statement; a full list may have
-     * dropped the one that matters, and the answer then reads as no rows.
+     * MySQL keeps only the first max_error_count warnings of a statement, 1,024 unless a session raises it (which needs
+     * a privilege a project's database user does not have). A full list may have dropped the warning that matters, so
+     * an answer with no rows beside it cannot be confirmed complete.
      */
-    static final int WARNINGS_KEPT = 1024;
+    public static final int MAX_ERROR_COUNT = 1024;
 
     /**
      * Throws the refusal when {@code warning}, the first of a statement's warnings or null, says a result was cut, or
@@ -34,8 +35,8 @@ public final class ResultTooLarge {
                 throw new DataErrorException(DataError.resultTooLarge());
             }
         }
-        if (answerMissing && count >= WARNINGS_KEPT) {
-            throw new DataErrorException(DataError.resultTooLarge());
+        if (answerMissing && count >= MAX_ERROR_COUNT) {
+            throw new DataErrorException(DataError.resultUnconfirmed());
         }
     }
 }

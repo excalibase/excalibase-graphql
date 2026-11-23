@@ -1,6 +1,7 @@
 package io.github.excalibase.config.datasource;
 
 import io.github.excalibase.errors.DataErrorException;
+import io.github.excalibase.errors.ResultTooLarge;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
@@ -18,7 +19,7 @@ import static org.mockito.Mockito.when;
 
 class CutResultAwareJdbcTemplateTest {
 
-    private static final int FULL = 1024;
+    private static final int FULL = ResultTooLarge.MAX_ERROR_COUNT;
     private final PreparedStatement statement = mock(PreparedStatement.class);
     private final ResultSet rows = mock(ResultSet.class);
     private CutResultAwareJdbcTemplate template;
