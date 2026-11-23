@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.excalibase.compiler.SqlCompiler;
 import io.github.excalibase.compiler.WriteRetry;
+import io.github.excalibase.errors.ResultTooLarge;
 import io.github.excalibase.errors.DataError;
 import io.github.excalibase.errors.DataErrorException;
 import io.github.excalibase.errors.DataErrors;
@@ -54,6 +55,7 @@ public class QueryExecutionService {
     public HttpResponse<Object> executeQuery(SqlCompiler.CompiledQuery compiled,
                                                MapSqlParameterSource params) throws JsonProcessingException {
         String json = namedJdbc.queryForObject(compiled.sql(), params, String.class);
+        ResultTooLarge.checkRead(json);
         return wrapResult(json);
     }
 
@@ -64,29 +66,37 @@ public class QueryExecutionService {
     public HttpResponse<Object> executeInContext(SqlCompiler.CompiledQuery compiled,
                                                    MapSqlParameterSource params,
                                                    MutationExecutor mutationExecutor) throws SQLException, JsonProcessingException {
-        return executeInContext(compiled, params, mutationExecutor, new WriteRetry.Run());
+        return executeInContext(compiled, params, mutationExecutor, false);
+    }
+
+    /** As above; {@code read} when the request only reads, so that an answer the database could not build is refused. */
+    public HttpResponse<Object> executeInContext(SqlCompiler.CompiledQuery compiled,
+                                                   MapSqlParameterSource params,
+                                                   MutationExecutor mutationExecutor, boolean read)
+            throws SQLException, JsonProcessingException {
+        return executeInContext(compiled, params, mutationExecutor, new WriteRetry.Run(), read);
     }
 
     private HttpResponse<Object> executeInContext(SqlCompiler.CompiledQuery compiled, MapSqlParameterSource params,
-                                                    MutationExecutor mutationExecutor, WriteRetry.Run run)
+                                                    MutationExecutor mutationExecutor, WriteRetry.Run run, boolean read)
             throws SQLException, JsonProcessingException {
         try {
-            return executeOnce(compiled, params, mutationExecutor);
+            return executeOnce(compiled, params, mutationExecutor, read);
         } catch (SQLException | JsonProcessingException | RuntimeException e) {
             if (!run.retry(e)) throw e;
         }
-        return executeInContext(compiled, params, mutationExecutor, run);
+        return executeInContext(compiled, params, mutationExecutor, run, read);
     }
 
     /** One transaction; a database that lost a lock to a concurrent request rolled it back, so it can run again. */
     private HttpResponse<Object> executeOnce(SqlCompiler.CompiledQuery compiled, MapSqlParameterSource params,
-                                             MutationExecutor mutationExecutor)
+                                             MutationExecutor mutationExecutor, boolean read)
             throws SQLException, JsonProcessingException {
         try (Connection conn = dataSource.getConnection()) {
             boolean autoCommit = conn.getAutoCommit();
             try {
                 conn.setAutoCommit(false);
-                HttpResponse<Object> result = dispatchInsideTx(conn, compiled, params, mutationExecutor);
+                HttpResponse<Object> result = dispatchInsideTx(conn, compiled, params, mutationExecutor, read);
                 commit(conn);
                 return result;
             } catch (SQLException | JsonProcessingException | RuntimeException e) {
@@ -154,19 +164,20 @@ public class QueryExecutionService {
     private HttpResponse<Object> dispatchInsideTx(Connection conn,
                                                     SqlCompiler.CompiledQuery compiled,
                                                     MapSqlParameterSource params,
-                                                    MutationExecutor mutationExecutor) throws SQLException, JsonProcessingException {
+                                                    MutationExecutor mutationExecutor, boolean read)
+            throws SQLException, JsonProcessingException {
         if (compiled.isTwoPhase()) {
             return executeTwoPhaseOn(conn, compiled, params, mutationExecutor);
         }
-        return executePlainOn(conn, compiled);
+        return executePlainOn(conn, compiled, read);
     }
 
     // ------------------------------------------------------------------------
     // Per-branch implementations against a shared Connection.
     // ------------------------------------------------------------------------
 
-    private HttpResponse<Object> executePlainOn(Connection conn,
-                                                  SqlCompiler.CompiledQuery compiled) throws SQLException, JsonProcessingException {
+    private HttpResponse<Object> executePlainOn(Connection conn, SqlCompiler.CompiledQuery compiled, boolean read)
+            throws SQLException, JsonProcessingException {
         SqlUtils.ResolvedSql resolvedSql = SqlUtils.resolveNamedParams(compiled.sql(), compiled.params());
         String json;
         try (PreparedStatement pstmt = conn.prepareStatement(resolvedSql.sql())) {
@@ -176,6 +187,9 @@ public class QueryExecutionService {
             try (var rs = pstmt.executeQuery()) {
                 json = rs.next() ? rs.getString(1) : null;
             }
+        }
+        if (read) {
+            ResultTooLarge.checkRead(json);
         }
         return wrapResult(json);
     }
@@ -197,6 +211,7 @@ public class QueryExecutionService {
      * written row the role may not read answers {@code "field": null}, not a missing key.
      */
     private HttpResponse<Object> wrapResult(String json) throws JsonProcessingException {
+        ResultTooLarge.check(json);
         if (json != null) {
             return Reply.ok(Map.of("data", objectMapper.readTree(json)));
         }

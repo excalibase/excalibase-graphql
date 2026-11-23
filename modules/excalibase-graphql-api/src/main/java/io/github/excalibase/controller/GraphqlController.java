@@ -247,7 +247,7 @@ public class GraphqlController {
         boolean hasCaller = (userId != null && !userId.isBlank()) || claims != null;
         // A write always runs in a transaction it commits itself, so a connection lost at commit is told apart from one lost before it.
         if (compiled.isTwoPhase() || hasCaller || mutation) {
-            return queryExecutor.executeInContext(compiled, params, state.mutationExecutor());
+            return queryExecutor.executeInContext(compiled, params, state.mutationExecutor(), !mutation && !compiled.isTwoPhase());
         }
         return queryExecutor.executeQuery(compiled, params);
     }

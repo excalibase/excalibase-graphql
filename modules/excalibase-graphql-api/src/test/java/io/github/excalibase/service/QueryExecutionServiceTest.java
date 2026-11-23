@@ -19,6 +19,7 @@ import java.sql.Connection;
 import java.sql.Statement;
 import java.util.Map;
 
+import io.github.excalibase.errors.DataErrorException;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
@@ -64,14 +65,16 @@ class QueryExecutionServiceTest {
     }
 
     @Test
-    @DisplayName("executeQuery returns empty data map when JDBC returns null")
-    void executeQuery_nullResult_returnsEmptyDataMap() throws Exception {
+    @DisplayName("executeQuery refuses a read the database gave no answer for: never empty data")
+    void executeQuery_nullResult_isATypedError_notEmptyData() {
         when(namedJdbc.queryForObject(anyString(), any(MapSqlParameterSource.class), eq(String.class)))
                 .thenReturn(null);
+        MapSqlParameterSource none = new MapSqlParameterSource();
+        CompiledQuery query = selectQuery("SELECT ...");
 
-        HttpResponse<Object> response = service.executeQuery(selectQuery("SELECT ..."), new MapSqlParameterSource());
-
-        assertThat(response.body()).isEqualTo(Map.of("data", Map.of()));
+        assertThatThrownBy(() -> service.executeQuery(query, none))
+                .isInstanceOfSatisfying(DataErrorException.class,
+                        refused -> assertThat(refused.error().code()).isEqualTo("result_too_large"));
     }
 
     @Test

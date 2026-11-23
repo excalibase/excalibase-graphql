@@ -28,6 +28,9 @@ public record DataError(int status, String code, String message, String constrai
     /** The project's database could not be reached: down, restarting, or shut down by a pause. */
     public static final String PROJECT_UNAVAILABLE = "project_unavailable";
     public static final String UNKNOWN_RELATIONSHIP_HINT = "unknown_relationship_hint";
+    /** The answer is bigger than the database can hand back as one value; a narrower select or a lower limit fits. */
+    public static final String RESULT_TOO_LARGE = "result_too_large";
+    private static final int PAYLOAD_TOO_LARGE = 413;
     /** The project is paused on purpose; like {@link #PROJECT_UNAVAILABLE}, it means retry later. */
     public static final String PROJECT_PAUSED = "project_paused";
     /** The connection was lost while committing: the write may or may not have been applied. Never retry blindly. */
@@ -94,6 +97,12 @@ public record DataError(int status, String code, String message, String constrai
     /** The project is paused; the database comes back when it is resumed. */
     public static DataError projectPaused() {
         return new DataError(SERVICE_UNAVAILABLE, PROJECT_PAUSED, "Project paused", null, null);
+    }
+
+    /** A read whose rows the database could not return as one value (MySQL's max_allowed_packet). */
+    public static DataError resultTooLarge() {
+        return new DataError(PAYLOAD_TOO_LARGE, RESULT_TOO_LARGE,
+                "The result is too large to return in one response; select fewer columns or lower the limit", null, null);
     }
 
     /** The connection was lost at commit; says nothing of what was written. */

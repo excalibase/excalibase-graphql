@@ -4,6 +4,8 @@ import io.github.excalibase.DialectFeature;
 import io.github.excalibase.ExactNumbers;
 import io.github.excalibase.FilterCapabilities;
 import io.github.excalibase.SqlDialect;
+import io.github.excalibase.errors.ResultTooLarge;
+import io.github.excalibase.errors.ResultTooLarge;
 import io.github.excalibase.errors.DataError;
 import io.github.excalibase.errors.DataErrorException;
 import io.github.excalibase.permissions.compile.PermissionDialect;
@@ -137,7 +139,10 @@ public class MysqlDialect implements SqlDialect {
 
     @Override
     public String aggregateArray(String expr) {
-        return "JSON_ARRAYAGG(" + expr + ")";
+        // JSON_ARRAYAGG is NULL, with only a warning, past max_allowed_packet: the same as no rows. Rows with no result are
+        // the marker, which the engine turns into a refusal (ResultTooLarge); no rows stay NULL, for coalesceArray.
+        return "IFNULL(JSON_ARRAYAGG(" + expr + "), IF(COUNT(*) = 0, NULL, JSON_OBJECT("
+                + stringLiteral(ResultTooLarge.MARKER) + ", TRUE)))";
     }
 
     @Override
