@@ -54,10 +54,8 @@ class SqliteWriteGateTest {
                 }
             });
             assertThat(writing.await(5, TimeUnit.SECONDS)).isTrue();
-            Thread.sleep(300);
 
-            assertThat(waiter.getState()).as("a waiting writer is parked, not running in the busy handler")
-                    .isIn(Thread.State.WAITING, Thread.State.TIMED_WAITING);
+            assertThat(parkedWithin(waiter)).as("a waiting writer is parked, not running in the busy handler").isTrue();
             first.commit();
             waiter.join(5_000);
             assertThat(failure.get()).isNull();
@@ -147,10 +145,25 @@ class SqliteWriteGateTest {
                 // the wait is what is measured, not how it ends
             }
         });
-        Thread.sleep(150);
-        boolean parked = waiter.getState() == Thread.State.WAITING || waiter.getState() == Thread.State.TIMED_WAITING;
+        boolean parked = parkedWithin(waiter);
         waiter.join(2_000);
         return parked;
+    }
+
+    /** True once {@code thread} is parked; false if it finishes, or is still running after two seconds. */
+    private static boolean parkedWithin(Thread thread) {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(2);
+        while (System.nanoTime() < deadline) {
+            Thread.State state = thread.getState();
+            if (state == Thread.State.WAITING || state == Thread.State.TIMED_WAITING) {
+                return true;
+            }
+            if (state == Thread.State.TERMINATED) {
+                return false;
+            }
+            Thread.onSpinWait();
+        }
+        return false;
     }
 
     @FunctionalInterface

@@ -99,11 +99,12 @@ final class StatementWatchdog {
         SqliteWriteGate gate = watched.gate();
         String name = method.getName();
         if (watched.target() instanceof Connection) {
-            switch (name) {
-                case "commit", "rollback" -> gate.end();
-                case "close" -> gate.close();
-                case "setAutoCommit" -> gate.autoCommitSet(Boolean.TRUE.equals(args[0]));
-                default -> { }
+            if ("commit".equals(name) || "rollback".equals(name)) {
+                gate.end();
+            } else if ("close".equals(name)) {
+                gate.close();
+            } else if ("setAutoCommit".equals(name)) {
+                gate.autoCommitSet(Boolean.TRUE.equals(args[0]));
             }
         } else if (watched.target() instanceof Statement && "close".equals(name)) {
             gate.statementClosed();
@@ -131,7 +132,7 @@ final class StatementWatchdog {
         }
         return switch (method.getName()) {
             case "equals" -> args[0] != null && Proxy.isProxyClass(args[0].getClass())
-                    && Proxy.getInvocationHandler(args[0]) instanceof ProxyIdentity other && other.watched().target() == target;
+                    && Proxy.getInvocationHandler(args[0]) instanceof ProxyIdentity(Watched other) && other.target() == target;
             case "hashCode" -> System.identityHashCode(target);
             case "toString" -> "watched " + target;
             default -> NOT_OBJECT_METHOD;
