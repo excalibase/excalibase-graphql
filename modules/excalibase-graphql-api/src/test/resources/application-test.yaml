@@ -2,6 +2,10 @@ micronaut:
   server:
     port: -1  # a free port: the application's own 10000 is a developer's engine, which a test must not take
 
+endpoints:
+  all:
+    port: -1  # no separate management listener: the application's own 8081 is open to every interface
+
 spring:
   application:
     name: Excalibase graphql Test

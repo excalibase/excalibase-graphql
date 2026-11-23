@@ -15,6 +15,7 @@ class TestPortsTest {
             context.getEnvironment().start();
 
             assertThat(context.getProperty("micronaut.server.port", Integer.class)).contains(-1);
+            assertThat(context.getProperty("endpoints.all.port", Integer.class)).as("management port").contains(-1);
         }
     }
 }
