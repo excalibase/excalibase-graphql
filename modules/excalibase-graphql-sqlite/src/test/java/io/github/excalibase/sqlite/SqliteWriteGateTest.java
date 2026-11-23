@@ -98,6 +98,7 @@ class SqliteWriteGateTest {
             }
             first.close();
 
+            assertThat(stillOpen.isClosed()).as("the connection that keeps the gate").isFalse();
             assertThat(SqliteWriteGate.kept("jdbc:sqlite:" + file)).as("another connection keeps the gate").isTrue();
             try (Statement statement = second.createStatement()) {
                 assertThat(statement.executeUpdate("INSERT INTO t VALUES (2, 2)")).isEqualTo(1);
