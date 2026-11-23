@@ -101,12 +101,15 @@ public class RestApiController {
     private final ObjectMapper mapper;
     private final int maxRows;
     private final boolean capNestedLists;
+    private final boolean strictSelectNames;
 
     public RestApiController(SchemaProvider schemaProvider, NamedParameterJdbcTemplate namedJdbc,
                              TransactionTemplate txTemplate, ObjectMapper mapper,
                              @Value("${app.max-rows:30}") int maxRows,
-                             @Value("${app.cap-nested-lists:false}") boolean capNestedLists) {
+                             @Value("${app.cap-nested-lists:false}") boolean capNestedLists,
+                             @Value("${app.rest.strict-select-names:false}") boolean strictSelectNames) {
         this.capNestedLists = capNestedLists;
+        this.strictSelectNames = strictSelectNames;
         this.schemaProvider = schemaProvider;
         this.namedJdbc = namedJdbc;
         this.txTemplate = txTemplate;
@@ -682,7 +685,7 @@ public class RestApiController {
     }
 
     private ParsedParams parseSelectParams(String select, String order, Map<String, List<String>> allParams) {
-        var selectResult = SelectParser.parse(select);
+        var selectResult = SelectParser.parse(select, strictSelectNames);
         return new ParsedParams(
             selectResult.columns(),
             parseFilters(allParams),

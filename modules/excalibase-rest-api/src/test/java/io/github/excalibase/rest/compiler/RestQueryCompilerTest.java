@@ -812,6 +812,27 @@ class RestQueryCompilerTest {
     }
 
     @Test
+    @DisplayName("an unrestricted nested embed naming only unknown columns is refused, not widened to the whole table")
+    void nestedEmbedOnlyUnknownColumns_refused() {
+      var orders = new RestQueryCompiler.EmbedSpec("orders", List.of("nope"), null,
+          List.of(new RestQueryCompiler.EmbedSpec("products", List.of("id"))));
+      var query = new RestQueryCompiler.SelectQuery("public.products", List.of("id"), List.of(), List.of(),
+          List.of(orders), null, 10, 0, false);
+
+      var failure = assertThrows(IllegalArgumentException.class, () -> compiler.compileSelect(query));
+      assertTrue(failure.getMessage().contains("Unknown column 'nope'"), failure.getMessage());
+    }
+
+    @Test
+    @DisplayName("an unrestricted leaf embed naming only unknown columns is refused the same way")
+    void leafEmbedOnlyUnknownColumns_refused() {
+      var query = new RestQueryCompiler.SelectQuery("public.products", List.of("id"), List.of(), List.of(),
+          List.of(new RestQueryCompiler.EmbedSpec("orders", List.of("nope"))), null, 10, 0, false);
+
+      assertThrows(IllegalArgumentException.class, () -> compiler.compileSelect(query));
+    }
+
+    @Test
     @DisplayName("an unenforced nested embed leaves an unknown column out of the SQL (Postgres control)")
     void nestedEmbedUnknownColumn_ignoredWhenUnrestricted() {
       var orders = new RestQueryCompiler.EmbedSpec("orders", List.of("id", "x'\\"), null,

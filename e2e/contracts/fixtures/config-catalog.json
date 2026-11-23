@@ -256,6 +256,14 @@
       "declaredIn": "yaml"
     },
     {
+      "property": "app.rest.strict-select-names",
+      "default": "false",
+      "envForms": [
+        "APP_REST_STRICT_SELECT_NAMES"
+      ],
+      "declaredIn": "code"
+    },
+    {
       "property": "app.max-request-body",
       "default": "8MB",
       "envForms": [
