@@ -5,7 +5,6 @@ import io.github.excalibase.ExactNumbers;
 import io.github.excalibase.FilterCapabilities;
 import io.github.excalibase.SqlDialect;
 import io.github.excalibase.errors.ResultTooLarge;
-import io.github.excalibase.errors.ResultTooLarge;
 import io.github.excalibase.errors.DataError;
 import io.github.excalibase.errors.DataErrorException;
 import io.github.excalibase.permissions.compile.PermissionDialect;
