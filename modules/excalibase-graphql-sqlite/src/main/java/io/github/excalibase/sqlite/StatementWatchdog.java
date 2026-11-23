@@ -49,39 +49,77 @@ final class StatementWatchdog {
 
     /** {@code connection}, whose statements and result sets stop after {@code limitMillis} of running. */
     static Connection wrap(Connection connection, long limitMillis) {
-        return proxy(Connection.class, connection, limitMillis);
+        return proxy(Connection.class, new Watched(connection, limitMillis, SqliteWriteGate.of(connection), null));
     }
 
-    private static <T> T proxy(Class<T> type, T target, long limitMillis) {
+    private static <T> T proxy(Class<T> type, Watched watched) {
         return type.cast(Proxy.newProxyInstance(StatementWatchdog.class.getClassLoader(), new Class<?>[] {type},
-                new ProxyIdentity(target, limitMillis)));
+                new ProxyIdentity(watched)));
     }
 
-    private static Object invoke(Object target, Method method, Object[] args, long limitMillis) throws SQLException {
+    private static Object invoke(Watched watched, Method method, Object[] args) throws SQLException {
+        Object target = watched.target();
         Object own = objectMethod(target, method, args);
         if (own != NOT_OBJECT_METHOD) {
             return own;
         }
+        takeTurnToWrite(watched, method, args);
         boolean bounded = target instanceof Statement && RUNS.contains(method.getName())
                 || target instanceof ResultSet && "next".equals(method.getName());
-        Object result = bounded ? runBounded(target, method, args, limitMillis) : call(target, method, args);
+        Object result;
+        try {
+            result = bounded ? runBounded(target, method, args, watched.limitMillis()) : call(target, method, args);
+        } finally {
+            giveBackTurn(watched, method, args);
+        }
         if (result == null) {
             return null;
         }
         Class<?> returned = method.getReturnType();
         if (target instanceof Connection && Statement.class.isAssignableFrom(returned)) {
-            return proxy(statementType(returned), returned.cast(result), limitMillis);
+            String sql = args != null && args.length > 0 && args[0] instanceof String text ? text : null;
+            return proxy(statementType(returned), watched.forStatement(returned.cast(result), sql));
         }
         boolean rows = RESULT_SETS.contains(method.getName()) || "executeQuery".equals(method.getName());
         return target instanceof Statement && rows && result instanceof ResultSet set
-                ? proxy(ResultSet.class, set, limitMillis) : result;
+                ? proxy(ResultSet.class, watched.forStatement(set, null)) : result;
     }
 
-    /** What a proxy is: the real object it stands for and the bound its calls run under. */
-    private record ProxyIdentity(Object target, long limitMillis) implements InvocationHandler {
+    /** A write waits its turn before the call that runs it, so it waits where a virtual thread gives its carrier back. */
+    private static void takeTurnToWrite(Watched watched, Method method, Object[] args) throws SQLException {
+        if (!(watched.target() instanceof Statement) || !(RUNS.contains(method.getName()) || "addBatch".equals(method.getName()))) {
+            return;
+        }
+        String sql = args != null && args.length > 0 && args[0] instanceof String text ? text : watched.sql();
+        watched.gate().beforeWrite(sql);
+    }
+
+    /** The calls that end a transaction, or a write run with auto-commit, hand the file to the next writer. */
+    private static void giveBackTurn(Watched watched, Method method, Object[] args) {
+        SqliteWriteGate gate = watched.gate();
+        String name = method.getName();
+        if (watched.target() instanceof Connection) {
+            switch (name) {
+                case "commit", "rollback", "close" -> gate.end();
+                case "setAutoCommit" -> gate.autoCommitSet(Boolean.TRUE.equals(args[0]));
+                default -> { }
+            }
+        } else if (watched.target() instanceof Statement && "close".equals(name)) {
+            gate.statementClosed();
+        }
+    }
+
+    /** What a proxy stands for: the real object, the bound its calls run under, its connection's write gate and its SQL. */
+    private record Watched(Object target, long limitMillis, SqliteWriteGate gate, String sql) {
+        Watched forStatement(Object statementOrRows, String statementSql) {
+            return new Watched(statementOrRows, limitMillis, gate, statementSql);
+        }
+    }
+
+    private record ProxyIdentity(Watched watched) implements InvocationHandler {
         @Override
         public Object invoke(Object proxy, Method method, Object[] args) throws SQLException {
-            return StatementWatchdog.invoke(target, method, args, limitMillis);
+            return StatementWatchdog.invoke(watched, method, args);
         }
     }
 
@@ -92,7 +130,7 @@ final class StatementWatchdog {
         }
         return switch (method.getName()) {
             case "equals" -> args[0] != null && Proxy.isProxyClass(args[0].getClass())
-                    && Proxy.getInvocationHandler(args[0]) instanceof ProxyIdentity other && other.target() == target;
+                    && Proxy.getInvocationHandler(args[0]) instanceof ProxyIdentity other && other.watched().target() == target;
             case "hashCode" -> System.identityHashCode(target);
             case "toString" -> "watched " + target;
             default -> NOT_OBJECT_METHOD;
