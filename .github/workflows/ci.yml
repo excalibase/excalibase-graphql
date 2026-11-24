@@ -125,7 +125,14 @@ jobs:
       uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
       with:
         name: coverage-reports
-        path: modules/excalibase-graphql-api/target/site/jacoco-aggregate/
+        # every report sonar.coverage.jacoco.xmlReportPaths names, plus the surefire reports (the tests measure).
+        # pom.xml is only there so the common root is the workspace and the modules/... layout is kept.
+        path: |
+          pom.xml
+          modules/*/target/site/jacoco/jacoco.xml
+          modules/excalibase-graphql-api/target/site/jacoco-aggregate/jacoco.xml
+          modules/*/target/surefire-reports/TEST-*.xml
+        if-no-files-found: error
         retention-days: 7
 
     - name: Maven downloads in this job
@@ -171,13 +178,24 @@ jobs:
       uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
       with:
         name: coverage-reports
-        path: modules/excalibase-graphql-api/target/site/jacoco-aggregate/
+        path: .
 
-    - name: Check the coverage report is there
-      run: test -s modules/excalibase-graphql-api/target/site/jacoco-aggregate/jacoco.xml
+    # a missing report would silently shrink lines_to_cover in Sonar, so fail instead
+    - name: Check every coverage report is there
+      run: |
+        missing=0
+        for report in \
+          modules/excalibase-graphql-api/target/site/jacoco-aggregate/jacoco.xml \
+          modules/excalibase-graphql-api/target/site/jacoco/jacoco.xml \
+          modules/excalibase-rls-core/target/site/jacoco/jacoco.xml \
+          modules/excalibase-rls-jdbc/target/site/jacoco/jacoco.xml \
+          modules/excalibase-graphql-mongodb/target/site/jacoco/jacoco.xml; do
+          [[ -s $report ]] || { echo "::error::missing coverage report $report"; missing=1; }
+        done
+        exit $missing
 
     # compile only (main and test classes, no tests run, no clean so the downloaded report stays);
-    # sonar.coverage.jacoco.xmlReportPaths in the pom already points at the aggregate report
+    # sonar.coverage.jacoco.xmlReportPaths in the pom names the reports downloaded above
     - name: Compile and analyze
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
