@@ -22,11 +22,13 @@ final class JwtSettingsParser {
     static final Set<String> SYMMETRIC = Set.of("HS256", "HS384", "HS512");
     private static final Set<String> KEYS = Set.of("jwksUrl", "issuer", "secret", "algorithms", "audience",
             "claims", "clockSkew");
+    private static final Set<String> ENGINE_KEYS = Set.of("jwksUrl", "issuer", "algorithms", "audience", "claims",
+            "clockSkew");
     private static final Set<String> CLAIM_KEYS = Set.of("role", "defaultRole", "userId", "extra");
     private static final Pattern SECRET_REF = Pattern.compile("^(env:[A-Za-z_]\\w*|file:\\S.*)$");
     private static final Pattern EXTRA_NAME = Pattern.compile("^[a-z0-9][a-z0-9_-]{0,62}$");
     /** Names the engine fills itself; a document may not map a claim onto them. */
-    private static final Set<String> RESERVED_NAMES = Set.of("role", "userid", "user-id", "project-id", "projectid",
+    private static final Set<String> RESERVED_NAMES = Set.of("role", "user", "userid", "user-id", "project-id", "projectid",
             "email", "is-guest", "is_guest", "aal", "iss", "aud", "exp", "iat", "nbf", "jti", "token_use");
     private static final int MAX_PATH = 256;
     private static final int MAX_SKEW_SECONDS = 300;
@@ -41,7 +43,21 @@ final class JwtSettingsParser {
             throw invalid("jwt: must be an object");
         }
         rejectUnknown(jwt, KEYS, "jwt");
-        String secret = secretRef(jwt);
+        return build(jwt, secretRef(jwt));
+    }
+
+    /**
+     * The engine's own settings: the same grammar and checks as the document section, with the secret given by the
+     * caller (a document may only name a reference, the engine holds the value).
+     *
+     * @param secretSource a label for where the secret comes from, or null when the settings name a key set
+     */
+    static JwtSettings parseEngine(JsonNode settings, String secretSource) {
+        rejectUnknown(settings, ENGINE_KEYS, "jwt");
+        return build(settings, secretSource);
+    }
+
+    private static JwtSettings build(JsonNode jwt, String secret) {
         String jwksUrl = text(jwt, "jwksUrl");
         String issuer = text(jwt, "issuer");
         requireOneKeySource(secret, jwksUrl, issuer);

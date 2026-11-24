@@ -28,7 +28,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class MetadataSaveWarningsTest {
 
     private static final AdminConfig.ValidationSettings RULES =
-            new AdminConfig.ValidationSettings(ReservedSchemas.fromConfig(""), "proj-admin", false);
+            new AdminConfig.ValidationSettings(ReservedSchemas.fromConfig(""), "proj-admin", true);
     private static final byte[] DOCUMENT = AdminTestEngine.DOCUMENT.getBytes(StandardCharsets.UTF_8);
 
     private final AtomicInteger saves = new AtomicInteger();

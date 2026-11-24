@@ -192,7 +192,7 @@ class DocumentValidationTest {
     // --- warnings: the schema does not fit a rule; never a refusal ---
 
     private static DocumentValidation.Result withSchema(String text, SchemaCheck check) {
-        return DocumentValidation.validate(bytes(text), RESERVED, "demo", false, System::getenv, check);
+        return DocumentValidation.validate(bytes(text), RESERVED, "demo", true, System::getenv, check);
     }
 
     @Test

@@ -17,7 +17,9 @@ import io.github.excalibase.observability.requests.RequestMetrics;
 import io.github.excalibase.permissions.NoPermissionSource;
 import io.github.excalibase.permissions.PermissionCachePolicy;
 import io.github.excalibase.permissions.PermissionVersions;
+import io.github.excalibase.metadata.AuthSettingsReader;
 import io.github.excalibase.metadata.DbSettings;
+import io.github.excalibase.metadata.EngineAuth;
 import io.github.excalibase.metadata.MetadataHealth;
 import io.github.excalibase.metadata.MetadataSettings;
 import io.github.excalibase.metadata.MetadataSource;
@@ -32,6 +34,7 @@ import io.github.excalibase.security.JwtService;
 import io.github.excalibase.security.KnownProjects;
 import io.github.excalibase.security.LookupLimiter;
 import io.github.excalibase.security.TokenFileSource;
+import io.github.excalibase.security.TokenVerifier;
 import io.github.excalibase.security.UnknownProjectCache;
 import io.github.excalibase.service.VaultCredentialService;
 import io.micrometer.core.instrument.MeterRegistry;
@@ -43,10 +46,14 @@ import io.micronaut.context.annotation.Context;
 import io.micronaut.context.annotation.Factory;
 import io.micronaut.context.annotation.Requires;
 import io.micronaut.context.annotation.Value;
+import io.micronaut.context.env.Environment;
+import io.micronaut.core.naming.conventions.StringConvention;
 import io.micronaut.context.event.BeanCreatedEvent;
 import io.micronaut.context.event.BeanCreatedEventListener;
 import io.micronaut.core.annotation.Nullable;
 import jakarta.inject.Singleton;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.time.Duration;
 import java.util.Arrays;
@@ -55,6 +62,8 @@ import java.util.List;
 /** Wires the engine's beans. Property names are the engine's long-standing ones, read as before. */
 @Factory
 public class AppConfig {
+
+    private static final Logger log = LoggerFactory.getLogger(AppConfig.class);
 
     static final String NO_VERIFIER = "Authentication is on by default and needs a token verifier: set "
             + "app.security.auth.jwks-url or app.security.auth.hmac-secret. To run without authentication "
@@ -138,14 +147,37 @@ public class AppConfig {
     }
 
     /**
+     * The engine's own token settings ({@code app.auth.*}), or the legacy ones, or none. Eager, so a refusal (an
+     * unknown name, hosted mode, authentication switched off, both kinds set) stops start-up whatever else is on.
+     */
+    @Context
+    EngineAuth engineAuth(Environment environment, JwtEnabledSetting jwtEnabledSetting,
+                          @Value("${app.security.rls.policy-url:}") String policyUrl,
+                          @Value("${app.security.multi-tenant.provisioning-url:}") String provisioningUrl,
+                          @Value("${app.security.auth.jwks-url:}") String legacyJwksUrl,
+                          @Value("${app.security.auth.hmac-secret:}") String legacyHmacSecret) {
+        boolean hosted = !policyUrl.isBlank() || !provisioningUrl.isBlank();
+        boolean legacy = !legacyJwksUrl.isBlank() || !legacyHmacSecret.isBlank();
+        return AuthSettingsReader.resolve(new AuthSettingsReader.Inputs(hosted, jwtEnabledSetting.enabled(), legacy,
+                System.getenv().keySet(), environment.getProperties("app.auth", StringConvention.RAW).keySet(),
+                key -> environment.getProperty("app.auth." + key, String.class).orElse(null)));
+    }
+
+    /** Kept for callers with no engine settings of their own. */
+    JwtService jwtService(SecurityProperties security, int ttlMinutes, @Nullable PermissionProvider permissionSource) {
+        return jwtService(security, ttlMinutes, permissionSource, EngineAuth.NONE);
+    }
+
+    /**
      * With {@code metadata.source} set, the token settings may come from the document instead of the engine's own
      * (EXC-733): the service then asks the served document per token. The parser refuses a document that adds a
-     * {@code jwt:} section while the engine has settings of its own. With no metadata source nothing here differs.
+     * {@code jwt:} section while the engine has settings of its own, unless it is identical to {@code app.auth.*}.
+     * With {@code app.auth.*} the engine's verifier is the only one. With no metadata source nothing here differs.
      */
     @Context
     @Requires(property = "app.security.jwt-enabled", pattern = JwtEnabledSetting.ON_PATTERN)
     JwtService jwtService(SecurityProperties security, @Value("${app.cache.schema-ttl-minutes:30}") int ttlMinutes,
-                          @Nullable PermissionProvider permissionSource) {
+                          @Nullable PermissionProvider permissionSource, EngineAuth engineAuth) {
         MetadataSource metadata = permissionSource instanceof MetadataSource source ? source : null;
         SecurityProperties.Auth auth = security.auth();
         boolean hasJwks = auth != null && auth.hasJwksUrl();
@@ -153,10 +185,18 @@ public class AppConfig {
         if (hasJwks && hasHmac) {
             throw new IllegalStateException("app.security.auth: set either jwks-url or hmac-secret, not both");
         }
+        if (engineAuth.engine()) {
+            if (hasJwks || hasHmac) {
+                throw new IllegalStateException(AuthSettingsReader.BOTH_REFUSAL);
+            }
+            TokenVerifier verifier = engineAuth.verifier();
+            return JwtService.documentOnly().documentVerifier(() -> verifier);
+        }
         if (!hasJwks && !hasHmac) {
             if (metadata == null) {
                 throw new IllegalStateException(NO_VERIFIER);
             }
+            warnWhenNothingVerifiesTokens(metadata);
             return JwtService.documentOnly().documentVerifier(() -> metadata.tokenVerifier().orElse(null));
         }
         requireAudienceWhenMultiTenant(security.multiTenant() == null ? null : security.multiTenant().provisioningUrl(),
@@ -167,6 +207,18 @@ public class AppConfig {
             service.documentVerifier(() -> metadata.tokenVerifier().orElse(null));
         }
         return service;
+    }
+
+    /**
+     * A document with rules for a role besides anon and no verifier anywhere starts (an anon-only deployment is
+     * valid) but rejects every token. Said loudly once at start; the validate warning says it on every edit.
+     */
+    private static void warnWhenNothingVerifiesTokens(MetadataSource metadata) {
+        metadata.current().filter(snapshot -> snapshot.verifier() == null)
+                .filter(snapshot -> snapshot.permissions().tables().stream().anyMatch(rule -> !"anon".equals(rule.role())))
+                .ifPresent(_ -> log.warn("no_token_verifier the metadata document has rules for a role other than anon "
+                        + "but no token verifier is configured (app.auth.*, app.security.auth.* or a jwt: section): "
+                        + "every token is rejected"));
     }
 
     /**
@@ -208,8 +260,7 @@ public class AppConfig {
             S3Settings s3Settings,
             @Value("${app.project-id:}") String projectId,
             @Value("${app.reserved-schemas:}") String reservedSchemas,
-            @Value("${app.security.auth.jwks-url:}") String authJwksUrl,
-            @Value("${app.security.auth.hmac-secret:}") String authHmacSecret,
+            EngineAuth engineAuth,
             TokenFileSource provisioningTokenSource,
             @Value("${app.security.rls.policy-ttl-ms:30000}") long policyTtlMs,
             @Value("${app.security.permissions.max-stale-ms:300000}") long maxStaleMs,
@@ -224,7 +275,7 @@ public class AppConfig {
                 metadataDatabase(dbUrl, dbUsername, dbPassword, dbMigrate, dbPollIntervalMs, dbConnectTimeoutMs,
                         servedDatabase),
                 s3Settings,
-                !authJwksUrl.isBlank() || !authHmacSecret.isBlank());
+                engineAuth);
         return MetadataSources.create(settings, meters)
                 .<PermissionProvider>map(source -> source)
                 .orElseGet(() -> permissionProvider(policyUrl, provisioningTokenSource, policyTtlMs, maxStaleMs,

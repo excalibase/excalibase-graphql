@@ -49,7 +49,7 @@ final class MetadataSave {
             return failure(HttpStatus.PRECONDITION_REQUIRED, "if_match_required");
         }
         DocumentValidation.Result checked = DocumentValidation.validate(document, rules.reserved(), rules.projectId(),
-                rules.envJwtConfigured(), System::getenv, schemaCheck);
+                rules.engineAuth(), System::getenv, schemaCheck);
         if (!checked.valid()) {
             return HttpResponse.<Map<String, Object>>status(HttpStatus.UNPROCESSABLE_ENTITY).body(checked.toMap());
         }

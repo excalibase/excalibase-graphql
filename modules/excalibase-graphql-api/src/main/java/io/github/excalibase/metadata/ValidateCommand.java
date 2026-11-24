@@ -35,12 +35,28 @@ public final class ValidateCommand {
             err.println(USAGE);
             return 2;
         }
-        boolean envJwt = !env.getOrDefault("APP_SECURITY_AUTH_JWKS_URL", "").isBlank()
+        boolean legacy = !env.getOrDefault("APP_SECURITY_AUTH_JWKS_URL", "").isBlank()
                 || !env.getOrDefault("APP_SECURITY_AUTH_HMAC_SECRET", "").isBlank();
-        return validate(Path.of(args[1]), projectId, env.get("APP_RESERVED_SCHEMAS"), envJwt, env::get, out, err);
+        EngineAuth auth;
+        try {
+            auth = engineAuth(env, legacy);
+        } catch (IllegalStateException e) {
+            err.println("invalid: " + e.getMessage());
+            return 1;
+        }
+        return validate(Path.of(args[1]), projectId, env.get("APP_RESERVED_SCHEMAS"), auth, env::get, out, err);
     }
 
-    private static int validate(Path file, String projectId, String reserved, boolean envJwt,
+    /** The engine's own token settings as the engine reads them, from the same names. */
+    private static EngineAuth engineAuth(Map<String, String> env, boolean legacy) {
+        EngineAuth appAuth = AuthSettingsReader.fromEnv(env);
+        if (appAuth.engine() && legacy) {
+            throw new IllegalStateException(AuthSettingsReader.BOTH_REFUSAL);
+        }
+        return appAuth.engine() ? appAuth : EngineAuth.of(legacy);
+    }
+
+    private static int validate(Path file, String projectId, String reserved, EngineAuth auth,
                                 UnaryOperator<String> environment, PrintStream out, PrintStream err) {
         String text;
         try {
@@ -53,8 +69,10 @@ public final class ValidateCommand {
             return 2;
         }
         try {
-            PermissionSet permissions = new MetadataDocumentParser(ReservedSchemas.fromConfig(reserved), projectId, envJwt)
-                    .check(text, 1, environment);
+            MetadataDocumentParser.Checked checked = new MetadataDocumentParser(ReservedSchemas.fromConfig(reserved),
+                    projectId, auth).checkWithNotes(text, 1, environment);
+            PermissionSet permissions = checked.permissions();
+            checked.notes().forEach(note -> err.println("warning: " + note.code() + ": " + note.message()));
             out.println("ok: " + file + " (" + permissions.tables().size() + " table rules, "
                     + permissions.functions().size() + " tracked functions)");
             return 0;

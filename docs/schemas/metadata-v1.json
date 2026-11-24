@@ -21,7 +21,7 @@
     "jwt": {
       "type": "object",
       "additionalProperties": false,
-      "description": "Token verification for a standalone engine: Auth0, Cognito, Keycloak or any OIDC issuer. Absent means the engine's own settings apply. Secrets are never written here.",
+      "description": "DEPRECATED: move these settings to the engine (APP_AUTH_ISSUER, APP_AUTH_JWKS_URL, APP_AUTH_SECRET or APP_AUTH_SECRET_FILE, APP_AUTH_AUDIENCE, APP_AUTH_ALGORITHMS, APP_AUTH_CLOCK_SKEW_SECONDS, APP_AUTH_CLAIMS_ROLE, APP_AUTH_CLAIMS_DEFAULT_ROLE, APP_AUTH_CLAIMS_USER_ID, APP_AUTH_CLAIMS_EXTRA). Token verification for a standalone engine: Auth0, Cognito, Keycloak or any OIDC issuer. Absent means the engine's own settings apply. With app.auth.* set the section is refused unless it says exactly the same; with app.security.auth.* it is always refused. Secrets are never written here.",
       "required": [
         "audience"
       ],
