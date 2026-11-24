@@ -37,7 +37,7 @@ describe('patching a YAML document from the grid', () => {
     const next = setOperation(tree(DOCUMENT), TODOS, 'anon', 'select', true);
 
     const patched = patchYaml(DOCUMENT, next) as string;
-    const bare = (line: string) => line.replace(/\s+#.*$/, '').trimEnd();
+    const bare = (line: string) => (line.split(' #')[0] ?? '').trimEnd();
 
     expect(patched.split('\n').map(bare).slice(0, DOCUMENT.split('\n').length - 1)).toEqual(DOCUMENT.split('\n').map(bare).slice(0, -1));
   });

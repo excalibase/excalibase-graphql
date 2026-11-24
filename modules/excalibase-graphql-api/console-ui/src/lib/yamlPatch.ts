@@ -1,17 +1,11 @@
 // Edits a YAML permissions document in place: the grid and the token form change the tree, and this carries just those
 // changes into the text, so comments and the person's own layout stay. It never reads YAML for meaning: the engine's
 // /parse says what a text means, and the caller compares that with the tree this was meant to produce.
-import { Document, isMap, isSeq, parseDocument, visit, type Node, type YAMLSeq } from 'yaml';
+import { Document, isMap, isSeq, parseDocument, type Node, type YAMLSeq } from 'yaml';
 import type { PermissionsDoc } from './docmodel';
 
 type Path = (string | number)[];
 type Plain = Record<string, unknown>;
-
-// Words and numbers a YAML 1.1 reader turns into something other than text. They are written quoted, so every reader
-// agrees on what they are.
-const ONE_ONE_WORD = /^(y|n|yes|no|true|false|on|off|null|~)$/i;
-const ONE_ONE_NUMBER = /^[-+]?(0b[01_]+|0x[0-9a-f_]+|0[0-7_]*|\d[\d_]*(\.\d*)?([e][-+]?\d+)?|\.\d+|\.inf|\.nan|\d+(:[0-5]?\d)+(\.\d*)?)$/i;
-const DATE = /^\d{4}-\d\d-\d\d/;
 
 const isPlain = (value: unknown): value is Plain => value !== null && typeof value === 'object' && !Array.isArray(value);
 
@@ -27,18 +21,8 @@ export function treesEqual(left: unknown, right: unknown): boolean {
   return Object.is(left, right);
 }
 
-function nodeFor(doc: Document, value: unknown): Node {
-  const node = doc.createNode(value);
-  visit(node, {
-    Scalar(_key, scalar) {
-      const { value: held } = scalar;
-      if (typeof held === 'string' && (held === '' || ONE_ONE_WORD.test(held) || ONE_ONE_NUMBER.test(held) || DATE.test(held))) {
-        scalar.type = 'QUOTE_DOUBLE';
-      }
-    },
-  });
-  return node;
-}
+// The document keeps the YAML 1.1 rules it was read with, so the writer quotes what a 1.1 reader would not take as text.
+const nodeFor = (doc: Document, value: unknown): Node => doc.createNode(value);
 
 const ruleKey = (rule: unknown): string => (isPlain(rule) ? String(rule.table) + '\u0000' + String(rule.role) : '');
 

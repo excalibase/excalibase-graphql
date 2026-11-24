@@ -63,7 +63,7 @@ describe('a grid change to a YAML document', () => {
     expect(puts(engine.calls)).toHaveLength(0);
   });
 
-  it('a JSON document stays JSON and raises no comment notice', async () => {
+  it('a JSON document stays JSON in the grid\'s own layout and raises no comment notice', async () => {
     const json = JSON.stringify(parse(COMMENTED), null, 2) + '\n';
     const { user, engine } = await openConsole(ANON_PAGE, engineReading(json));
     await user.click(await insertCell());
@@ -73,6 +73,7 @@ describe('a grid change to a YAML document', () => {
     expect(within(dialog).queryByText(LOST)).toBeNull();
     await user.click(within(dialog).getByRole('button', { name: SAVE }));
     await screen.findByText(SAVED);
-    expect(puts(engine.calls)[0]?.body?.trimStart().startsWith('{')).toBe(true);
+    const sent = puts(engine.calls)[0]?.body ?? '';
+    expect(sent).toBe(JSON.stringify(JSON.parse(sent), null, 2) + '\n');
   });
 });
