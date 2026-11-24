@@ -85,7 +85,7 @@ The console is a page and a small API for editing the document. It is off by def
 | Setting | Meaning |
 |---|---|
 | `EXCALIBASE_CONSOLE_ENABLED` | `true` or `false`. Anything else refuses the start. Default `false`. |
-| `EXCALIBASE_CONSOLE_UI` | `legacy` or `next`: which console `/console` serves. Default `legacy`. With `next` the old console stays at `/console/legacy`. Anything else refuses the start, and so does `next` in a jar built without the new console (`mvn -Pconsole-ui package`). |
+| `EXCALIBASE_CONSOLE_UI` | `next` or `legacy`: which console `/console` serves. Default `next`, the built console. `legacy` is the old plain-script console, kept as an escape hatch. With `next` the old one is also at `/console/legacy`. Anything else refuses the start, and so does `next` in a jar built without the console (`mvn -Dconsole.ui.skip=true`); such a jar serves `legacy` when nothing is set. |
 | `EXCALIBASE_ADMIN_PORT` | The admin listener. Default `10001`. Must differ from the public and management ports. |
 | `EXCALIBASE_ADMIN_SECRET` or `EXCALIBASE_ADMIN_SECRET_FILE` | Required when the console is on. At least 32 printable ASCII characters. Set one, not both. |
 | `EXCALIBASE_ADMIN_MAX_FAILURES` | Wrong or missing secrets allowed per client address. Default `10`. |
@@ -194,10 +194,11 @@ Every save through the console or the admin API adds the text it replaces to `pe
 - **Saving from the grid or the sample-token form writes JSON and drops YAML comments and your own layout.** The
   console asks before such a save when the text it started from has comments or layout to lose: you confirm or
   cancel, and cancel writes nothing. The warning lists what the save changes. A save that gives a role an operation
-  (red), rewrites a rule or changes the token settings (amber) always asks first, comments or not, and "Don't ask
-  again" never hides that; a save that only removes access does not ask. Restore shows the same list. The text you replace stays in the history. To keep comments in the live file, edit it yourself
+  (red), rewrites a rule or changes the token settings (amber) always asks first, comments or not, and "Do not warn
+  me about comments again in this tab" never hides that; a save that only removes access does not ask. Restore shows the same list. The text you replace stays in the history. To keep comments in the live file, edit it yourself
   and let the engine pick it up.
-- **The explorer is not built yet.** The console has the rules grid, a sample token, the history of a file source
-  and export.
+- **The data browser, the API explorer and the row-rule builder are not built yet.** Their menu entries say so. The
+  console has the tables and their relationships, the permissions grid and YAML view, a sample token, the history of
+  a file source, replicas and export. Rules with a row filter show as "Some rows" and are edited as YAML.
 - **A change takes time to apply.** The engine applies a change after the poll that saw it and one more poll that
   reads the same content, so about two poll intervals.

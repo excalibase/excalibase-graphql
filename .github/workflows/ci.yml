@@ -83,6 +83,9 @@ jobs:
     # limit (EXC-792). Fork PRs have no secret and pull anonymously.
     env:
       DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+      # no test here serves the real console (they use a small fixture), so the console build is left out; the
+      # Console browser test job lints, tests and builds it
+      MAVEN_ARGS: "-Dconsole.ui.skip=true"
 
     steps:
     - name: Checkout code
@@ -135,7 +138,10 @@ jobs:
     needs: [maven-warm, test]
     if: ${{ !cancelled() && needs.test.result == 'success' }}
     runs-on: ubuntu-24.04
-    
+    # the jar ships the console, so it is built here; its lint and Vitest run in the Console browser test job
+    env:
+      MAVEN_ARGS: "-Dconsole.ui.skipTests=true -Dconsole.ui.skipLint=true"
+
     steps:
     - name: Checkout code
       uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
@@ -148,6 +154,9 @@ jobs:
         
     - name: Shared Maven cache
       uses: ./.github/actions/maven-cache
+    - name: Check that a build without the console drops a stale one
+      run: scripts/ci/check-console-skip.sh
+
     - name: Build with Make
       run: make build
 
@@ -189,6 +198,9 @@ jobs:
     runs-on: ubuntu-24.04
     # Only on push to main — native compile takes ~10 min, skip on PRs
     if: ${{ !cancelled() && needs.test.result == 'success' && (github.event_name == 'push' && github.ref == 'refs/heads/main') }}
+    # the binary ships the console, so it is built here; its lint and Vitest run in the Console browser test job
+    env:
+      MAVEN_ARGS: "-Dconsole.ui.skipTests=true -Dconsole.ui.skipLint=true"
 
     steps:
     - name: Checkout code

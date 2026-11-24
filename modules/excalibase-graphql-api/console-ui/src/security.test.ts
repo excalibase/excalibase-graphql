@@ -9,7 +9,8 @@ function sources(directory: string): string[] {
   return readdirSync(directory).flatMap((name) => {
     const path = join(directory, name);
     if (statSync(path).isDirectory()) {
-      return sources(path);
+      // the test helpers run only under Vitest and are never part of the build
+      return name === 'test' ? [] : sources(path);
     }
     return /\.(ts|tsx)$/.test(name) && !/\.test\.tsx?$/.test(name) ? [path] : [];
   });
@@ -53,7 +54,17 @@ describe('the console source', () => {
     BANNED.forEach((token) => expect(text, token).not.toContain(token));
   });
 
-  test('sessionStorage appears nowhere yet: the secret has no place to rest until adminApi owns it', () => {
-    sources(SRC).forEach((path) => expect(readFileSync(path, 'utf8')).not.toContain('sessionStorage'));
+  test('sessionStorage appears in the two files that own a tab-long setting: the admin secret (api) and the theme', () => {
+    const holders = sources(SRC)
+      .filter((path) => readFileSync(path, 'utf8').includes('sessionStorage'))
+      .map((path) => path.slice(SRC.length));
+
+    expect(holders.sort()).toEqual(['api.ts', 'theme.ts']);
+  });
+
+  test('the secret is read and written only by api.ts', () => {
+    sources(SRC)
+      .filter((path) => !path.endsWith('/api.ts'))
+      .forEach((path) => expect(readFileSync(path, 'utf8')).not.toContain('X-Excalibase-Admin-Secret'));
   });
 });

@@ -38,6 +38,12 @@ import java.util.Optional;
 @Produces(MediaType.APPLICATION_JSON)
 public class AdminController {
 
+    private static final String KEY_SCHEMA = "schema";
+    /** The key of a link's table, and the kind of one that is not a view. */
+    private static final String KEY_TABLE = "table";
+    private static final String KEY_COLUMNS = "columns";
+
+
     private final AdminMetadataView metadata;
     private final GraphqlSchemaManager schemas;
     private final AdminConfig.ValidationSettings validation;
@@ -133,17 +139,17 @@ public class AdminController {
         schema.getTableNames().stream().sorted().forEach(key -> {
             String schemaName = schemaOf(schema, key);
             if (!reserved.isReserved(schemaName)) {
-                tables.add(table(schema, key, schemaName));
+                tables.add(table(schema, key, schemaName, reserved));
             }
         });
         return tables;
     }
 
-    private static Map<String, Object> table(SchemaInfo schema, String key, String schemaName) {
+    private static Map<String, Object> table(SchemaInfo schema, String key, String schemaName, ReservedSchemas reserved) {
         Map<String, Object> table = new LinkedHashMap<>();
-        table.put("schema", schemaName);
+        table.put(KEY_SCHEMA, schemaName);
         table.put("name", key.startsWith(schemaName + ".") ? key.substring(schemaName.length() + 1) : key);
-        table.put("kind", schema.isView(key) ? "view" : "table");
+        table.put("kind", schema.isView(key) ? "view" : KEY_TABLE);
         List<String> primaryKeys = schema.getPrimaryKeys(key);
         List<Map<String, Object>> columns = new ArrayList<>();
         for (String column : schema.getColumns(key)) {
@@ -153,8 +159,55 @@ public class AdminController {
             entry.put("primaryKey", primaryKeys.contains(column));
             columns.add(entry);
         }
-        table.put("columns", columns);
+        table.put(KEY_COLUMNS, columns);
+        table.put("references", links(schema, key, reserved, true));
+        table.put("referencedBy", links(schema, key, reserved, false));
         return table;
+    }
+
+    /**
+     * The keys that tie this table to another: those it holds ({@code outgoing}) or those held by tables pointing at it.
+     * A table in a reserved schema is never named, so a key cannot reveal one.
+     */
+    private static List<Map<String, Object>> links(SchemaInfo schema, String key, ReservedSchemas reserved, boolean outgoing) {
+        List<Map<String, Object>> links = new ArrayList<>();
+        if (outgoing) {
+            schema.getAllForwardFks().forEach((field, fk) -> {
+                if (key.equals(ownerOf(field)) && !reserved.isReserved(schemaOf(schema, refKey(fk)))) {
+                    links.add(link(schema, refKey(fk), fk.fkColumns(), fk.refColumns()));
+                }
+            });
+        } else {
+            schema.getAllReverseFks().forEach((field, relation) -> {
+                if (key.equals(ownerOf(field)) && !reserved.isReserved(schemaOf(schema, relation.childTable()))) {
+                    links.add(link(schema, relation.childTable(), relation.fkColumns(), relation.refColumns()));
+                }
+            });
+        }
+        links.sort(Comparator.comparing((Map<String, Object> link) -> String.valueOf(link.get(KEY_SCHEMA)))
+                .thenComparing(link -> String.valueOf(link.get(KEY_TABLE)))
+                .thenComparing(link -> String.valueOf(link.get(KEY_COLUMNS))));
+        return links;
+    }
+
+    /** {@code columns} are on the table that holds the key; {@code referencedColumns} are on the table it points at. */
+    private static Map<String, Object> link(SchemaInfo schema, String otherKey, List<String> columns, List<String> referencedColumns) {
+        String otherSchema = schemaOf(schema, otherKey);
+        Map<String, Object> link = new LinkedHashMap<>();
+        link.put(KEY_SCHEMA, otherSchema);
+        link.put(KEY_TABLE, otherKey.startsWith(otherSchema + ".") ? otherKey.substring(otherSchema.length() + 1) : otherKey);
+        link.put(KEY_COLUMNS, columns);
+        link.put("referencedColumns", referencedColumns);
+        return link;
+    }
+
+    /** A relationship key is {@code <table>.<field>}; the table is everything before the last dot. */
+    private static String ownerOf(String relationshipKey) {
+        return relationshipKey.substring(0, relationshipKey.lastIndexOf('.'));
+    }
+
+    private static String refKey(SchemaInfo.FkInfo fk) {
+        return fk.refSchema() != null && !fk.refTable().contains(".") ? fk.refSchema() + "." + fk.refTable() : fk.refTable();
     }
 
     private static String schemaOf(SchemaInfo schema, String key) {
@@ -178,7 +231,7 @@ public class AdminController {
 
     private static Map<String, Object> function(SchemaInfo.FunctionInfo function) {
         Map<String, Object> entry = new LinkedHashMap<>();
-        entry.put("schema", function.schema());
+        entry.put(KEY_SCHEMA, function.schema());
         entry.put("name", function.name());
         entry.put("kind", function.kind().name().toLowerCase(Locale.ROOT));
         entry.put("returnsSet", function.returnsSet());
