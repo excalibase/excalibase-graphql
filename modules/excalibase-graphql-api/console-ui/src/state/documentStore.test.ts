@@ -166,8 +166,24 @@ describe('the document store', () => {
     await store.save();
 
     expect(api.putMetadata).toHaveBeenCalledWith(PLAIN + ' ', 's1');
-    expect(store.snapshot().outcome).toEqual({ kind: 'saved', version: 'v2', historyMissed: false });
+    expect(store.snapshot().outcome).toEqual({ kind: 'saved', version: 'v2', historyMissed: false, warnings: [] });
     expect(store.snapshot().meta?.sourceVersion).toBe('s2');
+  });
+
+  test('the warnings of a save are kept with its outcome, and those of a restore with its note', async () => {
+    const store = await loaded(PLAIN);
+    store.edit(PLAIN + ' ');
+    const warnings = [{ message: 'Table `public.ghosts` does not exist in the database yet.' }];
+    api.putMetadata.mockResolvedValue({ version: 'v2', warnings });
+    api.getMetadata.mockResolvedValue(meta(PLAIN + ' ', { sourceVersion: 's2' }));
+
+    await store.save();
+    expect(store.snapshot().outcome).toEqual({ kind: 'saved', version: 'v2', historyMissed: false, warnings });
+
+    api.restore.mockResolvedValue({ version: 'v3', warnings });
+    await store.askRestore({ id: 1, at: '2026-11-20T10:00:00Z', hash: 'h', size: 3, text: PLAIN });
+    await store.confirm(false);
+    expect(store.snapshot().historyNote).toMatchObject({ kind: 'ok', warnings });
   });
 
   test('a save that gives anon access asks first, and writes only after the confirm', async () => {

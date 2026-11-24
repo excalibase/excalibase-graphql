@@ -1,9 +1,22 @@
 import { Download, Save } from 'lucide-react';
+import type { Warning } from '../api/adminApi';
 import { exportName } from '../model/docmodel';
 import { OUTCOME_TEXT, type Outcome } from '../messages';
 import { saveAs } from '../download';
 import { useDocument } from '../state/DocumentContext';
 import { ErrorNote } from './ui';
+
+export function WarningList({ warnings, heading }: { readonly warnings: readonly Warning[] | undefined; readonly heading: string }) {
+  if (!warnings || warnings.length === 0) {
+    return null;
+  }
+  return (
+    <div role="alert" id="warnings" className="text-warn">
+      <p>{heading}</p>
+      <ul className="ml-5 list-disc">{warnings.map((warning) => <li key={warning.message}>{warning.message}</li>)}</ul>
+    </div>
+  );
+}
 
 export function HistoryMissed() {
   return <p role="alert" className="text-warn">Saved, but this version could not be added to History.</p>;
@@ -53,6 +66,7 @@ export function OutcomeView({ outcome }: { readonly outcome: Outcome | null }) {
         ? <p role="status" className="text-ok">{text}</p>
         : <ErrorNote>{text}</ErrorNote>}
       {outcome.kind === 'saved' && outcome.historyMissed ? <HistoryMissed /> : null}
+      {outcome.kind === 'saved' ? <WarningList warnings={outcome.warnings} heading="Saved, but the database does not fit everything in it:" /> : null}
     </div>
   );
 }

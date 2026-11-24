@@ -240,7 +240,7 @@ export class DocumentStore {
     try {
       const saved = await adminApi.putMetadata(this.state.draft, meta.sourceVersion);
       await this.load();
-      this.set({ outcome: { kind: 'saved', version: saved.version, historyMissed: saved.historyRecorded === false }, theirs: null });
+      this.set({ outcome: { kind: 'saved', version: saved.version, historyMissed: saved.historyRecorded === false, warnings: saved.warnings ?? [] }, theirs: null });
     } catch (failure) {
       if (failure instanceof ApiError && failure.status === 401) {
         this.fail(failure);
@@ -292,7 +292,7 @@ export class DocumentStore {
       const restored = await adminApi.restore(entry.id, meta.sourceVersion);
       await this.load();
       this.set({ historyNote: { kind: 'ok', text: 'Restored. The engine now serves version ' + restored.version + '.',
-        historyMissed: restored.historyRecorded === false }, outcome: null });
+        historyMissed: restored.historyRecorded === false, warnings: restored.warnings ?? [] }, outcome: null });
     } catch (failure) {
       if (failure instanceof ApiError && failure.status === 401) {
         this.fail(failure);

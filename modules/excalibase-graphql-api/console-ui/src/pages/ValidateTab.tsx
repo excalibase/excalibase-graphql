@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { adminApi, type ValidateReply } from '../api/adminApi';
+import { WarningList } from '../components/SaveBar';
 import { ErrorNote } from '../components/ui';
 import { messageOf } from '../messages';
 
@@ -26,9 +27,7 @@ export function ValidateTab() {
       {reply && !reply.valid ? (
         <ErrorNote><p>Not valid:</p><ul className="ml-5 list-disc">{(reply.errors ?? []).map((message) => <li key={message}>{message}</li>)}</ul></ErrorNote>
       ) : null}
-      {reply?.warnings && reply.warnings.length > 0 ? (
-        <div role="status" className="text-warn"><p>Warnings:</p><ul className="ml-5 list-disc">{reply.warnings.map((warning) => <li key={warning.message}>{warning.message}</li>)}</ul></div>
-      ) : null}
+      <WarningList warnings={reply?.warnings} heading="Valid, but the database does not fit everything in it:" />
     </section>
   );
 }

@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import { adminApi, type HistoryText } from '../api/adminApi';
-import { HistoryMissed } from '../components/SaveBar';
+import { HistoryMissed, WarningList } from '../components/SaveBar';
 import { ErrorNote } from '../components/ui';
 import { saveAs } from '../download';
 import { lineDiff, withContext, type ShownLine } from '../model/diff';
@@ -87,7 +87,7 @@ export function HistoryTab() {
       <p className="hint">Each save adds the text it replaced, comments included. The last 20 versions are kept. Edits made to the file outside the console are not recorded.</p>
       {failure ? <ErrorNote>{failure}</ErrorNote> : null}
       {note?.kind === 'ok' ? (
-        <div><p role="status" className="text-ok">{note.text}</p>{note.historyMissed ? <HistoryMissed /> : null}</div>
+        <div><p role="status" className="text-ok">{note.text}</p>{note.historyMissed ? <HistoryMissed /> : null}<WarningList warnings={note.warnings} heading="Restored, but the database does not fit everything in it:" /></div>
       ) : null}
       {note?.kind === 'error' ? (
         <ErrorNote><p>{note.text}</p>{note.errors ? <ul className="ml-5 list-disc">{note.errors.map((m) => <li key={m}>{m}</li>)}</ul> : null}</ErrorNote>

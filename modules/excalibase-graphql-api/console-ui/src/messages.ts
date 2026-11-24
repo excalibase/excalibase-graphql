@@ -1,4 +1,4 @@
-import { ApiError } from './api/adminApi';
+import { ApiError, type Warning } from './api/adminApi';
 
 const MESSAGES: Record<string, string> = {
   unauthorized: 'That secret was not accepted.',
@@ -17,7 +17,7 @@ export function describeFailure(failure: ApiError): string {
 export const messageOf = (failure: unknown): string => (failure instanceof ApiError ? describeFailure(failure) : UNREACHABLE);
 
 export type Outcome =
-  | { kind: 'saved'; version: string; historyMissed: boolean }
+  | { kind: 'saved'; version: string; historyMissed: boolean; warnings: Warning[] }
   | { kind: 'conflict'; currentVersion: string }
   | { kind: 'invalid'; errors: string[] }
   | { kind: 'readonly' | 'missing' | 'refused' | 'unreachable' }
@@ -57,7 +57,7 @@ export const OUTCOME_TEXT: Record<string, (outcome: never) => string> = {
   failed: (outcome: { code: string }) => 'The save failed (' + outcome.code + ').',
 };
 
-export interface Note { kind: 'ok' | 'error'; text: string; errors?: string[]; historyMissed?: boolean }
+export interface Note { kind: 'ok' | 'error'; text: string; errors?: string[]; historyMissed?: boolean; warnings?: Warning[] }
 
 /** What a refused restore says, from the answer's status; the reasons of a 422 are the engine's own. */
 export function restoreFailure(failure: ApiError): Note {
