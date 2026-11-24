@@ -15,15 +15,19 @@ const watchViolations = (page) => page.addInitScript(() => {
 });
 const violations = (page) => page.evaluate(() => window.__violations);
 const nonceOf = (policy) => /'nonce-([A-Za-z0-9_-]+)'/.exec(policy)?.[1];
+const SECRET = "e2e-admin-secret-0123456789-abcdefghijklmnop";
 
-test("the new console loads and mounts its editor without breaking the policy", async ({ page }) => {
+test("the default console loads, signs in and mounts its editor without breaking the policy", async ({ page }) => {
   await watchViolations(page);
   const consoleErrors = [];
   page.on("console", (message) => message.type() === "error" && consoleErrors.push(message.text()));
 
   await page.goto(NEXT + "/console");
-
   await expect(page.getByRole("heading", { name: "Excalibase console" })).toBeVisible();
+  await page.getByLabel("Admin secret").fill(SECRET);
+  await page.getByRole("button", { name: "Sign in" }).click();
+  await page.goto(NEXT + "/console#/permissions/yaml");
+
   await expect(page.locator(".cm-editor")).toBeVisible();
   await expect(page.locator(".cm-content")).toContainText("projectId: my-app");
   expect(await violations(page)).toEqual([]);
@@ -33,6 +37,9 @@ test("the new console loads and mounts its editor without breaking the policy", 
 test("typing, selecting, bracket matching, folding and the completion popup break nothing", async ({ page }) => {
   await watchViolations(page);
   await page.goto(NEXT + "/console");
+  await page.getByLabel("Admin secret").fill(SECRET);
+  await page.getByRole("button", { name: "Sign in" }).click();
+  await page.goto(NEXT + "/console#/permissions/yaml");
   const content = page.locator(".cm-content");
   await content.click();
 
@@ -102,6 +109,27 @@ test("assets are immutable, compressed on request, and the manifest is not serve
   expect(asset.headers()["content-security-policy"]).toContain("script-src 'self'");
   expect((await request.get(NEXT + "/console/.vite/manifest.json")).status()).toBe(404);
   expect((await request.get(NEXT + "/console/assets/../application.yml")).status()).toBeGreaterThanOrEqual(400);
+});
+
+test("the typefaces are served from this origin, as fonts, under a policy that names only this origin", async ({ page, request }) => {
+  const response = await page.goto(NEXT + "/console");
+  expect(response.headers()["content-security-policy"]).toContain("font-src 'self'");
+  await page.getByLabel("Admin secret").fill(SECRET);
+  await page.getByRole("button", { name: "Sign in" }).click();
+  await expect(page.getByRole("navigation", { name: "Console" })).toBeVisible();
+
+  const loaded = await page.evaluate(async () => {
+    await document.fonts.ready;
+    return [...document.fonts].filter((face) => face.status === "loaded").map((face) => face.family);
+  });
+  expect(loaded.join(" ")).toContain("Inter");
+
+  const css = await (await request.get(NEXT + await page.locator("link[rel=stylesheet]").first().getAttribute("href"))).text();
+  const font = /url\(([^)]+\.woff2)\)/.exec(css)[1].replace(/['"]/g, "");
+  const asset = await request.get(NEXT + font);
+  expect(asset.status()).toBe(200);
+  expect(asset.headers()["content-type"]).toBe("font/woff2");
+  expect(asset.headers()["cache-control"]).toBe("public, max-age=31536000, immutable");
 });
 
 test("the old console is still reachable at /console/legacy and signs in the same way", async ({ page }) => {

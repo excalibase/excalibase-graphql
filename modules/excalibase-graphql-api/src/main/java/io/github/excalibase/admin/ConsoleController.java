@@ -28,6 +28,9 @@ public class ConsoleController {
     static final String LEGACY_POLICY = "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; "
             + "img-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'; require-trusted-types-for 'script'";
 
+    /** The built console also loads its two typefaces, from this origin only. */
+    static final String BUNDLE_POLICY = LEGACY_POLICY + "; font-src 'self'";
+
     private static final String STYLE_SELF = "style-src 'self';";
     private static final int NONCE_BYTES = 16;
     private static final String HEAD_END = "</head>";
@@ -68,16 +71,16 @@ public class ConsoleController {
         String html = new String(page.body(), StandardCharsets.UTF_8)
                 .replace(HEAD_END, "<style nonce=\"" + nonce + "\"></style>" + HEAD_END);
         return respond(html.getBytes(StandardCharsets.UTF_8), page,
-                LEGACY_POLICY.replace(STYLE_SELF, "style-src 'self' 'nonce-" + nonce + "';"));
+                BUNDLE_POLICY.replace(STYLE_SELF, "style-src 'self' 'nonce-" + nonce + "';"));
     }
 
     private HttpResponse<byte[]> bundleFile(ConsoleAssets.Asset asset, String acceptEncoding) {
         MutableHttpResponse<byte[]> answer;
         Optional<byte[]> zipped = acceptsGzip(acceptEncoding) ? asset.gzip() : Optional.empty();
         if (zipped.isPresent()) {
-            answer = respond(zipped.get(), asset, LEGACY_POLICY).header("Content-Encoding", "gzip");
+            answer = respond(zipped.get(), asset, BUNDLE_POLICY).header("Content-Encoding", "gzip");
         } else {
-            answer = respond(asset.body(), asset, LEGACY_POLICY);
+            answer = respond(asset.body(), asset, BUNDLE_POLICY);
         }
         answer.header("Vary", "Accept-Encoding");
         return asset.immutable() ? answer.header("Cache-Control", IMMUTABLE) : answer;

@@ -16,9 +16,13 @@ export default defineConfig({
     sourcemap: false,
     assetsInlineLimit: 0,
     modulePreload: { polyfill: false },
+    // the editor is most of the size and the page needs it; a console served from the engine's own disk is not a download
+    chunkSizeWarningLimit: 1000,
   },
   test: {
     environment: 'jsdom',
     include: ['src/**/*.test.{ts,tsx}'],
+    setupFiles: ['./src/test/setup.ts'],
+    restoreMocks: true,
   },
 });

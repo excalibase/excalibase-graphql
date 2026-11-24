@@ -38,7 +38,9 @@ services:
   mock-vault:
     image: wiremock/wiremock:3.10.0
     volumes:
-      - ../wiremock:/home/wiremock
+      # Own mappings: contracts run no auth, so no /info stub (it would answer the engine's CORS lookup).
+      - ./wiremock/mappings:/home/wiremock/mappings:ro
+      - ../wiremock/__files:/home/wiremock/__files:ro
     ports:
       - "127.0.0.1:14080:8080"
     healthcheck:
@@ -70,7 +72,7 @@ services:
     networks: [contracts]
 
   watcher:
-    image: excalibase/excalibase-watcher-go:latest
+    image: excalibase/excalibase-watcher-go:1.7.5@sha256:e31bbddc0753189510be1f536fb70535f68b706795b7bf049da0a8af612f1069
     command: ["--config", "/config/config.yaml"]
     environment:
       WATCHER_POSTGRES_USERNAME: hana001

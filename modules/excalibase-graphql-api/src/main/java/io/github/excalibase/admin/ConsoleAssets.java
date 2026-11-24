@@ -155,7 +155,7 @@ public final class ConsoleAssets {
     static ConsoleAssets bundle(String prefix, Source source) {
         if (!source.exists(prefix + MANIFEST)) {
             throw new IllegalStateException("the built console is missing: " + prefix + MANIFEST
-                    + " is not in the build (build with -Pconsole-ui, or leave EXCALIBASE_CONSOLE_UI at legacy)");
+                    + " is not in the build (build without -Dconsole.ui.skip=true, or set EXCALIBASE_CONSOLE_UI=legacy)");
         }
         Set<String> names = new LinkedHashSet<>();
         names.add(INDEX);

@@ -66,6 +66,16 @@ class ConsoleControllerTest {
     }
 
     @Test
+    void theNewConsoleMayLoadItsTypefacesFromItsOwnOriginAndNothingElse() {
+        ConsoleController controller = next();
+
+        assertThat(header(controller.file(null, null), "Content-Security-Policy")).contains("font-src 'self'");
+        assertThat(header(controller.file("assets/index-abc123.js", null), "Content-Security-Policy")).contains("font-src 'self'")
+                .doesNotContain("font-src *", "font-src https");
+        assertThat(header(legacy().file(null, null), "Content-Security-Policy")).doesNotContain("font-src");
+    }
+
+    @Test
     void theNonceIsAtLeast128BitsAndNeverRepeats() {
         ConsoleController controller = next();
         Set<String> seen = new HashSet<>();

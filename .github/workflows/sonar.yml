@@ -21,6 +21,8 @@ on:
 env:
   MAVEN_OPTS: "-Djava.awt.headless=true"
   MAVEN_CLI_OPTS: "--batch-mode --errors --fail-at-end --show-version"
+  # Sonar never serves the console and does not measure it, so its build is left out
+  MAVEN_ARGS: "-Dconsole.ui.skip=true"
 
 jobs:
   maven-warm:
