@@ -148,6 +148,7 @@ test("a grid change never asks about comments: the file keeps them, and only the
 
 test("a role named like a YAML 1.1 boolean is saved as text, not as true", async ({ page, request }) => {
   await signIn(page, "#/permissions");
+  await page.getByRole("button", { name: "+ New role" }).click();
   await page.getByLabel("Role name").fill("no");
   await page.getByRole("button", { name: "Add role" }).click();
   await page.getByRole("button", { name: /no can read todos: None/ }).click();
