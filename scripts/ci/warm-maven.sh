@@ -5,8 +5,8 @@ set -euo pipefail
 cd "$(dirname "$0")/../.."
 source scripts/ci/mvn-retry.sh
 
-# one source of truth for the Sonar plugin version: the workflow that runs it
-sonar_plugin=$(grep -o 'sonar-maven-plugin:[0-9.]*' .github/workflows/sonar.yml | head -1)
+# one source of truth for the Sonar plugin version: the CI workflow that runs it
+sonar_plugin=$(grep -o 'sonar-maven-plugin:[0-9.]*' .github/workflows/ci.yml | head -1)
 # the reachability metadata is versioned with the native plugin, so it follows the pom
 graalvm_buildtools=$(sed -n 's|.*<native-maven-plugin.version>\(.*\)</native-maven-plugin.version>.*|\1|p' pom.xml)
 [[ -n $graalvm_buildtools ]] || { echo "native-maven-plugin.version not found in pom.xml"; exit 1; }
