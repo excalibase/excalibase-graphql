@@ -38,6 +38,12 @@ import java.util.Optional;
 @Produces(MediaType.APPLICATION_JSON)
 public class AdminController {
 
+    private static final String KEY_SCHEMA = "schema";
+    /** The key of a link's table, and the kind of one that is not a view. */
+    private static final String KEY_TABLE = "table";
+    private static final String KEY_COLUMNS = "columns";
+
+
     private final AdminMetadataView metadata;
     private final GraphqlSchemaManager schemas;
     private final AdminConfig.ValidationSettings validation;
@@ -141,9 +147,9 @@ public class AdminController {
 
     private static Map<String, Object> table(SchemaInfo schema, String key, String schemaName, ReservedSchemas reserved) {
         Map<String, Object> table = new LinkedHashMap<>();
-        table.put("schema", schemaName);
+        table.put(KEY_SCHEMA, schemaName);
         table.put("name", key.startsWith(schemaName + ".") ? key.substring(schemaName.length() + 1) : key);
-        table.put("kind", schema.isView(key) ? "view" : "table");
+        table.put("kind", schema.isView(key) ? "view" : KEY_TABLE);
         List<String> primaryKeys = schema.getPrimaryKeys(key);
         List<Map<String, Object>> columns = new ArrayList<>();
         for (String column : schema.getColumns(key)) {
@@ -153,7 +159,7 @@ public class AdminController {
             entry.put("primaryKey", primaryKeys.contains(column));
             columns.add(entry);
         }
-        table.put("columns", columns);
+        table.put(KEY_COLUMNS, columns);
         table.put("references", links(schema, key, reserved, true));
         table.put("referencedBy", links(schema, key, reserved, false));
         return table;
@@ -178,9 +184,9 @@ public class AdminController {
                 }
             });
         }
-        links.sort(Comparator.comparing((Map<String, Object> link) -> String.valueOf(link.get("schema")))
-                .thenComparing(link -> String.valueOf(link.get("table")))
-                .thenComparing(link -> String.valueOf(link.get("columns"))));
+        links.sort(Comparator.comparing((Map<String, Object> link) -> String.valueOf(link.get(KEY_SCHEMA)))
+                .thenComparing(link -> String.valueOf(link.get(KEY_TABLE)))
+                .thenComparing(link -> String.valueOf(link.get(KEY_COLUMNS))));
         return links;
     }
 
@@ -188,9 +194,9 @@ public class AdminController {
     private static Map<String, Object> link(SchemaInfo schema, String otherKey, List<String> columns, List<String> referencedColumns) {
         String otherSchema = schemaOf(schema, otherKey);
         Map<String, Object> link = new LinkedHashMap<>();
-        link.put("schema", otherSchema);
-        link.put("table", otherKey.startsWith(otherSchema + ".") ? otherKey.substring(otherSchema.length() + 1) : otherKey);
-        link.put("columns", columns);
+        link.put(KEY_SCHEMA, otherSchema);
+        link.put(KEY_TABLE, otherKey.startsWith(otherSchema + ".") ? otherKey.substring(otherSchema.length() + 1) : otherKey);
+        link.put(KEY_COLUMNS, columns);
         link.put("referencedColumns", referencedColumns);
         return link;
     }
@@ -225,7 +231,7 @@ public class AdminController {
 
     private static Map<String, Object> function(SchemaInfo.FunctionInfo function) {
         Map<String, Object> entry = new LinkedHashMap<>();
-        entry.put("schema", function.schema());
+        entry.put(KEY_SCHEMA, function.schema());
         entry.put("name", function.name());
         entry.put("kind", function.kind().name().toLowerCase(Locale.ROOT));
         entry.put("returnsSet", function.returnsSet());

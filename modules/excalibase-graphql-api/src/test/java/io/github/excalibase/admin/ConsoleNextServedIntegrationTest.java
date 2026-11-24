@@ -44,9 +44,7 @@ class ConsoleNextServedIntegrationTest extends EngineIntegrationTest {
 
     @Override
     public Map<String, String> getProperties() {
-        Map<String, String> properties = AdminTestEngine.consoleOn(AdminTestEngine.documentFile(DOCUMENT),
-                MANAGEMENT_PORT, ADMIN_PORT);
-        return properties;
+        return AdminTestEngine.consoleOn(AdminTestEngine.documentFile(DOCUMENT), MANAGEMENT_PORT, ADMIN_PORT);
     }
 
     @Test
