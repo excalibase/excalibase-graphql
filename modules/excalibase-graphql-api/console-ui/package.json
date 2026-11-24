@@ -4,7 +4,9 @@
   "version": "0.0.0",
   "type": "module",
   "description": "The engine's admin console, built with Vite. Served by the engine under /console when EXCALIBASE_CONSOLE_UI=next.",
-  "engines": { "node": "^20.19.0 || >=22.13.0" },
+  "engines": {
+    "node": "^20.19.0 || >=22.13.0"
+  },
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
@@ -16,12 +18,17 @@
     "@codemirror/lang-yaml": "6.1.3",
     "@codemirror/state": "6.6.0",
     "@codemirror/view": "6.40.0",
+    "@fontsource-variable/inter": "5.3.0",
+    "@fontsource-variable/jetbrains-mono": "5.3.0",
     "codemirror": "6.0.2",
     "react": "18.3.1",
     "react-dom": "18.3.1"
   },
   "devDependencies": {
+    "@testing-library/dom": "10.4.1",
+    "@testing-library/jest-dom": "6.9.1",
     "@testing-library/react": "16.3.2",
+    "@testing-library/user-event": "14.6.1",
     "@types/node": "24.10.1",
     "@types/react": "18.3.28",
     "@types/react-dom": "18.3.7",

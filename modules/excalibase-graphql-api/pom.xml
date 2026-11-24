@@ -282,9 +282,9 @@
                     <include>app-info.properties</include>
                 </includes>
             </resource>
-            <!-- The built console (console-ui): served under /console when EXCALIBASE_CONSOLE_UI=next. Only the
-                 console-ui profile points this at console-ui/dist, so a stale dist left by an earlier build is never
-                 packed by a plain build; then only the legacy console is in the jar. -->
+            <!-- The built console (console-ui): served under /console by default. Only the console-ui profile points
+                 this at console-ui/dist, so a stale dist left by an earlier build is never packed by a build that
+                 skipped it; then only the legacy console is in the jar. -->
             <resource>
                 <directory>${console.ui.dist}</directory>
                 <targetPath>console-next</targetPath>
@@ -347,10 +347,18 @@
         </plugins>
     </build>
     <profiles>
-        <!-- The new console (console-ui): its own Node is installed under target/, so no runner needs one. Opt in with
-             -Pconsole-ui. -Dconsole.ui.skipTests=true skips the Vitest run (Java -DskipTests does not). -->
+        <!-- The new console (console-ui): its own Node is installed under target/, so no runner needs one. On in every
+             build, because it is the console /console serves. -Dconsole.ui.skip=true leaves it out (a quick Java-only
+             build: the jar then has only the legacy console and serves that). -Dconsole.ui.skipTests=true skips the
+             Vitest run (Java -DskipTests does not). Activated by a property, not by default, so -Pnative and the slim
+             profiles do not switch it off. -->
         <profile>
             <id>console-ui</id>
+            <activation>
+                <property>
+                    <name>!console.ui.skip</name>
+                </property>
+            </activation>
             <properties>
                 <console.ui.skipTests>false</console.ui.skipTests>
                 <console.ui.dist>${project.basedir}/console-ui/dist</console.ui.dist>

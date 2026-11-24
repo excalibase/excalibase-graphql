@@ -1,7 +1,7 @@
 name: Console browser test
 
 # Playwright specs against real engines: the old console (sign in, view, edit, save, a stale save, errors, markup as
-# text, export, a read-only source) and the new one under its real policy. Separate from the Maven build; it only
+# text, export, a read-only source) and the default one, driven as a person drives it, under its real policy. Separate from the Maven build; it only
 # needs the engine jar (built here with the new console in it) and Postgres.
 on:
   push:
@@ -87,9 +87,10 @@ jobs:
         path: ~/.npm
         key: ${{ runner.os }}-console-ui-npm-${{ hashFiles('modules/excalibase-graphql-api/console-ui/package-lock.json') }}
 
-    # -Pconsole-ui installs its own Node, then lints, tests (Vitest) and builds the new console into the jar
-    - name: Build the engine jar with the new console
-      run: mvn --batch-mode -q -pl modules/excalibase-graphql-api -am package -DskipTests -Pconsole-ui
+    # the console-ui profile is on in every build: it installs its own Node, then lints, tests (Vitest) and builds the
+    # console into the jar
+    - name: Build the engine jar with the console
+      run: mvn --batch-mode -q -pl modules/excalibase-graphql-api -am package -DskipTests
 
     - name: Set up Node.js
       uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
@@ -112,8 +113,10 @@ jobs:
       working-directory: console-e2e
       run: npm run browsers
 
-    - name: Create the example table
-      run: PGPASSWORD=change-me psql -h localhost -U app -d app -f deploy/standalone/init.sql
+    - name: Create the example tables
+      run: |
+        PGPASSWORD=change-me psql -h localhost -U app -d app -f deploy/standalone/init.sql
+        PGPASSWORD=change-me psql -h localhost -U app -d app -f console-e2e/shop.sql
 
     - name: Run the console test
       working-directory: console-e2e

@@ -27,9 +27,9 @@ import static io.github.excalibase.admin.AdminTestEngine.SECRET;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * EXCALIBASE_CONSOLE_UI=next: the built console answers at /console under a nonce policy, the legacy one stays at
- * /console/legacy, and neither is reachable off the admin port. The bundle here is the small fixture on the test
- * classpath; the real one comes from console-ui.
+ * EXCALIBASE_CONSOLE_UI unset, so the built console is the default: it answers at /console under a nonce policy, the
+ * legacy one stays at /console/legacy, and neither is reachable off the admin port. The bundle here is the small
+ * fixture on the test classpath; the real one comes from console-ui.
  */
 class ConsoleNextServedIntegrationTest extends EngineIntegrationTest {
 
@@ -46,7 +46,6 @@ class ConsoleNextServedIntegrationTest extends EngineIntegrationTest {
     public Map<String, String> getProperties() {
         Map<String, String> properties = AdminTestEngine.consoleOn(AdminTestEngine.documentFile(DOCUMENT),
                 MANAGEMENT_PORT, ADMIN_PORT);
-        properties.put("excalibase.console.ui", "next");
         return properties;
     }
 

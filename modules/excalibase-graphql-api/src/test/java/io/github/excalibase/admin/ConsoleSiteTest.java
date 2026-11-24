@@ -69,4 +69,26 @@ class ConsoleSiteTest {
                 .isInstanceOf(IllegalStateException.class).hasMessageContaining("console-absent");
         assertThat(ConsoleSite.legacyOnly().find("")).isPresent();
     }
+
+    @Test
+    void withNothingSetTheBuiltConsoleIsServedWhenTheJarHasIt() {
+        assertThat(ConsoleSite.defaultUi(ConsoleAssets.CLASSPATH)).isEqualTo(ConsoleUi.NEXT);
+    }
+
+    @Test
+    void withNothingSetAJarBuiltWithoutTheConsoleServesTheLegacyOne() {
+        ConsoleAssets.Source empty = new ConsoleAssets.Source() {
+            @Override
+            public boolean exists(String resource) {
+                return false;
+            }
+
+            @Override
+            public byte[] read(String resource) {
+                throw new IllegalStateException("nothing to read");
+            }
+        };
+
+        assertThat(ConsoleSite.defaultUi(empty)).isEqualTo(ConsoleUi.LEGACY);
+    }
 }
