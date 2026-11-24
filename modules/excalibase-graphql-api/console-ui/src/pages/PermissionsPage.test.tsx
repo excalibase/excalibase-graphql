@@ -22,6 +22,33 @@ describe('the permissions grid', () => {
     expect(await cell(/user can read orders: Some rows. A rule written by hand/)).toBeVisible();
   });
 
+  it('opens a row rule instead of dropping it when its cell is clicked, and removes it only on request', async () => {
+    const hand = { tables: [{ table: 'public.orders', role: 'user', select: { filter: { id: { _eq: 1 } }, columns: '*' } }] };
+    const { user } = await openConsole('#/permissions/%40user', healthy({ 'POST /parse': { body: { valid: true, tree: hand } } }));
+
+    await user.click(await cell(/user can read orders: Some rows/));
+
+    const panel = await screen.findByRole('region', { name: 'Rule for user on orders: read' });
+    expect(panel).toHaveTextContent('"_eq": 1');
+    expect(screen.getByRole('button', { name: 'Save and apply' })).toBeDisabled();
+    expect(screen.queryByText(/unsaved change/)).toBeNull();
+    expect(await cell(/user can read orders: Some rows/)).toBeVisible();
+
+    await user.click(within(panel).getByRole('button', { name: 'Remove this rule' }));
+
+    expect(await screen.findByText('1 unsaved change')).toBeVisible();
+    expect(await cell(/user can read orders: None/)).toBeVisible();
+  });
+
+  it('opens a column rule instead of dropping it', async () => {
+    const { user } = await openConsole('#/permissions/%40user');
+
+    await user.click(await cell(/user can read orders: Some columns/));
+
+    expect(await screen.findByRole('region', { name: 'Rule for user on orders: read' })).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Save and apply' })).toBeDisabled();
+  });
+
   it('counts the unsaved changes and keeps Save off until there is one', async () => {
     const { user } = await openConsole('#/permissions/%40user', healthy({
       'POST /parse': ({ body }) => ({ body: { valid: true, tree: (body ?? '').includes('"insert"') ? { tables: [{ ...DOC.tables[0], insert: { check: {}, columns: '*' } }] } : DOC } }),
