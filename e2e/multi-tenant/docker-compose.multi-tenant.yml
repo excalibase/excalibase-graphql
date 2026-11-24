@@ -69,7 +69,8 @@ services:
       - multi-tenant-network
 
   excalibase-auth:
-    image: excalibase/excalibase-auth
+    # Pinned: this fails closed when it cannot read project info, so a moving tag breaks CI unannounced (EXC-867).
+    image: excalibase/excalibase-auth:1.7.5@sha256:267e907108c405d45be6e8d3acad749ed863cb442ec088c6c4e29b411049c28c
     container_name: mt-excalibase-auth
     build:
       context: ../../../excalibase-auth

@@ -1,0 +1,11 @@
+{
+  "request": {
+    "method": "GET",
+    "url": "/api/projects/kanban/info"
+  },
+  "response": {
+    "status": 200,
+    "headers": { "Content-Type": "application/json" },
+    "jsonBody": { "projectId": "kanban", "projectName": "kanban", "orgSlug": "study-cases" }
+  }
+}
