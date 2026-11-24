@@ -7,6 +7,7 @@ const FAILURES: Record<string, (outcome: Outcome) => string> = {
   missing: () => 'The console did not send the version it started from, so nothing was saved. Reload the page.',
   refused: () => 'The text was written, but the engine could not load it. The last good version is still in use.',
   unreachable: () => 'The source could not be written, so nothing was saved. The last good version is still in use.',
+  moved: () => 'The text changed while checking. Save again.',
   failed: (outcome) => `The save failed (${outcome.kind === 'failed' ? outcome.code : ''}).`,
 };
 
