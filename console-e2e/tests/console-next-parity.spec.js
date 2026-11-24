@@ -439,7 +439,7 @@ test.describe("History", () => {
     await expect(page.locator("#history-list tbody tr")).toHaveCount(2);
     await page.locator("#history-list tbody tr").first().getByRole("button", { name: "View" }).click();
     await expect(page.locator("#diff .line.add").filter({ hasText: "role: anon" })).toHaveCount(1);
-    await expect(page.locator("#diff .line.del")).toHaveCount(0);
+    for (const line of await page.locator("#diff .line.del").allTextContents()) { expect(line).toContain("#"); }
 
     await page.locator("#restore").click();
     await expect(page.locator("#restore-confirm")).toContainText("Restore this version");

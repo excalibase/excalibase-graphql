@@ -31,6 +31,15 @@ describe('patching a YAML document from the grid', () => {
     expect(patchYaml(DOCUMENT, tree(DOCUMENT))).toBe(DOCUMENT);
   });
 
+  test('lines the change does not touch keep their text, apart from the space before a comment', () => {
+    const next = setOperation(tree(DOCUMENT), 'public.todos', 'anon', 'select', true);
+
+    const patched = patchYaml(DOCUMENT, next) as string;
+    const bare = (line: string) => line.replace(/\s+#.*$/, '').trimEnd();
+
+    expect(patched.split('\n').map(bare).slice(0, DOCUMENT.split('\n').length - 1)).toEqual(DOCUMENT.split('\n').map(bare).slice(0, -1));
+  });
+
   test('a ticked operation is added and every comment stays where it was', () => {
     const next = setOperation(tree(DOCUMENT), 'public.todos', 'user', 'insert', true);
 

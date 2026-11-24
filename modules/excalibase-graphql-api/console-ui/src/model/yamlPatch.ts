@@ -102,5 +102,5 @@ export function patchYaml(text: string, next: Tree): string | null {
     return text;
   }
   sync(doc, [], current, next);
-  return doc.toString({ lineWidth: 0 });
+  return doc.toString({ lineWidth: 0, flowCollectionPadding: false });
 }
