@@ -350,7 +350,8 @@
         <!-- The new console (console-ui): its own Node is installed under target/, so no runner needs one. On in every
              build, because it is the console /console serves. -Dconsole.ui.skip=true leaves it out (a quick Java-only
              build: the jar then has only the legacy console and serves that). -Dconsole.ui.skipTests=true skips the
-             Vitest run (Java -DskipTests does not). Activated by a property, not by default, so -Pnative and the slim
+             Vitest run and -Dconsole.ui.skipLint=true the lint (Java -DskipTests does not); CI runs both only in the
+             Console browser test job. Activated by a property, not by default, so -Pnative and the slim
              profiles do not switch it off. -->
         <profile>
             <id>console-ui</id>
@@ -361,6 +362,7 @@
             </activation>
             <properties>
                 <console.ui.skipTests>false</console.ui.skipTests>
+                <console.ui.skipLint>false</console.ui.skipLint>
                 <console.ui.dist>${project.basedir}/console-ui/dist</console.ui.dist>
             </properties>
             <build>
@@ -397,6 +399,7 @@
                                 <phase>generate-resources</phase>
                                 <configuration>
                                     <arguments>run lint</arguments>
+                                    <skip>${console.ui.skipLint}</skip>
                                 </configuration>
                             </execution>
                             <execution>
@@ -414,6 +417,40 @@
                                 <phase>generate-resources</phase>
                                 <configuration>
                                     <arguments>run build</arguments>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+        <!-- A build that leaves the console out must not pack one an earlier build left in target/classes (a build
+             without `clean`): the jar would then serve a stale console. The directory is removed before resources are
+             copied; with it gone, the jar has only the legacy console. scripts/ci/check-console-skip.sh pins this. -->
+        <profile>
+            <id>console-ui-skipped</id>
+            <activation>
+                <property>
+                    <name>console.ui.skip</name>
+                </property>
+            </activation>
+            <build>
+                <plugins>
+                    <plugin>
+                        <artifactId>maven-clean-plugin</artifactId>
+                        <version>3.2.0</version>
+                        <executions>
+                            <execution>
+                                <id>remove-stale-console</id>
+                                <goals><goal>clean</goal></goals>
+                                <phase>initialize</phase>
+                                <configuration>
+                                    <excludeDefaultDirectories>true</excludeDefaultDirectories>
+                                    <filesets>
+                                        <fileset>
+                                            <directory>${project.build.outputDirectory}/console-next</directory>
+                                        </fileset>
+                                    </filesets>
                                 </configuration>
                             </execution>
                         </executions>

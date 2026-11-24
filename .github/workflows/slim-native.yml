@@ -22,6 +22,8 @@ concurrency:
 env:
   DOCKER_IMAGE: excalibase/excalibase-graphql
   MAVEN_CLI_OPTS: "--batch-mode --errors --fail-at-end --show-version"
+  # the binaries ship the console, so it is built; its lint and Vitest run in the Console browser test job
+  MAVEN_ARGS: "-Dconsole.ui.skipTests=true -Dconsole.ui.skipLint=true"
   COMMIT_SHA: ${{ inputs.sha || github.sha }}
 
 jobs:

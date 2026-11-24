@@ -91,4 +91,41 @@ class ConsoleSiteTest {
 
         assertThat(ConsoleSite.defaultUi(empty)).isEqualTo(ConsoleUi.LEGACY);
     }
+
+    private static final ConsoleAssets.Source NO_CONSOLE = new ConsoleAssets.Source() {
+        @Override
+        public boolean exists(String resource) {
+            return false;
+        }
+
+        @Override
+        public byte[] read(String resource) {
+            throw new IllegalStateException("nothing to read");
+        }
+    };
+
+    @Test
+    void theConstructorServesTheBuiltConsoleWhenNothingIsSetAndTheJarHasIt() {
+        ConsoleSite site = new ConsoleSite(null, ConsoleAssets.CLASSPATH);
+
+        assertThat(new String(site.find("").orElseThrow().body())).contains("assets/index-abc123.js");
+        assertThat(site.find("legacy")).isPresent();
+    }
+
+    @Test
+    void theConstructorServesTheLegacyConsoleWhenNothingIsSetAndTheJarLacksTheBuild() {
+        ConsoleSite site = new ConsoleSite(null, NO_CONSOLE);
+
+        assertThat(new String(site.find("").orElseThrow().body())).contains("/console/app.js");
+        assertThat(site.find("legacy")).isEmpty();
+        assertThat(site.find("assets/index-abc123.js")).isEmpty();
+    }
+
+    @Test
+    void theConstructorObeysAnExplicitChoiceWhateverTheJarHolds() {
+        assertThat(new ConsoleSite("legacy", ConsoleAssets.CLASSPATH).find("legacy")).isEmpty();
+        assertThat(new ConsoleSite("next", ConsoleAssets.CLASSPATH).find("legacy")).isPresent();
+        assertThatThrownBy(() -> new ConsoleSite("next", NO_CONSOLE)).isInstanceOf(IllegalStateException.class);
+        assertThatThrownBy(() -> new ConsoleSite("", ConsoleAssets.CLASSPATH)).isInstanceOf(IllegalStateException.class);
+    }
 }

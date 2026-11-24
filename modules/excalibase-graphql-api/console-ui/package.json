@@ -3,7 +3,7 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
-  "description": "The engine's admin console, built with Vite. Served by the engine under /console when EXCALIBASE_CONSOLE_UI=next.",
+  "description": "The engine's admin console, built with Vite. Served by the engine under /console unless EXCALIBASE_CONSOLE_UI=legacy opts out.",
   "engines": {
     "node": "^20.19.0 || >=22.13.0"
   },

@@ -29,7 +29,12 @@ public final class ConsoleSite {
 
     @Inject
     ConsoleSite(@Nullable @Property(name = "excalibase.console.ui") String ui) {
-        this(ui == null ? defaultUi(ConsoleAssets.CLASSPATH) : ConsoleUi.parse(ui));
+        this(ui, ConsoleAssets.CLASSPATH);
+    }
+
+    /** As above, reading the built console from {@code source}: what a jar holds is what decides the default. */
+    ConsoleSite(String ui, ConsoleAssets.Source source) {
+        this(ui == null ? defaultUi(source) : ConsoleUi.parse(ui), source);
     }
 
     /**
@@ -41,8 +46,8 @@ public final class ConsoleSite {
         return source.exists(BUNDLE_ROOT + MANIFEST) ? ConsoleUi.NEXT : ConsoleUi.LEGACY;
     }
 
-    private ConsoleSite(ConsoleUi ui) {
-        this(ui, ConsoleAssets.legacy(), ui == ConsoleUi.NEXT ? ConsoleAssets.bundle(BUNDLE_ROOT, ConsoleAssets.CLASSPATH) : null);
+    private ConsoleSite(ConsoleUi ui, ConsoleAssets.Source source) {
+        this(ui, ConsoleAssets.legacy(), ui == ConsoleUi.NEXT ? ConsoleAssets.bundle(BUNDLE_ROOT, source) : null);
     }
 
     ConsoleSite(ConsoleUi ui, ConsoleAssets legacy, ConsoleAssets bundle) {
