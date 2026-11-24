@@ -95,7 +95,7 @@ export function PermissionsPage({ arg }: { arg: string }) {
           </span>
         </div>
         <OutcomeView outcome={workbench.outcome} theirs={workbench.theirs} handlers={{ onTakeTheirs: () => void workbench.takeTheirs(), onOverwrite: workbench.overwrite }} />
-        {view === 'access' ? <AccessGrid role={role} /> : null}
+        {view === 'access' ? <AccessGrid key={role} role={role} /> : null}
         {view === 'yaml' ? <YamlView /> : null}
         {view === 'token' ? <TokenView /> : null}
         {view === 'history' ? <HistoryView /> : null}

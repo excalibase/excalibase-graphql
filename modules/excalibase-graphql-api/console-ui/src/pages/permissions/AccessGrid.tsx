@@ -1,13 +1,20 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Empty, ErrorList, Loading } from '../../components/ui';
 import { allows, isCustom, OPERATIONS, ruleOf, tableKeysOf, type Operation, type PermissionsDoc } from '../../lib/docmodel';
 import { hrefOf } from '../../router';
 import { useSchema } from '../../schema';
 import { useWorkbench } from '../../workbench';
+import { PANEL_ID, RulePanel, type OpenRule } from './RulePanel';
 
 const LABELS: Record<Operation, string> = { select: 'Read', insert: 'Insert', update: 'Update', delete: 'Delete' };
 type Level = 'all' | 'some' | 'columns' | 'none';
 const TEXT: Record<Level, string> = { all: 'All rows', some: 'Some rows', columns: 'Some columns', none: 'None' };
+const HINT: Record<Level, string> = {
+  none: '. Activate to allow every row.',
+  all: '. Activate to stop.',
+  some: '. A rule written by hand. Activate to open it.',
+  columns: '. A rule written by hand. Activate to open it.',
+};
 const CHIP: Record<Level, string> = { all: 'all', some: 'some', columns: 'some', none: 'none' };
 
 function levelOf(doc: PermissionsDoc, table: string, role: string, operation: Operation): Level {
@@ -28,6 +35,17 @@ export function AccessGrid({ role }: { role: string }) {
   const workbench = useWorkbench();
   const schema = useSchema();
   const doc = workbench.tree;
+  const [opened, setOpened] = useState<OpenRule | null>(null);
+  const panel = useRef<HTMLElement>(null);
+  const cells = useRef(new Map<string, HTMLButtonElement>());
+  const cellKey = (target: OpenRule) => `${target.table}\u0000${target.operation}`;
+  const isPartial = (level: Level) => level === 'some' || level === 'columns';
+  const panelOpen = opened !== null;
+  useEffect(() => {
+    if (panelOpen) {
+      panel.current?.focus();
+    }
+  }, [panelOpen]);
   const tables = useMemo(() => (doc ? tableKeysOf(schema.data?.tables ?? [], doc) : []), [doc, schema.data]);
   const known = useMemo(() => new Set((schema.data?.tables ?? []).map((table) => `${table.schema}.${table.name}`)), [schema.data]);
 
@@ -60,7 +78,7 @@ export function AccessGrid({ role }: { role: string }) {
       <div className="content">
         <div>
           <h1>What can “{role}” do?</h1>
-          <p className="muted">Click a cell to allow or stop reading, adding, changing or removing rows.</p>
+          <p className="muted">Click a cell to allow or stop reading, adding, changing or removing rows. A cell with a rule written by hand opens that rule.</p>
         </div>
         <div className="scroll">
           <table className="tbl" aria-label={`What ${role} can do, by table`}>
@@ -87,8 +105,15 @@ export function AccessGrid({ role }: { role: string }) {
                         <button
                           type="button"
                           className="cell"
-                          aria-label={`${role} can ${LABELS[operation].toLowerCase()} ${shown(table)}: ${TEXT[level]}${level === 'none' ? '. Activate to allow every row.' : level === 'all' ? '. Activate to stop.' : '. A rule written by hand. Activate to remove it.'}`}
-                          onClick={() => workbench.toggle(table, role, operation, level === 'none')}
+                          aria-label={`${role} can ${LABELS[operation].toLowerCase()} ${shown(table)}: ${TEXT[level]}${HINT[level]}`}
+                          ref={(node) => {
+                            if (node) {
+                              cells.current.set(cellKey({ table, operation }), node);
+                            }
+                          }}
+                          aria-expanded={isPartial(level) ? opened?.table === table && opened.operation === operation : undefined}
+                          aria-controls={isPartial(level) && opened?.table === table && opened.operation === operation ? PANEL_ID : undefined}
+                          onClick={() => (isPartial(level) ? setOpened({ table, operation }) : workbench.toggle(table, role, operation, level === 'none'))}
                         >
                           <span className={`chip ${CHIP[level]}`}>{TEXT[level]}</span>
                         </button>
@@ -101,6 +126,25 @@ export function AccessGrid({ role }: { role: string }) {
           </table>
         </div>
       </div>
+      {opened && isPartial(levelOf(doc, opened.table, role, opened.operation)) ? (
+        <RulePanel
+          ref={panel}
+          doc={doc}
+          role={role}
+          open={opened}
+          label={`Rule for ${role} on ${shown(opened.table)}: ${LABELS[opened.operation].toLowerCase()}`}
+          onClose={() => {
+            cells.current.get(cellKey(opened))?.focus();
+            setOpened(null);
+          }}
+          onRemove={() => {
+            if (workbench.toggle(opened.table, role, opened.operation, false)) {
+              cells.current.get(cellKey(opened))?.focus();
+              setOpened(null);
+            }
+          }}
+        />
+      ) : null}
       <div className="legend">
         <span>
           <span className="chip all">All rows</span> no limit

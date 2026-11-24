@@ -96,7 +96,7 @@ export interface Workbench extends State {
   pending: Change[] | null;
   reload: () => Promise<void>;
   edit: (text: string) => void;
-  toggle: (table: string, role: string, operation: Operation, on: boolean) => void;
+  toggle: (table: string, role: string, operation: Operation, on: boolean) => boolean;
   addRole: (name: string, known: string[]) => string | null;
   applyToken: (section: JwtSection) => void;
   save: () => Promise<void>;
@@ -311,7 +311,9 @@ export function WorkbenchProvider({ onSignedOut, children }: { onSignedOut: () =
       const { tree, treeFor, draft, busy } = latest.current;
       if (tree && treeFor === draft && !busy) {
         rewriteFrom(setOperation(tree, table, role, operation, on));
+        return true;
       }
+      return false;
     },
     [rewriteFrom],
   );
