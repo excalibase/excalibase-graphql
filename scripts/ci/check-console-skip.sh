@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # A build with -Dconsole.ui.skip=true must not pack a console an earlier build left in target/classes (a build without
 # `clean`). Leaves a marker where the built console would be, builds the resources with the console skipped, and fails
-# if the marker is still there; then checks that a build that does not skip leaves a console's own files alone.
+# if the marker is still there.
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 stale=modules/excalibase-graphql-api/target/classes/console-next

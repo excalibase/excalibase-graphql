@@ -354,6 +354,7 @@
              Console browser test job. Activated by a property, not by default, so -Pnative and the slim
              profiles do not switch it off. -->
         <profile>
+            <!-- Both console profiles key on whether console.ui.skip exists, so -Dconsole.ui.skip=false also skips. -->
             <id>console-ui</id>
             <activation>
                 <property>
@@ -428,6 +429,7 @@
              without `clean`): the jar would then serve a stale console. The directory is removed before resources are
              copied; with it gone, the jar has only the legacy console. scripts/ci/check-console-skip.sh pins this. -->
         <profile>
+            <!-- Both console profiles key on whether console.ui.skip exists, so -Dconsole.ui.skip=false also skips. -->
             <id>console-ui-skipped</id>
             <activation>
                 <property>
