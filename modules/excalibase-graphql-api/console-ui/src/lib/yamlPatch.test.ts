@@ -24,6 +24,8 @@ tables:
     delete:
       filter: {"owner_id": {"_eq": "X-Excalibase-User-Id"}}
 `;
+const TODOS = 'public.todos';
+const USER_COMMENT = '# a user sees only their own rows';
 const tree = (text: string): PermissionsDoc => parse(text, { version: '1.1' }) as PermissionsDoc;
 
 describe('patching a YAML document from the grid', () => {
@@ -32,7 +34,7 @@ describe('patching a YAML document from the grid', () => {
   });
 
   test('lines the change does not touch keep their text, apart from the space before a comment', () => {
-    const next = setOperation(tree(DOCUMENT), 'public.todos', 'anon', 'select', true);
+    const next = setOperation(tree(DOCUMENT), TODOS, 'anon', 'select', true);
 
     const patched = patchYaml(DOCUMENT, next) as string;
     const bare = (line: string) => line.replace(/\s+#.*$/, '').trimEnd();
@@ -41,27 +43,27 @@ describe('patching a YAML document from the grid', () => {
   });
 
   test('a ticked operation is added and every comment stays where it was', () => {
-    const next = setOperation(tree(DOCUMENT), 'public.todos', 'user', 'insert', true);
+    const next = setOperation(tree(DOCUMENT), TODOS, 'user', 'insert', true);
 
     const patched = patchYaml(DOCUMENT, next) as string;
 
     expect(treesEqual(tree(patched), next)).toBe(true);
-    ['# yaml-language-server', '# Who may read', '# must equal APP_PROJECT_ID', '# never the secret itself', '# a user sees only their own rows']
+    ['# yaml-language-server', '# Who may read', '# must equal APP_PROJECT_ID', '# never the secret itself', USER_COMMENT]
       .forEach((comment) => expect(patched).toContain(comment));
   });
 
   test('an unticked operation leaves the others and their comments alone', () => {
-    const next = setOperation(tree(DOCUMENT), 'public.todos', 'user', 'delete', false);
+    const next = setOperation(tree(DOCUMENT), TODOS, 'user', 'delete', false);
 
     const patched = patchYaml(DOCUMENT, next) as string;
 
     expect(treesEqual(tree(patched), next)).toBe(true);
-    expect(patched).toContain('# a user sees only their own rows');
+    expect(patched).toContain(USER_COMMENT);
     expect(patched).not.toContain('delete:');
   });
 
   test('a new rule is appended as a block, not as a flow list', () => {
-    const next = setOperation(tree(DOCUMENT), 'public.todos', 'anon', 'select', true);
+    const next = setOperation(tree(DOCUMENT), TODOS, 'anon', 'select', true);
 
     const patched = patchYaml(DOCUMENT, next) as string;
 
@@ -97,7 +99,7 @@ describe('patching a YAML document from the grid', () => {
 
     expect(treesEqual(tree(patched), next)).toBe(true);
     expect(patched).toContain('# never the secret itself');
-    expect(patched).toContain('# a user sees only their own rows');
+    expect(patched).toContain(USER_COMMENT);
   });
 
   test('removing the token section removes just that section', () => {
@@ -106,11 +108,11 @@ describe('patching a YAML document from the grid', () => {
     const patched = patchYaml(DOCUMENT, next) as string;
 
     expect(treesEqual(tree(patched), next)).toBe(true);
-    expect(patched).toContain('# a user sees only their own rows');
+    expect(patched).toContain(USER_COMMENT);
   });
 
   test('a role a YAML 1.1 reader would turn into a boolean is quoted', () => {
-    const next = setOperation(tree(DOCUMENT), 'public.todos', 'no', 'select', true);
+    const next = setOperation(tree(DOCUMENT), TODOS, 'no', 'select', true);
 
     const patched = patchYaml(DOCUMENT, next) as string;
 
@@ -118,7 +120,7 @@ describe('patching a YAML document from the grid', () => {
   });
 
   test.each(['on', 'off', 'yes', 'y', 'n', 'null'])('the role %s survives a 1.1 reader as text', (role) => {
-    const next = setOperation(tree(DOCUMENT), 'public.todos', role, 'select', true);
+    const next = setOperation(tree(DOCUMENT), TODOS, role, 'select', true);
 
     const patched = patchYaml(DOCUMENT, next) as string;
 
