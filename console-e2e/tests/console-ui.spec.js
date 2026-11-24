@@ -28,6 +28,14 @@ async function metadata(request) {
   return (await request.get(ADMIN + "/metadata", { headers: AUTH })).json();
 }
 
+/** What the engine reads from the served text: the test never reads YAML itself. */
+async function served(request) {
+  const text = (await metadata(request)).document;
+  const answer = await (await request.post(ADMIN + "/parse", { headers: { ...AUTH, "Content-Type": "text/plain" }, data: text })).json();
+  expect(answer.valid, JSON.stringify(answer)).toBe(true);
+  return answer.tree;
+}
+
 async function putDocument(request, text) {
   const current = await metadata(request);
   const saved = await request.put(ADMIN + "/metadata", { headers: { ...AUTH, "Content-Type": "text/plain",
@@ -113,10 +121,41 @@ test("a role's grid: click a cell, count the change, confirm the wider access, a
   await dialog.getByRole("button", { name: "Save and apply" }).click();
 
   await expect(page.getByText(/Saved\. The engine now uses version/)).toBeVisible();
-  const served = JSON.parse((await metadata(request)).document);
-  expect(served.tables.find((rule) => rule.table === "public.todos" && rule.role === "anon")).toHaveProperty("delete");
+  expect((await served(request)).tables.find((rule) => rule.table === "public.todos" && rule.role === "anon")).toHaveProperty("delete");
+  const text = (await metadata(request)).document;
+  ["# yaml-language-server", "# must equal APP_PROJECT_ID", "# a user sees only their own rows"].forEach((comment) => expect(text).toContain(comment));
   await page.reload();
   await expect(page.getByRole("button", { name: /anon can delete todos: All rows/ })).toBeVisible();
+});
+
+test("a grid change never asks about comments: the file keeps them, and only the access is asked", async ({ page, request }) => {
+  await signIn(page, "#/permissions/%40anon");
+  await page.getByRole("button", { name: /anon can delete todos: None/ }).click();
+  await saveButton(page).click();
+
+  const dialog = page.getByRole("dialog");
+  await expect(dialog.getByText(/changes who can reach your data/)).toBeVisible();
+  await expect(dialog.getByText(/Comments and your own layout will be lost/)).toHaveCount(0);
+  await dialog.getByRole("button", { name: "Save and apply" }).click();
+  await expect(page.getByText(/Saved\. The engine now uses version/)).toBeVisible();
+
+  const text = (await metadata(request)).document;
+  expect(text.startsWith("# yaml-language-server")).toBe(true);
+  expect(text).not.toMatch(/^\s*\{/);
+  const roles = (await served(request)).tables.map((rule) => rule.role);
+  expect(roles).toEqual(["user", "anon"]);
+});
+
+test("a role named like a YAML 1.1 boolean is saved as text, not as true", async ({ page, request }) => {
+  await signIn(page, "#/permissions");
+  await page.getByLabel("Role name").fill("no");
+  await page.getByRole("button", { name: "Add role" }).click();
+  await page.getByRole("button", { name: /no can read todos: None/ }).click();
+  await saveButton(page).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Save and apply" }).click();
+  await expect(page.getByText(/Saved\. The engine now uses version/)).toBeVisible();
+
+  expect((await served(request)).tables.map((rule) => rule.role)).toEqual(["user", "no"]);
 });
 
 test("cancelling the question, or pressing Escape, saves nothing and puts focus back", async ({ page, request }) => {
@@ -223,7 +262,7 @@ test("the sample token: paste, read the claims, pick the role and the user id, a
   await saveButton(page).click();
   await page.getByRole("dialog").getByRole("button", { name: "Save and apply" }).click();
   await expect(page.getByText(/Saved\. The engine now uses version/)).toBeVisible();
-  const claims = JSON.parse((await metadata(request)).document).jwt.claims;
+  const claims = (await served(request)).jwt.claims;
   expect(claims).toMatchObject({ role: "role", userId: "sub", extra: { id: "org.id" } });
 });
 

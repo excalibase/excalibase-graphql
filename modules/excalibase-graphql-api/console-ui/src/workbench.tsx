@@ -23,6 +23,7 @@ import {
   type PermissionsDoc,
 } from './lib/docmodel';
 import { classify, describe, restoreFailure, UNREACHABLE, type Outcome, type Warning } from './lib/outcome';
+import { patchYaml, treesEqual } from './lib/yamlPatch';
 import { saveAs } from './download';
 
 const CHANGE_LIST_TIMEOUT_MS = 5000;
@@ -54,6 +55,8 @@ interface State {
   outcome: Outcome | null;
   theirs: Metadata | null;
   rewriteLoses: boolean;
+  /** Set while the draft is the served text with the grid's changes patched in, until the engine has read it. */
+  patched: { intended: PermissionsDoc; original: string; base: PermissionsDoc } | null;
   skipRewriteWarning: boolean;
   busy: boolean;
   confirm: Confirm | null;
@@ -75,6 +78,7 @@ const INITIAL: State = {
   outcome: null,
   theirs: null,
   rewriteLoses: false,
+  patched: null,
   skipRewriteWarning: false,
   busy: false,
   confirm: null,
@@ -132,6 +136,34 @@ const unauthorized = (failure: unknown): boolean => failure instanceof ApiError 
 const messageOf = (failure: unknown): string => (failure instanceof ApiError ? describe(failure) : UNREACHABLE);
 const textOf = (meta: Metadata | null): string => meta?.text ?? '';
 
+/**
+ * The draft of a grid change as the engine reads it. If that is not what the grid meant, the patch is not trusted and
+ * the grid's own JSON is used instead; the comments it loses are counted. Null when there is nothing to check.
+ */
+async function checkPatch(current: State): Promise<Partial<State> | null> {
+  const { patched, draft } = current;
+  if (!patched) {
+    return null;
+  }
+  let trusted = false;
+  try {
+    const answer = await parseText(draft, AbortSignal.timeout(CHANGE_LIST_TIMEOUT_MS));
+    trusted = answer.valid && treesEqual(answer.tree, patched.intended);
+  } catch {
+    trusted = false;
+  }
+  if (trusted) {
+    return { patched: null };
+  }
+  const written = serialize(patched.intended);
+  return {
+    draft: written,
+    treeFor: written,
+    patched: null,
+    rewriteLoses: current.rewriteLoses || rewriteLosesText(patched.original, patched.base),
+  };
+}
+
 /** The list of what a change set does, or null when it could not be built (an error, a timeout, a text refused now). */
 async function changesBetween(fromText: string | null, toText: string): Promise<{ changes: Change[] | null; invalid: boolean }> {
   const signal = AbortSignal.timeout(CHANGE_LIST_TIMEOUT_MS);
@@ -187,6 +219,7 @@ export function WorkbenchProvider({ onSignedOut, children }: { onSignedOut: () =
         baseTree: null,
         baseFor: null,
         rewriteLoses: false,
+        patched: null,
         historySelected: null,
       });
       setProblem(null);
@@ -237,20 +270,33 @@ export function WorkbenchProvider({ onSignedOut, children }: { onSignedOut: () =
   }, [readers, state.meta, state.baseFor, patch]);
 
   const edit = useCallback(
-    (text: string) => patch({ draft: text, tree: null, treeFor: null, outcome: null }),
+    (text: string) => patch({ draft: text, tree: null, treeFor: null, outcome: null, patched: null }),
     [patch],
   );
 
-  /** The grid and the token form write the document anew; a comment typed between two rewrites is still counted. */
+  /**
+   * The grid and the token form change the document. A YAML text gets just those changes patched in, so its comments
+   * stay, and the engine's reading of the result is checked before a save. JSON, or a text that cannot be patched, is
+   * written anew, and a comment lost that way counts, also when it was typed between two rewrites.
+   */
   const rewriteFrom = useCallback(
     (doc: PermissionsDoc) => {
-      patch((current) => ({
-        rewriteLoses: current.rewriteLoses || current.tree === null || rewriteLosesText(current.draft, current.tree),
-        draft: serialize(doc),
-        tree: doc,
-        treeFor: serialize(doc),
-        outcome: null,
-      }));
+      patch((current) => {
+        const text = current.draft.trimStart().startsWith('{') ? null : patchYaml(current.draft, doc);
+        const original = current.patched?.original ?? current.draft;
+        const base = current.patched?.base ?? current.tree;
+        if (text !== null && base !== null) {
+          return { draft: text, tree: doc, treeFor: text, outcome: null, patched: { intended: doc, original, base } };
+        }
+        return {
+          rewriteLoses: current.rewriteLoses || base === null || rewriteLosesText(original, base),
+          draft: serialize(doc),
+          tree: doc,
+          treeFor: serialize(doc),
+          outcome: null,
+          patched: null,
+        };
+      });
     },
     [patch],
   );
@@ -289,8 +335,9 @@ export function WorkbenchProvider({ onSignedOut, children }: { onSignedOut: () =
     [rewriteFrom],
   );
 
-  const commitSave = useCallback(async () => {
-    const { draft, meta } = latest.current;
+  const commitSave = useCallback(async (text?: string) => {
+    const { draft: held, meta } = latest.current;
+    const draft = text ?? held;
     if (!meta) {
       return;
     }
@@ -320,15 +367,20 @@ export function WorkbenchProvider({ onSignedOut, children }: { onSignedOut: () =
       return;
     }
     patch({ busy: true });
-    const { changes, invalid } = await changesBetween(current.meta.text, current.draft);
-    const comment = current.rewriteLoses && !current.skipRewriteWarning;
+    const checked = await checkPatch(current);
+    const ready = { ...current, ...checked };
+    if (checked) {
+      patch(checked);
+    }
+    const { changes, invalid } = await changesBetween(ready.meta?.text ?? null, ready.draft);
+    const comment = ready.rewriteLoses && !ready.skipRewriteWarning;
     // Fails closed: a list that could not be built asks. A text the engine refuses goes on, and its errors are shown.
     const wider = !invalid && (changes === null || widens(changes));
     if (comment || wider) {
       patch({ confirm: { kind: 'save', changes, comment, widens: wider } });
       return;
     }
-    await commitSave();
+    await commitSave(ready.draft);
     patch({ busy: false });
   }, [commitSave, patch]);
 
@@ -337,13 +389,13 @@ export function WorkbenchProvider({ onSignedOut, children }: { onSignedOut: () =
   const confirmSave = useCallback(
     (remember: boolean) => {
       patch((current) => ({ confirm: null, skipRewriteWarning: current.skipRewriteWarning || remember }));
-      void commitSave().finally(() => patch({ busy: false }));
+      void commitSave(latest.current.draft).finally(() => patch({ busy: false }));
     },
     [commitSave, patch],
   );
 
   const discard = useCallback(
-    () => patch((current) => ({ draft: textOf(current.meta), tree: null, treeFor: null, rewriteLoses: false, outcome: null })),
+    () => patch((current) => ({ draft: textOf(current.meta), tree: null, treeFor: null, rewriteLoses: false, patched: null, outcome: null })),
     [patch],
   );
 
