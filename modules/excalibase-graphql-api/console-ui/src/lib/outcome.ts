@@ -8,6 +8,7 @@ export type Outcome =
   | { kind: 'missing' }
   | { kind: 'refused' }
   | { kind: 'unreachable' }
+  | { kind: 'moved' }
   | { kind: 'failed'; code: string };
 
 export interface Warning {

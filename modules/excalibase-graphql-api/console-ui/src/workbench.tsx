@@ -132,6 +132,7 @@ export function useDocument(): Workbench {
   return workbench;
 }
 
+const MOVED: Outcome = { kind: 'moved' };
 const unauthorized = (failure: unknown): boolean => failure instanceof ApiError && failure.status === 401;
 const messageOf = (failure: unknown): string => (failure instanceof ApiError ? describe(failure) : UNREACHABLE);
 const textOf = (meta: Metadata | null): string => meta?.text ?? '';
@@ -377,7 +378,7 @@ export function WorkbenchProvider({ onSignedOut, children }: { onSignedOut: () =
     try {
       const checked = await checkPatch(current);
       if (latest.current.draft !== current.draft) {
-        patch({ busy: false });
+        patch({ busy: false, outcome: MOVED });
         return;
       }
       const ready = { ...current, ...checked };
@@ -386,7 +387,7 @@ export function WorkbenchProvider({ onSignedOut, children }: { onSignedOut: () =
       }
       const { changes, invalid } = await changesBetween(ready.meta?.text ?? null, ready.draft);
       if (latest.current.draft !== ready.draft) {
-        patch({ busy: false });
+        patch({ busy: false, outcome: MOVED });
         return;
       }
       const comment = ready.rewriteLoses && !ready.skipRewriteWarning;
