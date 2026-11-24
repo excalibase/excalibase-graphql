@@ -6,6 +6,6 @@
   "response": {
     "status": 200,
     "headers": { "Content-Type": "application/json" },
-    "jsonBody": { "projectId": "clinic", "projectName": "clinic", "orgSlug": "study-cases" }
+    "jsonBody": { "projectId": "clinic", "allowNewUsers": true, "requireEmailVerification": false, "projectName": "clinic", "orgSlug": "study-cases" }
   }
 }

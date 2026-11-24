@@ -6,6 +6,6 @@
   "response": {
     "status": 200,
     "headers": { "Content-Type": "application/json" },
-    "jsonBody": { "projectId": "shopify", "projectName": "shopify", "orgSlug": "study-cases" }
+    "jsonBody": { "projectId": "shopify", "allowNewUsers": true, "requireEmailVerification": false, "projectName": "shopify", "orgSlug": "study-cases" }
   }
 }

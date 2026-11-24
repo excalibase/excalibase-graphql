@@ -72,8 +72,6 @@ services:
     # Pinned: this fails closed when it cannot read project info, so a moving tag breaks CI unannounced (EXC-867).
     image: excalibase/excalibase-auth:1.7.5@sha256:267e907108c405d45be6e8d3acad749ed863cb442ec088c6c4e29b411049c28c
     container_name: mt-excalibase-auth
-    build:
-      context: ../../../excalibase-auth
     environment:
       PROVISIONING_URL: http://mock-vault:8080/api
       PROVISIONING_PAT: test-pat
@@ -184,7 +182,7 @@ services:
     restart: "no"
 
   watcher-tenant-a:
-    image: excalibase/excalibase-watcher-go:latest
+    image: excalibase/excalibase-watcher-go:1.7.5@sha256:e31bbddc0753189510be1f536fb70535f68b706795b7bf049da0a8af612f1069
     container_name: mt-watcher-a
     command: ["--config", "/config/config.yaml"]
     environment:
@@ -206,7 +204,7 @@ services:
       - multi-tenant-network
 
   watcher-tenant-b:
-    image: excalibase/excalibase-watcher-go:latest
+    image: excalibase/excalibase-watcher-go:1.7.5@sha256:e31bbddc0753189510be1f536fb70535f68b706795b7bf049da0a8af612f1069
     container_name: mt-watcher-b
     command: ["--config", "/config/config.yaml"]
     environment:
