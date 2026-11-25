@@ -198,8 +198,7 @@ class EngineRlsIntegrationTest extends EngineIntegrationTest {
 
     private String jwt(String userId, String projectId, Map<String, Object> extraClaims) throws Exception {
         JWTClaimsSet.Builder claims = new JWTClaimsSet.Builder()
-                .subject("user@test.com")
-                .claim("userId", userId)
+                .subject(String.valueOf(userId))
                 .claim("projectId", projectId)
                 .audience("excalibase:" + projectId)
                 .claim("role", "app_authenticated")
@@ -254,8 +253,7 @@ class EngineRlsIntegrationTest extends EngineIntegrationTest {
     /** A guest's token as excalibase-auth signs it: sub is the id, no address. */
     private String guestJwt(String projectId) throws Exception {
         JWTClaimsSet claims = new JWTClaimsSet.Builder()
-                .subject("77")
-                .claim("userId", 77L)
+                .subject(String.valueOf(77L))
                 .claim("projectId", projectId)
                 .audience("excalibase:" + projectId)
                 .claim("role", "guest")

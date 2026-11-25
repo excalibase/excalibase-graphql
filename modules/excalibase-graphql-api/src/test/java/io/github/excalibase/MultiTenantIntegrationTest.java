@@ -193,8 +193,7 @@ class MultiTenantIntegrationTest extends EngineIntegrationTest {
     // for test stability; real provisioner generates a random ref at provision time.
     String projectId = projectIdOf(projectName);
     JWTClaimsSet claims = new JWTClaimsSet.Builder()
-        .subject("test@test.com")
-        .claim("userId", userId)
+        .subject(String.valueOf(userId))
         .claim("projectId", projectId)
         .audience("excalibase:" + projectId)
         .claim("orgSlug", orgSlug)

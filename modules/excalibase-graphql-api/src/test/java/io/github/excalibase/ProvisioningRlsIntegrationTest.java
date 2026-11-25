@@ -109,7 +109,7 @@ class ProvisioningRlsIntegrationTest extends EngineIntegrationTest {
 
     private AccessPlans.RealtimeAccess realtimeFor(String userId, String table) {
         JwtClaims claims = new JwtClaims(userId, PROJECT, null, null, "", ROLE, null, "authenticated", 0L,
-                Map.of("userId", userId), null);
+                Map.of(), null);
         return accessPlans.realtime(null, PROJECT, new Principal(ROLE, false, claims, Map.of()), table).orElseThrow();
     }
 
@@ -140,7 +140,7 @@ class ProvisioningRlsIntegrationTest extends EngineIntegrationTest {
     @Test
     void realtime_aTableTheRoleCannotSelect_offersNoSubscription() {
         JwtClaims claims = new JwtClaims(ALICE, PROJECT, null, null, "", ROLE, null, "authenticated", 0L,
-                Map.of("userId", ALICE), null);
+                Map.of(), null);
         assertThat(accessPlans.realtime(null, PROJECT, new Principal(ROLE, false, claims, Map.of()),
                 "rls_demo.members")).isEmpty();
     }
@@ -344,8 +344,7 @@ class ProvisioningRlsIntegrationTest extends EngineIntegrationTest {
 
     private String jwtWithClaims(String userId, Map<String, Object> extra) throws Exception {
         JWTClaimsSet.Builder builder = new JWTClaimsSet.Builder()
-                .subject("user@test.com")
-                .claim("userId", userId)
+                .subject(String.valueOf(userId))
                 .claim("projectId", PROJECT)
                 .audience("excalibase:" + PROJECT)
                 .claim("role", "app_authenticated")

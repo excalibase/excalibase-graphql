@@ -51,7 +51,6 @@ class JwtServiceHmacTest {
         JWTClaimsSet claims = new JWTClaimsSet.Builder()
                 .subject("42")
                 .claim("email", "user@example.com")
-                .claim("userId", 42L)
                 .claim("projectId", "p1")
                 .claim("role", "admin")
                 .expirationTime(Date.from(Instant.now().plusSeconds(3600)))
@@ -85,8 +84,7 @@ class JwtServiceHmacTest {
     void tokenMissingExp_throws() throws Exception {
         JwtService svc = new JwtService(SECRET).requireAudience(false, null);
         JWTClaimsSet claims = new JWTClaimsSet.Builder()
-                .subject("user@example.com")
-                .claim("userId", 1L)
+                .subject(String.valueOf(1L))
                 .build();
         String token = signHmac(SECRET, claims);
 
@@ -100,8 +98,7 @@ class JwtServiceHmacTest {
     void apiKeyToken_noExp_isRefused() throws Exception {
         JwtService svc = new JwtService(SECRET).requireAudience(false, null);
         JWTClaimsSet claims = new JWTClaimsSet.Builder()
-                .subject("bot@example.com")
-                .claim("userId", 7L)
+                .subject(String.valueOf(7L))
                 .claim("scope", "api-key")
                 .claim("keyId", 99L)
                 .claim("role", "anon")
@@ -118,8 +115,7 @@ class JwtServiceHmacTest {
     void expiredToken_throws() throws Exception {
         JwtService svc = new JwtService(SECRET).requireAudience(false, null);
         JWTClaimsSet claims = new JWTClaimsSet.Builder()
-                .subject("user@example.com")
-                .claim("userId", 1L)
+                .subject(String.valueOf(1L))
                 .expirationTime(Date.from(Instant.now().minusSeconds(10)))
                 .build();
         String token = signHmac(SECRET, claims);
@@ -134,8 +130,7 @@ class JwtServiceHmacTest {
     void notBeforeInFuture_throws() throws Exception {
         JwtService svc = new JwtService(SECRET).requireAudience(false, null);
         JWTClaimsSet claims = new JWTClaimsSet.Builder()
-                .subject("user@example.com")
-                .claim("userId", 1L)
+                .subject(String.valueOf(1L))
                 .expirationTime(Date.from(Instant.now().plusSeconds(3600)))
                 .notBeforeTime(Date.from(Instant.now().plusSeconds(600)))
                 .build();
@@ -164,7 +159,7 @@ class JwtServiceHmacTest {
 
     @Test
     @DisplayName("token with neither userId nor sub throws")
-    void noUserIdAndNoSub_throws() throws Exception {
+    void noSub_throws() throws Exception {
         JwtService svc = new JwtService(SECRET).requireAudience(false, null);
         JWTClaimsSet claims = new JWTClaimsSet.Builder()
                 .expirationTime(Date.from(Instant.now().plusSeconds(3600)))
@@ -173,7 +168,7 @@ class JwtServiceHmacTest {
 
         assertThatThrownBy(() -> svc.verify(token))
                 .isInstanceOf(JwtVerificationException.class)
-                .hasMessageContaining("userId or sub");
+                .hasMessageContaining("Missing required claim: sub");
     }
 
     @Test

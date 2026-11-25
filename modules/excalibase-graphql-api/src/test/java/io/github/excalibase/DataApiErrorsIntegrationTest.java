@@ -110,7 +110,7 @@ class DataApiErrorsIntegrationTest extends EngineIntegrationTest {
 
     private static String token() throws Exception {
         JWTClaimsSet claims = new JWTClaimsSet.Builder()
-                .subject("u@test.com").claim("userId", "u-1").claim("projectId", PROJECT)
+                .subject(String.valueOf("u-1")).claim("projectId", PROJECT)
                 .claim("role", ROLE).claim("scope", "authenticated")
                 .audience("excalibase:" + PROJECT).issuer("excalibase")
                 .issueTime(Date.from(Instant.parse("2024-01-01T00:00:00Z")))

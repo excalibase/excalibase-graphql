@@ -188,8 +188,7 @@ class MultiEngineIntegrationTest extends EngineIntegrationTest {
 
   private static String token(String projectId, Map<String, Object> claims) {
     JWTClaimsSet.Builder builder = new JWTClaimsSet.Builder()
-        .subject("dev@example.com")
-        .claim("userId", 1)
+        .subject(String.valueOf(1))
         .claim("projectId", projectId)
         .audience("excalibase:" + projectId)
         .issuer("excalibase")

@@ -237,7 +237,7 @@ class PermissionsOutageIntegrationTest extends EngineIntegrationTest {
     }
 
     private static String userToken() throws JOSEException {
-        return sign(Map.of("userId", ALICE, "role", USER_ROLE));
+        return sign(Map.of("sub", ALICE, "role", USER_ROLE));
     }
 
     private static String serviceToken() throws JOSEException {

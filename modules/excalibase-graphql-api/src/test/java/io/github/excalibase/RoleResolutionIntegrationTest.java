@@ -119,8 +119,7 @@ class RoleResolutionIntegrationTest extends EngineIntegrationTest {
 
     private static String token(Map<String, Object> roleClaims) throws Exception {
         JWTClaimsSet.Builder builder = new JWTClaimsSet.Builder()
-                .subject("u@test.com")
-                .claim("userId", "u-1")
+                .subject(String.valueOf("u-1"))
                 .claim("projectId", PROJECT)
                 .audience("excalibase:" + PROJECT)
                 .issueTime(Date.from(Instant.now()))

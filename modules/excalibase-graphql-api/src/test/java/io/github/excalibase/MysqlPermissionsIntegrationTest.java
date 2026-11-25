@@ -543,7 +543,7 @@ class MysqlPermissionsIntegrationTest extends EngineIntegrationTest {
     /** With an aal claim; null leaves it out. */
     private static String jwt(String userId, String aal) throws Exception {
         JWTClaimsSet claims = new JWTClaimsSet.Builder()
-                .subject("u@test.com").claim("userId", userId).claim("projectId", PROJECT).claim("aal", aal)
+                .subject(String.valueOf(userId)).claim("projectId", PROJECT).claim("aal", aal)
                 .audience("excalibase:" + PROJECT).claim("role", ROLE).issuer("excalibase")
                 .issueTime(Date.from(Instant.parse("2024-01-01T00:00:00Z")))
                 .expirationTime(Date.from(Instant.parse("2099-01-01T00:00:00Z")))

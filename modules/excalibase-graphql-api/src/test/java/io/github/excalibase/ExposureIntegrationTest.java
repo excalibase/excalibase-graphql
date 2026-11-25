@@ -133,8 +133,7 @@ class ExposureIntegrationTest extends EngineIntegrationTest {
 
     private String jwt(String role, String scope) throws Exception {
         JWTClaimsSet claims = new JWTClaimsSet.Builder()
-                .subject("u@test.com")
-                .claim("userId", "u-1")
+                .subject(String.valueOf("u-1"))
                 .claim("projectId", PROJECT)
                 .claim("role", role)
                 .claim("scope", scope)

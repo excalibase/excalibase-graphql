@@ -211,7 +211,7 @@ class TeamboardIntegrationTest extends EngineIntegrationTest {
 
     private static String token(String role) throws Exception {
         JWTClaimsSet claims = new JWTClaimsSet.Builder()
-                .subject("u@test.com").claim("userId", USER_ID)
+                .subject(String.valueOf(USER_ID))
                 .claim("projectId", PROJECT).audience("excalibase:" + PROJECT)
                 .claim("role", role).issuer("excalibase")
                 .issueTime(Date.from(Instant.parse("2024-01-01T00:00:00Z")))
