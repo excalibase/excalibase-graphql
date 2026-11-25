@@ -104,10 +104,10 @@ describe('a save stops when the text moves under it', () => {
 });
 
 describe('while a save is running', () => {
-  it('a token edit leaves the draft unchanged', async () => {
+  it('removing a jwt section leaves the draft unchanged', async () => {
     const { engine, gate, saving } = await saveHolding(1);
     const before = wb.draft;
-    act(() => wb.applyToken({ secret: 'env:X', claims: { role: 'role' } }));
+    act(() => wb.removeJwt());
     expect(wb.draft).toBe(before);
     await finish(gate.release, saving);
     await waitFor(() => expect(wb.confirm?.kind === 'save' || puts(engine).length === 1).toBe(true));
@@ -123,7 +123,7 @@ describe('the dialog', () => {
     await act(async () => { await wb.save(); });
     expect(wb.confirm?.kind).toBe('save');
     const listed = wb.confirm?.kind === 'save' ? wb.confirm.text : '';
-    act(() => wb.applyToken({ secret: 'env:X', claims: { role: 'role' } }));
+    act(() => wb.removeJwt());
     act(() => wb.toggle(TODOS, 'anon', 'delete', true));
     act(() => wb.edit(WIDER));
     act(() => wb.confirmSave(false));

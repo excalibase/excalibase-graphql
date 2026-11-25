@@ -10,7 +10,8 @@ services:
       SPRING_DATASOURCE_DRIVER_CLASS_NAME: org.sqlite.JDBC
       APP_DATABASE_TYPE: sqlite
       APP_PROJECT_ID: my-app
-      JWT_SECRET: change-me-to-a-long-random-secret-of-32-bytes-or-more
+      APP_AUTH_SECRET: change-me-to-a-long-random-secret-of-32-bytes-or-more
+      APP_AUTH_AUDIENCE: my-app-api
       # Readiness reports not ready while no valid permissions file is loaded. /actuator/health also checks the database.
       MANAGEMENT_ENDPOINT_HEALTH_PROBES_ENABLED: "true"
       METADATA_SOURCE: file

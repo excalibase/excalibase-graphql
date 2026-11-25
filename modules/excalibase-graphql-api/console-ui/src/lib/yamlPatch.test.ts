@@ -1,6 +1,6 @@
 import { parse } from 'yaml';
 import { describe, expect, test } from 'vitest';
-import { setOperation, withJwt, type PermissionsDoc } from './docmodel';
+import { setOperation, withoutJwt, type PermissionsDoc } from './docmodel';
 import { patchYaml, treesEqual } from './yamlPatch';
 
 const DOCUMENT = `# yaml-language-server: $schema=https://example.test/schema.json
@@ -93,7 +93,7 @@ describe('patching a YAML document from the grid', () => {
   });
 
   test('the token settings are patched in place and the rest keeps its comments', () => {
-    const next = withJwt(tree(DOCUMENT), { ...(tree(DOCUMENT).jwt as object), audience: 'my-api' });
+    const next = { ...tree(DOCUMENT), jwt: { ...(tree(DOCUMENT).jwt as object), audience: 'my-api' } };
 
     const patched = patchYaml(DOCUMENT, next) as string;
 
@@ -103,7 +103,7 @@ describe('patching a YAML document from the grid', () => {
   });
 
   test('removing the token section removes just that section', () => {
-    const next = withJwt(tree(DOCUMENT), null);
+    const next = withoutJwt(tree(DOCUMENT));
 
     const patched = patchYaml(DOCUMENT, next) as string;
 

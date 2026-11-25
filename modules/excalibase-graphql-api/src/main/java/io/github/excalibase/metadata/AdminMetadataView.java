@@ -49,6 +49,11 @@ public final class AdminMetadataView {
         return Optional.of(body);
     }
 
+    /** The version being served, for what the Auth page reports about its token section. */
+    public Optional<MetadataSource.Snapshot> served() {
+        return source == null ? Optional.empty() : source.current();
+    }
+
     /** The versions the source has replaced; empty when it keeps none (only the file source does). */
     public Optional<DocumentHistory> history() {
         return source == null ? Optional.empty() : source.history();

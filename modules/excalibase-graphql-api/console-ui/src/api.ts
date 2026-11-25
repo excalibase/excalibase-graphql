@@ -85,6 +85,41 @@ export interface ValidateReply {
   warnings?: Warning[];
 }
 
+export type AuthSource = 'engine' | 'legacy-engine' | 'document' | 'none';
+export type DocumentJwt = 'absent' | 'identical' | 'different' | 'present-deprecated';
+
+export interface AuthClaims {
+  role: string;
+  defaultRole: string;
+  userId: string;
+  extra: Record<string, string>;
+}
+
+/** How the engine checks tokens, as `GET /auth` reports it: never the secret, only whether one is set. */
+export interface AuthSettings {
+  source: AuthSource;
+  issuer?: string;
+  jwksUrl?: string;
+  algorithms: string[];
+  audience: string[];
+  clockSkew?: number;
+  claims?: AuthClaims;
+  secret: 'set' | 'unset';
+  keysLoaded?: boolean;
+  documentJwt: DocumentJwt;
+  warnings: Array<{ code: string }>;
+}
+
+/** What "test a token" answers: a reason name for a token that fails, who it is for one that passes. */
+export interface TokenCheckReply {
+  valid: boolean;
+  reason?: string;
+  role?: string;
+  allowedRoles?: string[];
+  userId?: string;
+  sessionVariables?: Record<string, string>;
+}
+
 let secret = readStored();
 
 function readStored(): string {
@@ -196,6 +231,10 @@ export const getReplicas = (): Promise<{ replicas: Replica[] }> => call('GET', '
 export const validateText = (text: string): Promise<ValidateReply> => call('POST', '/validate', text);
 export const parseText = (text: string, signal?: AbortSignal): Promise<ParseReply> =>
   call('POST', '/parse', text, {}, signal);
+
+export const getAuth = (): Promise<AuthSettings> => call('GET', '/auth');
+/** The token goes in the body of this one call. It is not kept here, in storage or anywhere else. */
+export const checkToken = (token: string): Promise<TokenCheckReply> => call('POST', '/auth/check', token);
 
 export const getHistory = (): Promise<HistoryList> => call('GET', '/history');
 export const getHistoryEntry = (id: string): Promise<HistoryEntry & { text: string }> =>

@@ -190,7 +190,28 @@ the logs say `metadata_jwt_identical`, then remove `jwt:` from the document. Rem
 runs the new version leaves the old replicas with no verifier, so every token is rejected there. With no
 verifier at all the engine starts, warns `no_token_verifier`, and rejects every token.
 
-The `jwt:` section below still works when no engine settings are set, and is deprecated.
+The `jwt:` section below still works when no engine settings are set, and is deprecated. The default
+`metadata/permissions.yaml` no longer has one, and the compose and Kubernetes examples set `APP_AUTH_*`.
+
+### Upgrading an older compose file or manifest
+
+An older example set only `JWT_SECRET` and kept a `jwt:` section in `permissions.yaml`. If you take the new default
+file and keep that compose file, the engine **starts but rejects every token**: with no `APP_AUTH_*` and no `jwt:`
+there is no verifier, so it fails closed and logs `no_token_verifier` (`validate` and the console's save say the
+same when the document has rules for a role other than `anon`). Fix it in the compose file or manifest: replace
+`JWT_SECRET` with `APP_AUTH_SECRET` (same value, 32 bytes or more) and set `APP_AUTH_AUDIENCE` to the audience your
+tokens carry (`my-app-api` in the old file). Keep an old document that still has `jwt:` as it is until then.
+
+### The Auth page
+
+With the console on, `CONSOLE_AUTH_PAGE_ENABLED=true` adds Settings, then Auth: a read-only view of how the engine
+checks tokens (the source of the settings, algorithm, audience and the two claim names; never the secret), a "Test a
+token" box that says why a token passes or fails, and a generator for the `APP_AUTH_*` lines and the Kubernetes `env:`
+block. It does not change the engine's settings. The pasted token is sent to the engine over the admin port, checked
+and dropped: not logged, stored or kept in the browser. The calls are `GET /_admin/v1/auth` and
+`POST /_admin/v1/auth/check`; the second is limited per address, apart from the admin secret's own limit
+(`EXCALIBASE_ADMIN_TOKEN_CHECK_LIMIT` per `EXCALIBASE_ADMIN_TOKEN_CHECK_WINDOW_SECONDS`, default 30 per 60). Off by
+default; without the console the setting refuses start.
 
 Put a `jwt:` section in the document. It applies only when `METADATA_SOURCE` is set; without it the engine
 verifies tokens from its own settings (`APP_SECURITY_AUTH_*`), exactly as before. Do not set both: a document

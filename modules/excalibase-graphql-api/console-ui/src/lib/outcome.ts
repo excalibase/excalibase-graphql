@@ -67,6 +67,8 @@ export function restoreFailure(failure: ApiError): { text: string; errors?: stri
 const MESSAGES: Record<string, string> = {
   unauthorized: 'That secret was not accepted.',
   too_many_failed_attempts: 'Too many failed attempts. Wait a minute and try again.',
+  too_many_token_checks: 'Too many token checks from this address. Wait a minute and try again.',
+  token_too_large: 'That is too large to be a token.',
   no_metadata_source: 'This engine has no permissions text.',
   schema_unavailable: 'The database schema is not loaded yet. Try again in a moment.',
   invalid_document: 'The document is not valid.',

@@ -60,6 +60,17 @@ final class AdminTestEngine {
         return properties;
     }
 
+    /** The console with the Auth page on and the engine's own token settings ({@code app.auth.*}) in place of the legacy ones. */
+    static Map<String, String> authPageOn(Path document, int managementPort, int adminPort) {
+        Map<String, String> properties = consoleOn(document, managementPort, adminPort);
+        properties.remove("app.security.auth.hmac-secret");
+        properties.put("console.auth-page.enabled", "true");
+        properties.put("app.auth.secret", AuthTokens.SECRET);
+        properties.put("app.auth.audience", AuthTokens.AUDIENCE);
+        properties.put("app.auth.issuer", AuthTokens.ISSUER);
+        return properties;
+    }
+
     static EngineClient on(int port) {
         return new EngineClient(URI.create("http://localhost:" + port + "/"));
     }

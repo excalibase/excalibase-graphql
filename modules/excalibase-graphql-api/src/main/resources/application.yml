@@ -40,6 +40,10 @@ endpoints:
     path: /actuator
     port: ${MANAGEMENT_SERVER_PORT:8081}   # actuator (health probes) on its own port; never expose it publicly
 
+console:
+  auth-page:
+    enabled: ${CONSOLE_AUTH_PAGE_ENABLED:false}   # the Auth page and its two admin calls; needs EXCALIBASE_CONSOLE_ENABLED=true
+
 excalibase:
   console:
     enabled: ${EXCALIBASE_CONSOLE_ENABLED:false}   # the admin API and console; off by default, refused in hosted mode
@@ -49,6 +53,8 @@ excalibase:
     secret-file: ${EXCALIBASE_ADMIN_SECRET_FILE:}   # the same, read from a mounted file
     max-failures: ${EXCALIBASE_ADMIN_MAX_FAILURES:10}   # failed attempts per address before it is refused for the window
     failure-window-seconds: ${EXCALIBASE_ADMIN_FAILURE_WINDOW_SECONDS:60}
+    token-check-limit: ${EXCALIBASE_ADMIN_TOKEN_CHECK_LIMIT:30}   # "test a token" calls per address and window
+    token-check-window-seconds: ${EXCALIBASE_ADMIN_TOKEN_CHECK_WINDOW_SECONDS:60}
 
 # Same property names as the engine's earlier build read
 management:

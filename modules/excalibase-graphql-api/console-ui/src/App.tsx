@@ -22,7 +22,7 @@ function PageFor({ route }: { route: Route }) {
     case 'replicas':
       return <ReplicasPage />;
     case 'settings':
-      return <SettingsPage />;
+      return <SettingsPage arg={route.arg} />;
     case 'explorer':
       return <SoonPage title="API explorer" trail="API explorer" what="Try your GraphQL and REST calls here, as any role you choose, and see exactly what that role gets back." />;
     default:

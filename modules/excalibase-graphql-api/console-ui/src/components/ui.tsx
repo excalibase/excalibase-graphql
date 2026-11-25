@@ -2,6 +2,33 @@ import { useEffect, useRef, type ReactNode } from 'react';
 import type { Change } from '../lib/docmodel';
 import { OUTAGE_NOTE_CODE, TOKEN_NOTE_CODES, type Warning } from '../lib/outcome';
 
+/** One labelled fact of a read-only list. */
+export function Fact({ label, value }: { label: string; value: string | number | null }) {
+  return (
+    <div className="field">
+      <dt className="label">{label}</dt>
+      <dd className="mono">{value ?? 'none'}</dd>
+    </div>
+  );
+}
+
+interface FieldProps {
+  id: string;
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+}
+
+/** A one-line text input with its label, for a value that is never a secret. */
+export function Field({ id, label, value, onChange }: FieldProps) {
+  return (
+    <div className="field">
+      <label htmlFor={id}>{label}</label>
+      <input id={id} className="input" type="text" autoComplete="off" spellCheck={false} value={value} onChange={(event) => onChange(event.target.value)} />
+    </div>
+  );
+}
+
 export function Loading({ label = 'Loading' }: { label?: string }) {
   return (
     <div role="status" className="card">

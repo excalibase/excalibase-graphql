@@ -40,10 +40,11 @@ spec:
               valueFrom: {secretKeyRef: {name: excalibase-engine, key: database-username}}
             - name: SPRING_DATASOURCE_PASSWORD
               valueFrom: {secretKeyRef: {name: excalibase-engine, key: database-password}}
-            # Tokens: the document's `jwt:` section says `secret: env:JWT_SECRET`. For Auth0, Cognito, Keycloak
-            # or OIDC, put `issuer:` in that section instead and drop this variable.
-            - name: JWT_SECRET
+            # Tokens are checked by the engine's own settings, not by the permissions document. For Auth0, Cognito,
+            # Keycloak or OIDC use APP_AUTH_ISSUER (and APP_AUTH_JWKS_URL) in place of the secret.
+            - name: APP_AUTH_SECRET
               valueFrom: {secretKeyRef: {name: excalibase-engine, key: jwt-secret}}
+            - {name: APP_AUTH_AUDIENCE, value: my-app-api}
             # Permissions: a row in excalibase_meta.metadata_documents.
             - {name: METADATA_SOURCE, value: db}
             # The document is read and saved as a separate user that has SELECT and INSERT on the table only

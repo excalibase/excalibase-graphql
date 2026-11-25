@@ -14,8 +14,13 @@ const SHOP = EXAMPLE.slice(0, EXAMPLE.indexOf("tables:")) + `tables:
     role: user
     select: {filter: {}, columns: ["id", "customer_id", "status", "total"]}
 `;
-const PAGES = ["data", "schema/public.orders", "permissions/%40user", "permissions/yaml", "permissions/token",
-  "permissions/history", "explorer", "replicas", "settings"];
+// The shipped example has no comments, so the tests that prove a grid change keeps a person's comments bring their own.
+const COMMENTED = "# yaml-language-server: $schema=https://excalibase.io/schemas/metadata-v1.json\n" + EXAMPLE
+  .replace("projectId: my-app", "projectId: my-app            # must equal APP_PROJECT_ID of the engine")
+  .replace('filter: {"owner_id": {"_eq": "X-Excalibase-User-Id"}}\n      columns: "*"',
+    'filter: {"owner_id": {"_eq": "X-Excalibase-User-Id"}}   # a user sees only their own rows\n      columns: "*"');
+const PAGES = ["data", "schema/public.orders", "permissions/%40user", "permissions/yaml",
+  "permissions/history", "explorer", "replicas", "settings", "settings/auth"];
 
 const watchViolations = (page) => page.addInitScript(() => {
   window.__violations = [];
@@ -106,6 +111,7 @@ test("the menu lists the pages of the design, marks the open one, and lists the 
 });
 
 test("a role's grid: click a cell, count the change, confirm the wider access, and the engine serves it", async ({ page, request }) => {
+  await putDocument(request, COMMENTED);
   await signIn(page, "#/permissions/%40anon");
   await expect(page.getByRole("heading", { name: "What can “anon” do?" })).toBeVisible();
   await expect(saveButton(page)).toBeDisabled();
@@ -129,6 +135,7 @@ test("a role's grid: click a cell, count the change, confirm the wider access, a
 });
 
 test("a grid change never asks about comments: the file keeps them, and only the access is asked", async ({ page, request }) => {
+  await putDocument(request, COMMENTED);
   await signIn(page, "#/permissions/%40anon");
   await page.getByRole("button", { name: /anon can delete todos: None/ }).click();
   await saveButton(page).click();
@@ -241,30 +248,6 @@ test("a save that lost to someone else is explained, shows their version, and ov
   await saveButton(page).click();
   await expect(page.getByText(/Saved\. The engine now uses version/)).toBeVisible();
   expect((await metadata(request)).document).toContain("# mine");
-});
-
-test("the sample token: paste, read the claims, pick the role and the user id, apply, save", async ({ page, request }) => {
-  const encode = (value) => Buffer.from(JSON.stringify(value)).toString("base64url");
-  const token = `${encode({ alg: "HS256" })}.${encode({ role: "user", sub: "u1", org: { id: "o1" }, iss: "me" })}.signature`;
-  await signIn(page, "#/permissions/token");
-
-  await page.getByLabel("A sample token").fill(token);
-  await page.getByRole("button", { name: "Read claims" }).click();
-  await expect(page.getByRole("table", { name: "Claims in the token" })).toContainText("org.id");
-  await expect(page.getByLabel("A sample token")).toHaveValue("");
-  await page.getByRole("button", { name: "Use role as the role" }).click();
-  await page.getByRole("button", { name: "Use sub as the user id" }).click();
-  await page.getByRole("button", { name: "Pass org.id on as an extra value" }).click();
-  await expect(page.getByLabel("Role claim", { exact: true })).toHaveValue("role");
-  await page.getByRole("button", { name: "Apply to the document" }).click();
-
-  await expect(page).toHaveURL(/#\/permissions\/yaml$/);
-  await expect(page.locator(".cm-content")).toContainText("X-Excalibase");
-  await saveButton(page).click();
-  await page.getByRole("dialog").getByRole("button", { name: "Save and apply" }).click();
-  await expect(page.getByText(/Saved\. The engine now uses version/)).toBeVisible();
-  const claims = (await served(request)).jwt.claims;
-  expect(claims).toMatchObject({ role: "role", userId: "sub", extra: { id: "org.id" } });
 });
 
 test("version history: pick an old version, see what differs, restore it after the question", async ({ page, request }) => {
@@ -402,7 +385,7 @@ test("screenshots of each page, light, dark and on a phone", async ({ page, requ
   await open("#/schema/public.orders", "orders"); await shoot("schema-light");
   await open("#/permissions/%40user", /What can/); await shoot("permissions-light");
   await open("#/permissions/yaml", "Permissions as YAML"); await shoot("yaml-light");
-  await open("#/permissions/token", "Sample token"); await shoot("token-light");
+  await open("#/settings/auth", "Auth"); await shoot("auth-light");
   await open("#/permissions/history", "Version history"); await shoot("history-light");
   await open("#/replicas", "Replicas"); await shoot("replicas-light");
   await open("#/settings", "Settings"); await shoot("settings-light");

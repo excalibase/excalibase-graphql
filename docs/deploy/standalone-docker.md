@@ -20,7 +20,7 @@ Everything is in [`deploy/standalone`](https://github.com/excalibase/excalibase-
 |---|---|
 | `docker-compose.file.yml` | Postgres and the engine with the `file` source. No console. |
 | `docker-compose.console.yml` | An overlay that turns the console on. |
-| `metadata/permissions.yaml` | The metadata document, with rules and a `jwt:` section. |
+| `metadata/permissions.yaml` | The metadata document: the rules. Tokens are set in the compose file, not here. |
 | `init.sql` | A sample `todos` table. |
 
 ## Run it
@@ -46,7 +46,8 @@ engine:
     SPRING_DATASOURCE_PASSWORD: change-me
     APP_DATABASE_TYPE: postgres
     APP_PROJECT_ID: my-app
-    JWT_SECRET: change-me-to-a-long-random-secret-of-32-bytes-or-more
+    APP_AUTH_SECRET: change-me-to-a-long-random-secret-of-32-bytes-or-more
+    APP_AUTH_AUDIENCE: my-app-api
     METADATA_SOURCE: file
     METADATA_FILE_PATH: /etc/excalibase
     MANAGEMENT_ENDPOINT_HEALTH_PROBES_ENABLED: "true"
@@ -65,40 +66,39 @@ file, so an editor that replaces the file is still seen.
 
 ## Tokens
 
-The sample document reads a shared secret (HS256) from `JWT_SECRET`:
+The engine checks tokens with its own settings (`APP_AUTH_*`), set in the compose file and not in the permissions
+file. The example uses a shared secret (HS256):
 
 ```yaml
-jwt:
-  secret: env:JWT_SECRET
-  algorithms: [HS256]
-  audience: my-app-api
-  claims:
-    role: role
-    userId: sub
+APP_AUTH_SECRET: change-me-to-a-long-random-secret-of-32-bytes-or-more
+APP_AUTH_AUDIENCE: my-app-api
 ```
 
 A token needs `aud` equal to `my-app-api`, a `role` claim and a `sub`. The rule for `todos` lets a `user` see
-the rows whose `owner_id` equals `sub`.
+the rows whose `owner_id` equals `sub`. `APP_AUTH_CLAIMS_ROLE` and `APP_AUTH_CLAIMS_USER_ID` name other claims.
 
-For Auth0, Cognito, Keycloak or another OIDC issuer, replace the section with one that has an `issuer`. For
-Keycloak:
+For Auth0, Cognito, Keycloak or another OIDC issuer, set an issuer instead of the secret. For Keycloak:
 
 ```yaml
-jwt:
-  issuer: https://keycloak.example.com/realms/my-realm
-  audience: my-app-api
-  claims:
-    role: realm_access.roles
-    defaultRole: user
+APP_AUTH_ISSUER: https://keycloak.example.com/realms/my-realm
+APP_AUTH_AUDIENCE: my-app-api
+APP_AUTH_CLAIMS_ROLE: realm_access.roles
+APP_AUTH_CLAIMS_DEFAULT_ROLE: user
 ```
 
-Then remove `JWT_SECRET`. Do not set `APP_SECURITY_AUTH_JWKS_URL` or `APP_SECURITY_AUTH_HMAC_SECRET` at the
-same time: the document is refused while either is set. The other providers are in the
+Do not set `APP_SECURITY_AUTH_JWKS_URL` or `APP_SECURITY_AUTH_HMAC_SECRET` at the same time: the engine refuses to
+start. The other providers and every `APP_AUTH_*` name are in the
 [folder README](https://github.com/excalibase/excalibase-graphql/blob/main/deploy/standalone/README.md).
 
-Check the document before you start the engine. A `jwt: secret: env:NAME` or `file:` reference is resolved where you
-run `validate`, so export that variable (or have the file) first; a missing or short secret fails here as it does in
-the engine:
+**Upgrading an older compose file.** Earlier examples set only `JWT_SECRET` and kept a `jwt:` section in
+`permissions.yaml`. The new default file has no `jwt:` section. If you take the new file and keep the old compose,
+the engine starts but nothing verifies a token: every token is rejected (it fails closed) and the log says
+`no_token_verifier`. Replace `JWT_SECRET` with `APP_AUTH_SECRET` (the same value) and set `APP_AUTH_AUDIENCE` to the
+audience your tokens carry (`my-app-api` in the old file). An old document that still has a `jwt:` section keeps working
+until you set `APP_AUTH_*`; then it must say exactly the same, and you remove it (see the README).
+
+Check the document before you start the engine. `validate` reads `APP_AUTH_*` from its environment the way the engine
+does, so export them first to also see whether the engine has a token verifier:
 
 ```bash
 java -jar excalibase-graphql-api.jar validate metadata/permissions.yaml --project-id my-app
@@ -189,6 +189,16 @@ Then open `http://localhost:10001/console` and paste the secret. The overlay:
 - reads the secret from a file with `EXCALIBASE_ADMIN_SECRET_FILE`, through a compose secret;
 - publishes the admin port as `127.0.0.1:10001`, so only this machine can reach it;
 - mounts `./metadata` writable, because a save writes a new file next to `permissions.yaml`.
+
+### The Auth page (optional)
+
+Settings, then Auth, shows how the engine checks tokens: where the settings come from, the algorithm, audience and
+claim names, and never the secret. You can paste a token to see why it passes or fails, and build the `APP_AUTH_*`
+lines for a setup you read from a sample token. It is read-only: it does not change the engine's settings. Turn it on
+with `CONSOLE_AUTH_PAGE_ENABLED=true` (it needs the console and is off by default). The token you paste is sent to the
+engine on the admin port, checked, and dropped: it is not logged, stored or kept in the browser. "Test a token" is
+limited per address (`EXCALIBASE_ADMIN_TOKEN_CHECK_LIMIT` per `EXCALIBASE_ADMIN_TOKEN_CHECK_WINDOW_SECONDS`, 30 per 60
+seconds), on top of the admin secret.
 
 The engine runs as uid 1000 in the container. The metadata folder must be writable by that user for saves to
 work, and the secret file must be readable by it.

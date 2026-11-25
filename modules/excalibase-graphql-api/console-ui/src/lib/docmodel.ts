@@ -110,8 +110,9 @@ export function setOperation(doc: PermissionsDoc, table: string, role: string, o
   });
 }
 
-export function withJwt(doc: PermissionsDoc, jwt: JwtSection | null): PermissionsDoc {
-  return jwt ? { ...omit(doc, 'jwt'), jwt } : omit(doc, 'jwt');
+/** The document without its token section: the console only reads a section an older document holds, it never writes one. */
+export function withoutJwt(doc: PermissionsDoc): PermissionsDoc {
+  return omit(doc, 'jwt');
 }
 
 const OPERATION_MARKS = [
