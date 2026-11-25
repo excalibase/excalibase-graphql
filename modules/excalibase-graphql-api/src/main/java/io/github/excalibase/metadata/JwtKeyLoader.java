@@ -187,6 +187,15 @@ final class JwtKeyLoader {
         return secret;
     }
 
+    /** A secret held as a value (the engine's environment), checked as a referenced one is. */
+    static byte[] secretValue(String value) {
+        byte[] secret = value == null ? new byte[0] : value.strip().getBytes(StandardCharsets.UTF_8);
+        if (secret.length < MIN_SECRET_BYTES) {
+            throw new IllegalStateException("the jwt secret is missing or shorter than " + MIN_SECRET_BYTES + " bytes");
+        }
+        return secret;
+    }
+
     private static String readSecretFile(Path file) {
         if (!Files.isRegularFile(file)) {
             throw new IllegalStateException("the jwt secret file is not a regular file");

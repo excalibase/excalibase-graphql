@@ -74,4 +74,14 @@ class JwtSettingsParserTest {
     void aGoodJwtSection_isAccepted(String name, String jwt) {
         assertThat(parser.parse(document(jwt.replace("\\n", "\n")), 1)).isNotNull();
     }
+
+    @Test
+    void anExtraNamedUser_isRefused_soItCannotShadowTheUserAlias() {
+        for (String name : new String[] {"user", "User", "USER"}) {
+            String text = document("secret: env:S\naudience: a\nclaims:\n  extra:\n    " + name + ": u\n");
+
+            assertThatThrownBy(() -> parser.parse(text, 1)).isInstanceOf(MetadataDocumentException.class)
+                    .hasMessageContaining("claims.extra");
+        }
+    }
 }

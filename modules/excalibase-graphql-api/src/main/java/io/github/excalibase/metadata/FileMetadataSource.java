@@ -35,15 +35,26 @@ public final class FileMetadataSource {
     public static ReloadingMetadataSource create(Path path, Duration interval, ReservedSchemas reserved,
                                                  String expectedProjectId, MeterRegistry meters,
                                                  boolean envJwtConfigured) {
-        return create(path, interval, reserved, expectedProjectId, meters, envJwtConfigured,
-                new FileDocumentWriter(path));
+        return create(path, interval, reserved, expectedProjectId, meters, EngineAuth.of(envJwtConfigured));
+    }
+
+    public static ReloadingMetadataSource create(Path path, Duration interval, ReservedSchemas reserved,
+                                                 String expectedProjectId, MeterRegistry meters,
+                                                 EngineAuth engineAuth) {
+        return create(path, interval, reserved, expectedProjectId, meters, engineAuth, new FileDocumentWriter(path));
     }
 
     static ReloadingMetadataSource create(Path path, Duration interval, ReservedSchemas reserved,
                                           String expectedProjectId, MeterRegistry meters, boolean envJwtConfigured,
                                           FileDocumentWriter writer) {
+        return create(path, interval, reserved, expectedProjectId, meters, EngineAuth.of(envJwtConfigured), writer);
+    }
+
+    static ReloadingMetadataSource create(Path path, Duration interval, ReservedSchemas reserved,
+                                          String expectedProjectId, MeterRegistry meters, EngineAuth engineAuth,
+                                          FileDocumentWriter writer) {
         return new ReloadingMetadataSource(NAME, () -> read(path),
-                new MetadataDocumentParser(reserved, expectedProjectId, envJwtConfigured)::load, writer,
+                new MetadataDocumentParser(reserved, expectedProjectId, engineAuth)::load, writer,
                 interval, ReloadingMetadataSource.DEFAULT_SETTLE, meters);
     }
 

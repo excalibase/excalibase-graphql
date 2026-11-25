@@ -1,5 +1,6 @@
 package io.github.excalibase.admin;
 
+import io.github.excalibase.metadata.EngineAuth;
 import io.github.excalibase.schema.ReservedSchemas;
 import io.micronaut.context.annotation.Context;
 import io.micronaut.context.annotation.Factory;
@@ -23,7 +24,11 @@ public class AdminConfig {
     private static final int MAX_TRACKED_ADDRESSES = 10_000;
 
     /** What {@code validate} needs to judge a document as the engine would. */
-    public record ValidationSettings(ReservedSchemas reserved, String projectId, boolean envJwtConfigured) {
+    public record ValidationSettings(ReservedSchemas reserved, String projectId, EngineAuth engineAuth) {
+
+        public ValidationSettings(ReservedSchemas reserved, String projectId, boolean envJwtConfigured) {
+            this(reserved, projectId, EngineAuth.of(envJwtConfigured));
+        }
     }
 
     /** Whether this deployment serves the hosted platform: a policy URL or a provisioning URL is set. */
@@ -76,9 +81,7 @@ public class AdminConfig {
     @Requires(property = "excalibase.console.enabled", pattern = AdminSettings.ON_PATTERN)
     ValidationSettings validationSettings(@Value("${app.reserved-schemas:}") String reserved,
                                           @Value("${app.project-id:}") String projectId,
-                                          @Value("${app.security.auth.jwks-url:}") String jwksUrl,
-                                          @Value("${app.security.auth.hmac-secret:}") String hmacSecret) {
-        return new ValidationSettings(ReservedSchemas.fromConfig(reserved), projectId,
-                !jwksUrl.isBlank() || !hmacSecret.isBlank());
+                                          EngineAuth engineAuth) {
+        return new ValidationSettings(ReservedSchemas.fromConfig(reserved), projectId, engineAuth);
     }
 }

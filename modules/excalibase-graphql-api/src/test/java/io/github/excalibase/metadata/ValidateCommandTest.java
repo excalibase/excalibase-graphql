@@ -38,9 +38,47 @@ class ValidateCommandTest {
     void aGoodDocument_exitsZero() throws IOException {
         Path file = file(GOOD_YAML);
 
-        assertThat(run(Map.of(), "validate", file.toString())).isZero();
+        assertThat(run(Map.of("APP_SECURITY_AUTH_HMAC_SECRET", AuthSettingsReaderTest.SECRET), "validate",
+                file.toString())).isZero();
         assertThat(out.toString(StandardCharsets.UTF_8)).contains("ok").contains(file.toString());
         assertThat(err.toString(StandardCharsets.UTF_8)).isEmpty();
+    }
+
+    @Test
+    void rulesForARoleBesidesAnonAndNoVerifier_warnButExitZero() throws IOException {
+        Path file = file(GOOD_YAML);
+
+        assertThat(run(Map.of(), "validate", file.toString())).isZero();
+        assertThat(err.toString(StandardCharsets.UTF_8)).contains("warning: no_token_verifier");
+    }
+
+    @Test
+    void appAuthInTheEnvironment_isTheEngineSettings_andSilencesTheWarning() throws IOException {
+        Path file = file(GOOD_YAML);
+
+        assertThat(run(Map.of("APP_AUTH_SECRET", AuthSettingsReaderTest.SECRET, "APP_AUTH_AUDIENCE", "a"),
+                "validate", file.toString())).isZero();
+        assertThat(err.toString(StandardCharsets.UTF_8)).isEmpty();
+    }
+
+    @Test
+    void anUnknownAppAuthName_orBothKindsOfSettings_areInvalid() throws IOException {
+        Path file = file(GOOD_YAML);
+
+        assertThat(run(Map.of("APP_AUTH_CLAIM_ROLE", "r"), "validate", file.toString())).isEqualTo(1);
+        assertThat(err.toString(StandardCharsets.UTF_8)).contains("invalid:").contains("APP_AUTH_CLAIM_ROLE");
+        assertThat(run(Map.of("APP_AUTH_SECRET", AuthSettingsReaderTest.SECRET, "APP_AUTH_AUDIENCE", "a",
+                "APP_SECURITY_AUTH_HMAC_SECRET", AuthSettingsReaderTest.SECRET), "validate", file.toString()))
+                .isEqualTo(1);
+    }
+
+    @Test
+    void aDocumentJwtThatDiffersFromAppAuth_isInvalid() throws IOException {
+        Path file = file(GOOD_YAML.replace("tables:", "jwt:\n  secret: env:S\n  audience: other\ntables:"));
+
+        assertThat(run(Map.of("APP_AUTH_SECRET", AuthSettingsReaderTest.SECRET, "APP_AUTH_AUDIENCE", "a", "S",
+                AuthSettingsReaderTest.SECRET), "validate", file.toString())).isEqualTo(1);
+        assertThat(err.toString(StandardCharsets.UTF_8)).contains("app.auth.*").contains("audience");
     }
 
     @Test

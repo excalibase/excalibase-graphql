@@ -25,7 +25,7 @@ import java.util.concurrent.TimeUnit;
 final class Backend {
 
     static final Backend MONGO = new Backend("mongo:7", 27017, false);
-    static final Backend DOCUMENTDB = new Backend("ghcr.io/documentdb/documentdb/documentdb-local:latest", 10260, true);
+    static final Backend DOCUMENTDB = new Backend("ghcr.io/documentdb/documentdb/documentdb-local@sha256:1d40546ccf53a0229f98a0848b7c3d6d74dc35a9fa535a1d1c8f70e3bed10d23", 10260, true);
 
     private static final String DOCDB_USER = "tester";
     private static final String DOCDB_PASSWORD = "Tester-Pass-1234";

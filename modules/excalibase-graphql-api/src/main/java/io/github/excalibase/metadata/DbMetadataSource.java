@@ -25,9 +25,15 @@ public final class DbMetadataSource {
     public static ReloadingMetadataSource create(DbSettings settings, ReservedSchemas reserved,
                                                  String expectedProjectId, MeterRegistry meters,
                                                  boolean envJwtConfigured) {
+        return create(settings, reserved, expectedProjectId, meters, EngineAuth.of(envJwtConfigured));
+    }
+
+    public static ReloadingMetadataSource create(DbSettings settings, ReservedSchemas reserved,
+                                                 String expectedProjectId, MeterRegistry meters,
+                                                 EngineAuth engineAuth) {
         DbDocumentLoader loader = new DbDocumentLoader(settings);
         return new ReloadingMetadataSource(NAME, loader,
-                new MetadataDocumentParser(reserved, expectedProjectId, envJwtConfigured)::load,
+                new MetadataDocumentParser(reserved, expectedProjectId, engineAuth)::load,
                 new DbDocumentWriter(loader), settings.pollInterval(), meters);
     }
 }
