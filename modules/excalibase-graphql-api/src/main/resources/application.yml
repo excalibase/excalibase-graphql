@@ -113,6 +113,19 @@ app:
     allowed-origins: ${APP_CORS_ALLOWED_ORIGINS:}   # empty: CORS_ORIGINS (platform-aio's name), else *
     provisioning-url: ${APP_CORS_PROVISIONING_URL:}   # empty: the RLS policy URL
     ttl-ms: 30000
+  auth:   # the engine's own token settings (APP_AUTH_*); empty means none, see docs/deploy/standalone.md
+    issuer: ${APP_AUTH_ISSUER:}
+    jwks-url: ${APP_AUTH_JWKS_URL:}
+    secret: ${APP_AUTH_SECRET:}
+    secret-file: ${APP_AUTH_SECRET_FILE:}
+    algorithms: ${APP_AUTH_ALGORITHMS:}
+    audience: ${APP_AUTH_AUDIENCE:}
+    clock-skew: ${APP_AUTH_CLOCK_SKEW_SECONDS:}
+    claims:
+      role: ${APP_AUTH_CLAIMS_ROLE:}
+      default-role: ${APP_AUTH_CLAIMS_DEFAULT_ROLE:}
+      user-id: ${APP_AUTH_CLAIMS_USER_ID:}
+      extra: ${APP_AUTH_CLAIMS_EXTRA:}
   security:
     jwt-enabled: ${JWT_ENABLED:true}
     insecure-dev-mode: ${APP_SECURITY_INSECURE_DEV_MODE:false}

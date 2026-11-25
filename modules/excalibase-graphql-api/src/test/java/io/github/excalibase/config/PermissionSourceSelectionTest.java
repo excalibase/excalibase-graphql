@@ -2,6 +2,7 @@ package io.github.excalibase.config;
 
 import io.github.excalibase.config.datasource.DataSourceConfig;
 import io.github.excalibase.metadata.DbSettings;
+import io.github.excalibase.metadata.EngineAuth;
 import io.github.excalibase.metadata.S3Settings;
 import io.github.excalibase.metadata.ReloadingMetadataSource;
 import io.github.excalibase.permissions.NoPermissionSource;
@@ -57,7 +58,7 @@ class PermissionSourceSelectionTest {
 
     private PermissionProvider pickUrl(String source, String policyUrl, String path, String urlLocation) {
         return new AppConfig().permissionSource(source, policyUrl, path, 5000, urlLocation, "", "", false, 5000, 1000,
-                1000, "", "", "", false, 5000, 1000, SERVED, S3Settings.NONE, "demo", "", "", "", TOKEN, 30_000, 300_000, 2_000, null);
+                1000, "", "", "", false, 5000, 1000, SERVED, S3Settings.NONE, "demo", "", EngineAuth.NONE, TOKEN, 30_000, 300_000, 2_000, null);
     }
 
     @Test

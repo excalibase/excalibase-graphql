@@ -13,6 +13,7 @@ import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -36,6 +37,11 @@ public final class DocumentValidation {
      * document, but until then the engine drops the rule and the role holds less than the document says.
      */
     public record Warning(String code, String role, String table, String operation, String message) {
+
+        /** A warning about the document as a whole, not one rule. */
+        static Warning note(MetadataDocumentParser.Note note) {
+            return new Warning(note.code(), null, null, null, note.message());
+        }
 
         static Warning of(RuleProblem problem) {
             return new Warning(problem.code(), problem.role(), problem.table(), problem.operation(), message(problem));
@@ -85,22 +91,27 @@ public final class DocumentValidation {
     }
 
     public static Result validate(byte[] body, ReservedSchemas reserved, String projectId, boolean envJwtConfigured) {
-        return validate(body, reserved, projectId, envJwtConfigured, System::getenv);
+        return validate(body, reserved, projectId, EngineAuth.of(envJwtConfigured), System::getenv, null);
     }
 
     public static Result validate(byte[] body, ReservedSchemas reserved, String projectId, boolean envJwtConfigured,
                                   UnaryOperator<String> environment) {
-        return validate(body, reserved, projectId, envJwtConfigured, environment, null);
+        return validate(body, reserved, projectId, EngineAuth.of(envJwtConfigured), environment, null);
+    }
+
+    public static Result validate(byte[] body, ReservedSchemas reserved, String projectId, boolean envJwtConfigured,
+                                  UnaryOperator<String> environment, SchemaCheck schemaCheck) {
+        return validate(body, reserved, projectId, EngineAuth.of(envJwtConfigured), environment, schemaCheck);
     }
 
     /**
+     * @param engineAuth  the engine's own token settings, which decide what a {@code jwt:} section may be
      * @param environment where an {@code env:} secret reference is read, as the engine reads it
      * @param schemaCheck lists the rules the live schema does not fit, or null when the schema is not known; it can
      *                    only add warnings, so a failing check never refuses a document
      */
-    public static Result validate(byte[] body, ReservedSchemas reserved, String projectId, boolean envJwtConfigured,
-                                  UnaryOperator<String> environment,
-                                  SchemaCheck schemaCheck) {
+    public static Result validate(byte[] body, ReservedSchemas reserved, String projectId, EngineAuth engineAuth,
+                                  UnaryOperator<String> environment, SchemaCheck schemaCheck) {
         if (body == null || body.length == 0) {
             return refused("the document is empty");
         }
@@ -114,10 +125,13 @@ public final class DocumentValidation {
             return refused("the document is not UTF-8 text");
         }
         try {
-            PermissionSet permissions = new MetadataDocumentParser(reserved, projectId, envJwtConfigured)
-                    .check(text, 1, environment);
+            MetadataDocumentParser.Checked checked = new MetadataDocumentParser(reserved, projectId, engineAuth)
+                    .checkWithNotes(text, 1, environment);
+            PermissionSet permissions = checked.permissions();
+            List<Warning> warnings = new ArrayList<>(checked.notes().stream().map(Warning::note).toList());
+            warnings.addAll(warnings(permissions, schemaCheck));
             return new Result(true, List.of(), permissions.tables().size(), permissions.functions().size(),
-                    warnings(permissions, schemaCheck));
+                    List.copyOf(warnings));
         } catch (MetadataDocumentException e) {
             return refused(e.getMessage());
         }
@@ -129,13 +143,17 @@ public final class DocumentValidation {
      */
     public static Map<String, Object> tree(byte[] body, ReservedSchemas reserved, String projectId,
                                            boolean envJwtConfigured) {
-        return tree(body, reserved, projectId, envJwtConfigured, null);
+        return tree(body, reserved, projectId, EngineAuth.of(envJwtConfigured), null);
     }
 
     public static Map<String, Object> tree(byte[] body, ReservedSchemas reserved, String projectId,
-                                           boolean envJwtConfigured,
-                                           SchemaCheck schemaCheck) {
-        Result checked = validate(body, reserved, projectId, envJwtConfigured, System::getenv, schemaCheck);
+                                           boolean envJwtConfigured, SchemaCheck schemaCheck) {
+        return tree(body, reserved, projectId, EngineAuth.of(envJwtConfigured), schemaCheck);
+    }
+
+    public static Map<String, Object> tree(byte[] body, ReservedSchemas reserved, String projectId,
+                                           EngineAuth engineAuth, SchemaCheck schemaCheck) {
+        Result checked = validate(body, reserved, projectId, engineAuth, System::getenv, schemaCheck);
         Map<String, Object> answer = checked.toMap();
         if (checked.valid()) {
             JsonNode root = ConfigText.read(new String(body, StandardCharsets.UTF_8), TREE_MAPPER);
