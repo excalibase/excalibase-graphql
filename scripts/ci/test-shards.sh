@@ -12,22 +12,40 @@ set -euo pipefail
 
 root=$(cd "$(dirname "$0")/../.." && pwd)
 manifest="$root/scripts/ci/test-shards.txt"
+notests="$root/scripts/ci/test-shards-notests.txt"
 SHARDS=${SHARDS:-4}
 
-# Surefire's default includes (*Test, Test*, *Tests, *TestCase); abstract classes and helpers without a test method
-# are not run by Surefire, so they are not listed.
+# What Surefire runs by default: a class whose file name matches *Test, Test*, *Tests or *TestCase and that is not
+# abstract. The name is the only thing read, never the body, so no way of writing @Test can hide a class from a shard.
+# A class that matches but has no test method (a helper such as TestPki) is harmless in a shard, and is listed in
+# test-shards-notests.txt so the check can tell it from a class that was skipped.
 all_classes() {
   find "$root"/modules -path '*/src/test/java/*' \
     \( -name '*Test.java' -o -name 'Test*.java' -o -name '*Tests.java' -o -name '*TestCase.java' \) -print0 |
     while IFS= read -r -d '' file; do
-      # a subclass inherits its test methods, so "extends" counts as much as an @Test of its own
-      grep -Eq '^\s*@(Test|ParameterizedTest|RepeatedTest|TestFactory)\b|^[a-z ]*class \w+ extends ' "$file" || continue
-      ! grep -Eq '^(public )?abstract class' "$file" || continue
+      simple=$(basename "$file" .java)
+      if grep -Eq "^[a-z ]*abstract (class|record) $simple\\b" "$file"; then continue; fi
       name=${file#*/src/test/java/}
       name=${name%.java}
       echo "${name//\//.}"
     done | sort
 }
+
+# Classes that Surefire is handed and that have no test method, so no report is written for them.
+without_tests() {
+  grep -Ev '^\s*(#|$)' "$notests"
+}
+
+fail() {
+  echo "::error::$*" >&2
+  exit 1
+}
+
+[[ -r $manifest ]] || fail "cannot read $manifest"
+[[ -r $notests ]] || fail "cannot read $notests"
+if awk -v max="$SHARDS" '/^[[:space:]]*(#|$)/ { next } NF != 2 || $2 !~ /^[0-9]+$/ || $2 < 1 || $2 > max { bad = 1 } END { exit !bad }' "$manifest"; then
+  fail "$manifest has a line that is not '<class> <shard 1..$SHARDS>'"
+fi
 
 shard_of() {
   local pinned
@@ -53,13 +71,14 @@ case ${1:-} in
     expected=$(mktemp)
     ran=$(mktemp)
     trap 'rm -f "$expected" "$ran"' EXIT
-    all_classes >"$expected"
+    # what Surefire hands to the tests, minus the classes known to hold no test; one line per class and module
+    comm -23 <(all_classes) <(without_tests | sort) >"$expected"
     cat "$@" | sort >"$ran"
     # one line per class and module: the same class name in two modules is listed twice and has to run twice
     status=0
     missing=$(comm -23 "$expected" "$ran")
     surplus=$(comm -13 "$expected" "$ran")
-    [[ -z $missing ]] || { echo "::error::test classes that no shard ran:"; echo "$missing"; status=1; }
+    [[ -z $missing ]] || { echo "::error::test classes that no shard ran (a class with no test method belongs in test-shards-notests.txt):"; echo "$missing"; status=1; }
     [[ -z $surplus ]] || { echo "::error::classes that ran more than once, or that the source scan does not list:"; echo "$surplus"; status=1; }
     [[ $status -eq 0 ]] && echo "every one of $(wc -l <"$expected") test classes ran exactly once"
     exit $status

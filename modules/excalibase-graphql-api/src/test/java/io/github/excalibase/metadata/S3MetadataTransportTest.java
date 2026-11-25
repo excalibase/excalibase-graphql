@@ -8,6 +8,7 @@ import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
 import java.net.InetAddress;
+import java.net.InetSocketAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.nio.charset.StandardCharsets;
@@ -24,6 +25,7 @@ class S3MetadataTransportTest {
 
     private static final String BUCKET = "meta";
     private static final String KEY = "permissions.yaml";
+    private static final int CONNECT_TIMEOUT_MILLIS = 5_000;
     private static MinioFixture minio;
 
     @BeforeAll
@@ -45,7 +47,7 @@ class S3MetadataTransportTest {
         private final ServerSocket listener;
         private final List<Socket> open = new CopyOnWriteArrayList<>();
         private final Object lock = new Object();
-        private Mode mode = Mode.FORWARD;
+        private volatile Mode mode = Mode.FORWARD;
         private boolean closed;
 
         Forwarder() throws IOException {
@@ -77,23 +79,31 @@ class S3MetadataTransportTest {
         }
 
         /**
-         * Registering and the mode check happen under the same lock as closing: a connection accepted just before a
-         * close or a mode change is either closed with the others or sees the new state, never left forwarding.
+         * The connection to MinIO is made outside the lock, with a timeout, so a slow connect never blocks a close.
+         * Registering and the mode check then happen under the lock that closing takes: a connection accepted just
+         * before a close or a mode change is either closed with the others or sees the new state, never left forwarding.
          */
         private void registerOrDrop(Socket client) throws IOException {
+            Socket server = null;
+            if (mode == Mode.FORWARD) {
+                server = new Socket();
+                server.connect(new InetSocketAddress(minio.host(), minio.port()), CONNECT_TIMEOUT_MILLIS);
+            }
             synchronized (lock) {
-                if (closed || mode != Mode.FORWARD) {
-                    open.add(client);
+                open.add(client);
+                if (closed || mode != Mode.FORWARD || server == null) {
+                    if (server != null) {
+                        server.close();
+                    }
                     if (closed) {
                         client.close();
                     }
                     return;
                 }
-                Socket server = new Socket(minio.host(), minio.port());
-                open.add(client);
                 open.add(server);
-                Thread.ofVirtual().start(() -> pipe(client, server));
-                Thread.ofVirtual().start(() -> pipe(server, client));
+                Socket upstream = server;
+                Thread.ofVirtual().start(() -> pipe(client, upstream));
+                Thread.ofVirtual().start(() -> pipe(upstream, client));
             }
         }
 
