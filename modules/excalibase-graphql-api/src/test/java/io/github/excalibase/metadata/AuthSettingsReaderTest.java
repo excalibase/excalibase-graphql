@@ -147,7 +147,6 @@ class AuthSettingsReaderTest {
         assertThat(AuthSettingsReader.ENV_NAMES).containsExactlyInAnyOrder("APP_AUTH_ISSUER", "APP_AUTH_JWKS_URL",
                 "APP_AUTH_SECRET", "APP_AUTH_SECRET_FILE", "APP_AUTH_ALGORITHMS", "APP_AUTH_AUDIENCE",
                 "APP_AUTH_CLOCK_SKEW_SECONDS", "APP_AUTH_CLAIMS_ROLE", "APP_AUTH_CLAIMS_DEFAULT_ROLE",
-                "APP_AUTH_CLAIMS_USER_ID", "APP_AUTH_CLAIMS_EXTRA");
-        assertThat(AuthSettingsReader.ENV_NAMES).doesNotContain("APP_AUTH_CLAIM_ROLE");
+                "APP_AUTH_CLAIMS_USER_ID", "APP_AUTH_CLAIMS_EXTRA").doesNotContain("APP_AUTH_CLAIM_ROLE");
     }
 }

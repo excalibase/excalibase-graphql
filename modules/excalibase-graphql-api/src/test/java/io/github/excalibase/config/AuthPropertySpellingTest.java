@@ -44,8 +44,9 @@ class AuthPropertySpellingTest {
 
     @Test
     void theNamesTheEngineDocumentsAreTheCanonicalKeys() {
-        assertThat(AuthSettingsReader.KEYS).containsExactlyInAnyOrderElementsOf(List.of("issuer", "jwks-url", "secret",
-                "secret-file", "algorithms", "audience", "clock-skew", "claims.role", "claims.default-role",
-                "claims.user-id", "claims.extra"));
+        List<String> expected = List.of("issuer", "jwks-url", "secret", "secret-file", "algorithms", "audience",
+                "clock-skew", "claims.role", "claims.default-role", "claims.user-id", "claims.extra");
+
+        assertThat(expected).containsExactlyInAnyOrderElementsOf(AuthSettingsReader.KEYS);
     }
 }
