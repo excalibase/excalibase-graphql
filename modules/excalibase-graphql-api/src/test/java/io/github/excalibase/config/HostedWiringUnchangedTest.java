@@ -52,9 +52,11 @@ class HostedWiringUnchangedTest {
         JwtService service = hostedService();
 
         assertThat(service.verify(token("excalibase:proj-1"), "proj-1").userId()).isEqualTo("u-1");
-        assertThatThrownBy(() -> service.verify(token("excalibase:proj-2"), "proj-1"))
-                .isInstanceOf(JwtVerificationException.class);
-        assertThatThrownBy(() -> service.verify(token(null), "proj-1")).isInstanceOf(JwtVerificationException.class);
+        String otherProject = token("excalibase:proj-2");
+        String noAudience = token(null);
+
+        assertThatThrownBy(() -> service.verify(otherProject, "proj-1")).isInstanceOf(JwtVerificationException.class);
+        assertThatThrownBy(() -> service.verify(noAudience, "proj-1")).isInstanceOf(JwtVerificationException.class);
     }
 
     @Test
@@ -70,8 +72,10 @@ class HostedWiringUnchangedTest {
     @Test
     @DisplayName("hosted refuses any stray APP_AUTH_ name, with the exact message")
     void strayAppAuthNameInHostedMode() {
-        assertThatThrownBy(() -> AuthSettingsReader.resolve(new AuthSettingsReader.Inputs(true, true, true,
-                Set.of("APP_AUTH_STRAY"), Set.of(), key -> null)))
+        AuthSettingsReader.Inputs stray = new AuthSettingsReader.Inputs(true, true, true, Set.of("APP_AUTH_STRAY"),
+                Set.of(), key -> null);
+
+        assertThatThrownBy(() -> AuthSettingsReader.resolve(stray))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessage("app.auth.* (APP_AUTH_*) is refused in hosted mode (app.security.rls.policy-url or "
                         + "app.security.multi-tenant.provisioning-url is set): one engine-wide verifier would "

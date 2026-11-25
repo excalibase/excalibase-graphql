@@ -14,10 +14,14 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 /** A name that is not in the allow-list cannot silently do nothing: start (and validate) refuse it. */
 class AuthEnvAllowListTest {
 
+    private static final Set<String> NO_NAMES = Set.of();
+
     @Test
     void anUnknownEnvironmentName_refusesStart() {
         for (String name : List.of("APP_AUTH_CLAIM_ROLE", "APP_AUTH_AUDIENCES", "APP_AUTH_", "APP_AUTH_HMAC_SECRET")) {
-            assertThatThrownBy(() -> AuthSettingsReader.fromEnv(Map.of(name, "x")))
+            Map<String, String> env = Map.of(name, "x");
+
+            assertThatThrownBy(() -> AuthSettingsReader.fromEnv(env))
                     .isInstanceOf(IllegalStateException.class).hasMessageContaining(name)
                     .hasMessageContaining("APP_AUTH_CLAIMS_ROLE");
         }
@@ -25,14 +29,17 @@ class AuthEnvAllowListTest {
 
     @Test
     void aLegacyOrOtherName_isNotTouched() {
-        assertThatCode(() -> AuthSettingsReader.fromEnv(Map.of("APP_SECURITY_AUTH_JWKS_URL", "x", "APP_AUTHOR", "y",
-                "AUTH_AUD_PREFIX", "p"))).doesNotThrowAnyException();
+        Map<String, String> others = Map.of("APP_SECURITY_AUTH_JWKS_URL", "x", "APP_AUTHOR", "y", "AUTH_AUD_PREFIX", "p");
+
+        assertThatCode(() -> AuthSettingsReader.fromEnv(others)).doesNotThrowAnyException();
     }
 
     @Test
     void anUnknownPropertyKey_refusesStart() {
         for (String key : AuthSpellings.NEVER_READ) {
-            assertThatThrownBy(() -> AuthSettingsReader.refuseUnknown(Set.of(), Set.of(key)))
+            Set<String> keys = Set.of(key);
+
+            assertThatThrownBy(() -> AuthSettingsReader.refuseUnknown(NO_NAMES, keys))
                     .isInstanceOf(IllegalStateException.class).hasMessageContaining("app.auth." + key);
         }
     }
@@ -40,20 +47,25 @@ class AuthEnvAllowListTest {
     @Test
     void theSpellingsMicronautReads_areAccepted() {
         for (String key : AuthSpellings.READ) {
-            assertThatCode(() -> AuthSettingsReader.refuseUnknown(Set.of(), Set.of(key))).doesNotThrowAnyException();
+            Set<String> keys = Set.of(key);
+
+            assertThatCode(() -> AuthSettingsReader.refuseUnknown(NO_NAMES, keys)).doesNotThrowAnyException();
         }
     }
 
     @Test
     void aLowerCaseEnvironmentName_isCheckedLikeTheUpperCaseOne() {
         for (String name : List.of("app_auth_claim_role", "App_Auth_Audiences", "app_auth_")) {
-            assertThatThrownBy(() -> AuthSettingsReader.refuseUnknown(Set.of(name), Set.of()))
+            Set<String> names = Set.of(name);
+            Map<String, String> env = Map.of(name, "x");
+
+            assertThatThrownBy(() -> AuthSettingsReader.refuseUnknown(names, NO_NAMES))
                     .isInstanceOf(IllegalStateException.class).hasMessageContaining(name);
-            assertThatThrownBy(() -> AuthSettingsReader.fromEnv(Map.of(name, "x")))
-                    .isInstanceOf(IllegalStateException.class);
+            assertThatThrownBy(() -> AuthSettingsReader.fromEnv(env)).isInstanceOf(IllegalStateException.class);
         }
-        assertThatCode(() -> AuthSettingsReader.refuseUnknown(Set.of("app_auth_secret"), Set.of()))
-                .doesNotThrowAnyException();
+        Set<String> known = Set.of("app_auth_secret");
+
+        assertThatCode(() -> AuthSettingsReader.refuseUnknown(known, NO_NAMES)).doesNotThrowAnyException();
     }
 
     @Test
@@ -66,15 +78,19 @@ class AuthEnvAllowListTest {
 
     @Test
     void aStrayLowerCaseName_inHostedMode_isRefusedAsHosted() {
-        assertThatThrownBy(() -> AuthSettingsReader.resolve(new AuthSettingsReader.Inputs(true, true, true,
-                Set.of("app_auth_stray"), Set.of(), key -> null))).hasMessage(AuthSettingsReader.HOSTED_REFUSAL);
+        AuthSettingsReader.Inputs stray = new AuthSettingsReader.Inputs(true, true, true, Set.of("app_auth_stray"),
+                NO_NAMES, key -> null);
+
+        assertThatThrownBy(() -> AuthSettingsReader.resolve(stray)).hasMessage(AuthSettingsReader.HOSTED_REFUSAL);
     }
 
     @Test
     void aMutationThatDropsTheCheck_wouldBeSeen() {
         // the allow-list is the only thing between a typo and a silently missing audience
-        assertThatThrownBy(() -> AuthSettingsReader.fromEnv(Map.of("APP_AUTH_SECRET", AuthSettingsReaderTest.SECRET,
-                "APP_AUTH_AUDIENCE", "api", "APP_AUTH_ALGORITHM", "HS512"))).hasMessageContaining("APP_AUTH_ALGORITHM");
+        Map<String, String> typo = Map.of("APP_AUTH_SECRET", AuthSettingsReaderTest.SECRET, "APP_AUTH_AUDIENCE", "api",
+                "APP_AUTH_ALGORITHM", "HS512");
+
+        assertThatThrownBy(() -> AuthSettingsReader.fromEnv(typo)).hasMessageContaining("APP_AUTH_ALGORITHM");
         assertThat(AuthSettingsReader.ENV_NAMES).doesNotContain("APP_AUTH_ALGORITHM");
     }
 
@@ -88,7 +104,8 @@ class AuthEnvAllowListTest {
         assertThatThrownBy(() -> AuthSettingsReader.fromEnv(both)).isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("APP_AUTH_SECRET").hasMessageContaining("app_auth_secret")
                 .hasMessageContaining("two cases").hasMessageNotContaining(AuthSettingsReaderTest.SECRET);
-        assertThatThrownBy(() -> AuthSettingsReader.refuseUnknown(Set.of("APP_AUTH_ISSUER", "App_Auth_Issuer"),
-                Set.of())).hasMessageContaining("two cases");
+        Set<String> sameIssuer = Set.of("APP_AUTH_ISSUER", "App_Auth_Issuer");
+
+        assertThatThrownBy(() -> AuthSettingsReader.refuseUnknown(sameIssuer, NO_NAMES)).hasMessageContaining("two cases");
     }
 }

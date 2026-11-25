@@ -34,8 +34,14 @@ class AuthEngineWiringTest {
 
     private static final String SECRET = "an-hmac-secret-of-at-least-32-bytes!!";
     private static final String OTHER = "another-hmac-secret-of-32-bytes-or-more";
-    private static final String RULES = "tables:\n  - table: public.orders\n    role: user\n    select:\n"
-            + "      filter: {}\n      columns: \"*\"\n";
+    private static final String RULES = """
+            tables:
+              - table: public.orders
+                role: user
+                select:
+                  filter: {}
+                  columns: "*"
+            """;
 
     private static Map<String, Object> engine(Map<String, Object> extra) {
         Map<String, Object> properties = new HashMap<>(Map.of(
@@ -85,8 +91,11 @@ class AuthEngineWiringTest {
                 Map.of()))) {
             JwtService service = context.getBean(JwtService.class);
 
-            assertThat(service.verify(token(SECRET), "demo").userId()).isEqualTo("u-1");
-            assertThatThrownBy(() -> service.verify(token(OTHER), "demo")).isInstanceOf(JwtVerificationException.class);
+            String own = token(SECRET);
+            String foreign = token(OTHER);
+
+            assertThat(service.verify(own, "demo").userId()).isEqualTo("u-1");
+            assertThatThrownBy(() -> service.verify(foreign, "demo")).isInstanceOf(JwtVerificationException.class);
         }
     }
 
@@ -102,8 +111,11 @@ class AuthEngineWiringTest {
 
             assertThat(source.current()).isEmpty();
             assertThat(source.status().lastRefusal()).isNotNull();
-            assertThat(service.verify(token(SECRET), "demo").userId()).isEqualTo("u-1");
-            assertThatThrownBy(() -> service.verify(token(OTHER), "demo")).isInstanceOf(JwtVerificationException.class);
+            String own = token(SECRET);
+            String foreign = token(OTHER);
+
+            assertThat(service.verify(own, "demo").userId()).isEqualTo("u-1");
+            assertThatThrownBy(() -> service.verify(foreign, "demo")).isInstanceOf(JwtVerificationException.class);
         }
     }
 
@@ -121,24 +133,28 @@ class AuthEngineWiringTest {
     @Test
     @DisplayName("app.auth.* with authentication off refuses start")
     void withAuthenticationOff() {
-        assertThatThrownBy(() -> ApplicationContext.run(with(engine(appAuth()),
-                Map.of("app.security.jwt-enabled", "false", "app.security.insecure-dev-mode", "true"))).close())
+        Map<String, Object> off = with(engine(appAuth()),
+                Map.of("app.security.jwt-enabled", "false", "app.security.insecure-dev-mode", "true"));
+
+        assertThatThrownBy(() -> ApplicationContext.run(off).close())
                 .hasStackTraceContaining("app.security.jwt-enabled is false");
     }
 
     @Test
     @DisplayName("app.auth.* beside the legacy settings refuses start")
     void besideLegacy() {
-        assertThatThrownBy(() -> ApplicationContext.run(with(engine(appAuth()),
-                Map.of("app.security.auth.hmac-secret", OTHER))).close())
+        Map<String, Object> both = with(engine(appAuth()), Map.of("app.security.auth.hmac-secret", OTHER));
+
+        assertThatThrownBy(() -> ApplicationContext.run(both).close())
                 .hasStackTraceContaining("configure one token source, not two");
     }
 
     @Test
     @DisplayName("an unknown app.auth key refuses start")
     void unknownKey() {
-        assertThatThrownBy(() -> ApplicationContext.run(with(engine(appAuth()), Map.of("app.auth.claim.role", "r")))
-                .close()).hasStackTraceContaining("app.auth.claim.role");
+        Map<String, Object> typo = with(engine(appAuth()), Map.of("app.auth.claim.role", "r"));
+
+        assertThatThrownBy(() -> ApplicationContext.run(typo).close()).hasStackTraceContaining("app.auth.claim.role");
     }
 
     @Test
@@ -162,7 +178,9 @@ class AuthEngineWiringTest {
         try (ApplicationContext context = ApplicationContext.run(with(engine(Map.of()), withFile(file(dir, ""))))) {
             JwtService service = context.getBean(JwtService.class);
 
-            assertThatThrownBy(() -> service.verify(token(SECRET), "demo")).isInstanceOf(JwtVerificationException.class);
+            String own = token(SECRET);
+
+            assertThatThrownBy(() -> service.verify(own, "demo")).isInstanceOf(JwtVerificationException.class);
             assertThat(logs.list).extracting(ILoggingEvent::getFormattedMessage)
                     .anyMatch(message -> message.startsWith("no_token_verifier"));
         } finally {

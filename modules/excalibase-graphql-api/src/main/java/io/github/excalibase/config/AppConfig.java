@@ -186,19 +186,33 @@ public class AppConfig {
             throw new IllegalStateException("app.security.auth: set either jwks-url or hmac-secret, not both");
         }
         if (engineAuth.engine()) {
-            if (hasJwks || hasHmac) {
-                throw new IllegalStateException(AuthSettingsReader.BOTH_REFUSAL);
-            }
-            TokenVerifier verifier = engineAuth.verifier();
-            return JwtService.documentOnly().documentVerifier(() -> verifier);
+            return engineService(engineAuth, hasJwks || hasHmac);
         }
         if (!hasJwks && !hasHmac) {
-            if (metadata == null) {
-                throw new IllegalStateException(NO_VERIFIER);
-            }
-            warnWhenNothingVerifiesTokens(metadata);
-            return JwtService.documentOnly().documentVerifier(() -> metadata.tokenVerifier().orElse(null));
+            return documentService(metadata);
         }
+        return legacyService(security, ttlMinutes, metadata, hasJwks);
+    }
+
+    private static JwtService engineService(EngineAuth engineAuth, boolean legacyAlsoSet) {
+        if (legacyAlsoSet) {
+            throw new IllegalStateException(AuthSettingsReader.BOTH_REFUSAL);
+        }
+        TokenVerifier verifier = engineAuth.verifier();
+        return JwtService.documentOnly().documentVerifier(() -> verifier);
+    }
+
+    private static JwtService documentService(@Nullable MetadataSource metadata) {
+        if (metadata == null) {
+            throw new IllegalStateException(NO_VERIFIER);
+        }
+        warnWhenNothingVerifiesTokens(metadata);
+        return JwtService.documentOnly().documentVerifier(() -> metadata.tokenVerifier().orElse(null));
+    }
+
+    private static JwtService legacyService(SecurityProperties security, int ttlMinutes,
+                                            @Nullable MetadataSource metadata, boolean hasJwks) {
+        SecurityProperties.Auth auth = security.auth();
         requireAudienceWhenMultiTenant(security.multiTenant() == null ? null : security.multiTenant().provisioningUrl(),
                 auth.requireAudOrDefault());
         JwtService service = hasJwks ? new JwtService(auth.jwksUrl(), ttlMinutes) : new JwtService(auth.hmacSecret());

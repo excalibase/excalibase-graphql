@@ -50,17 +50,23 @@ class AuthPrecedenceTest {
     }
 
     private static void refused(EngineAuth auth, String jwt) {
-        assertThatThrownBy(() -> parser(auth).check(document(jwt), 1, ENV)).isInstanceOf(MetadataDocumentException.class)
+        MetadataDocumentParser parser = parser(auth);
+        String text = document(jwt);
+
+        assertThatThrownBy(() -> parser.check(text, 1, ENV)).isInstanceOf(MetadataDocumentException.class)
                 .hasMessageContaining("app.auth.*").hasMessageNotContaining(SECRET);
     }
 
     @Test
     void legacySettingsAndADocumentJwt_areAlwaysRefused_withTheMessageUnchanged() {
-        assertThatThrownBy(() -> parser(EngineAuth.of(true)).check(document(SAME), 1, ENV))
+        MetadataDocumentParser legacy = parser(EngineAuth.of(true));
+        MetadataDocumentParser legacyFlag = new MetadataDocumentParser(ReservedSchemas.fromConfig(""), "demo", true);
+        String text = document(SAME);
+
+        assertThatThrownBy(() -> legacy.check(text, 1, ENV))
                 .isInstanceOf(MetadataDocumentException.class).hasMessage(LEGACY_REFUSAL);
         // even a section that would be identical to app.auth is refused when the engine's settings are the legacy ones
-        assertThatThrownBy(() -> new MetadataDocumentParser(ReservedSchemas.fromConfig(""), "demo", true)
-                .parse(document(SAME), 1)).hasMessage(LEGACY_REFUSAL);
+        assertThatThrownBy(() -> legacyFlag.parse(text, 1)).hasMessage(LEGACY_REFUSAL);
     }
 
     @Test
@@ -100,22 +106,30 @@ class AuthPrecedenceTest {
 
     @Test
     void aKeySourceOfAnotherKind_isRefused() {
-        refused(engine(Map.of()), "issuer: https://idp.example.com/\njwksUrl: https://idp.example.com/jwks.json\n"
-                + "audience: my-api\n");
+        refused(engine(Map.of()), """
+                issuer: https://idp.example.com/
+                jwksUrl: https://idp.example.com/jwks.json
+                audience: my-api
+                """);
     }
 
     @Test
     void secretsAreComparedByTheirBytes_oneDifferentByteIsRefused_withoutNamingThem() {
         UnaryOperator<String> other = name -> SECRET.substring(0, SECRET.length() - 1) + "?";
+        MetadataDocumentParser parser = parser(engine(Map.of()));
+        String text = document(SAME);
 
-        assertThatThrownBy(() -> parser(engine(Map.of())).check(document(SAME), 1, other))
+        assertThatThrownBy(() -> parser.check(text, 1, other))
                 .isInstanceOf(MetadataDocumentException.class).hasMessageContaining("app.auth.*")
                 .hasMessageNotContaining(SECRET).hasMessageNotContaining("32");
     }
 
     @Test
     void aSecretThatCannotBeResolved_cannotBeProvedIdentical_andIsRefused() {
-        assertThatThrownBy(() -> parser(engine(Map.of())).check(document(SAME), 1, name -> null))
+        MetadataDocumentParser parser = parser(engine(Map.of()));
+        String text = document(SAME);
+
+        assertThatThrownBy(() -> parser.check(text, 1, name -> null))
                 .isInstanceOf(MetadataDocumentException.class).hasMessageContaining("app.auth.*");
     }
 
@@ -123,8 +137,13 @@ class AuthPrecedenceTest {
     void theListsAreComparedAsSets_andTheKeyFileIsComparedByContent() {
         EngineAuth auth = engine(Map.of("APP_AUTH_ALGORITHMS", "HS512,HS256", "APP_AUTH_AUDIENCE", "b,a"));
 
-        assertThat(parser(auth).check(document("secret: env:DOC_SECRET\nalgorithms: [HS256, HS512]\n"
-                + "audience: [a, b]\n"), 1, ENV).tables()).hasSize(1);
+        String section = """
+                secret: env:DOC_SECRET
+                algorithms: [HS256, HS512]
+                audience: [a, b]
+                """;
+
+        assertThat(parser(auth).check(document(section), 1, ENV).tables()).hasSize(1);
     }
 
     @Test
@@ -140,7 +159,9 @@ class AuthPrecedenceTest {
 
         JwtClaims claims = verifier.verify(token(SECRET, "u-1"), "demo");
         assertThat(claims.userId()).isEqualTo("u-1");
-        assertThatThrownBy(() -> verifier.verify(token("a-different-secret-of-32-bytes-or-more!!", "u-1"), "demo"))
+        String foreign = token("a-different-secret-of-32-bytes-or-more!!", "u-1");
+
+        assertThatThrownBy(() -> verifier.verify(foreign, "demo"))
                 .isInstanceOf(JwtVerificationException.class);
     }
 

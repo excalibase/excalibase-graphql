@@ -78,8 +78,9 @@ class JwtSettingsParserTest {
     @Test
     void anExtraNamedUser_isRefused_soItCannotShadowTheUserAlias() {
         for (String name : new String[] {"user", "User", "USER"}) {
-            assertThatThrownBy(() -> parser.parse(document("secret: env:S\naudience: a\nclaims:\n  extra:\n    "
-                    + name + ": u\n"), 1)).isInstanceOf(MetadataDocumentException.class)
+            String text = document("secret: env:S\naudience: a\nclaims:\n  extra:\n    " + name + ": u\n");
+
+            assertThatThrownBy(() -> parser.parse(text, 1)).isInstanceOf(MetadataDocumentException.class)
                     .hasMessageContaining("claims.extra");
         }
     }

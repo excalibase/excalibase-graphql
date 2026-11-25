@@ -227,7 +227,7 @@ public final class MetadataDocumentParser {
         if (document.secretRef() != null) {
             try {
                 secret = JwtKeyLoader.secret(document.secretRef(), environment);
-            } catch (IllegalStateException e) {
+            } catch (IllegalStateException _) {
                 throw new MetadataDocumentException(DIFFERS + ": its secret cannot be resolved to compare it");
             }
         }

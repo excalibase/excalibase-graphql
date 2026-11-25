@@ -18,6 +18,7 @@ import java.util.function.UnaryOperator;
 public final class ValidateCommand {
 
     public static final String COMMAND = "validate";
+    private static final String INVALID = "invalid: ";
     private static final String USAGE = "usage: excalibase validate <file> [--project-id <id>]";
 
     private ValidateCommand() {
@@ -41,7 +42,7 @@ public final class ValidateCommand {
         try {
             auth = engineAuth(env, legacy);
         } catch (IllegalStateException e) {
-            err.println("invalid: " + e.getMessage());
+            err.println(INVALID + e.getMessage());
             return 1;
         }
         return validate(Path.of(args[1]), projectId, env.get("APP_RESERVED_SCHEMAS"), auth, env::get, out, err);
@@ -62,7 +63,7 @@ public final class ValidateCommand {
         try {
             text = FileMetadataSource.read(file).text();
         } catch (CharacterCodingException _) {
-            err.println("invalid: " + file + ": the file is not UTF-8 text");
+            err.println(INVALID + file + ": the file is not UTF-8 text");
             return 1;
         } catch (IOException e) {
             err.println("error: cannot read " + file + ": " + e);
@@ -77,7 +78,7 @@ public final class ValidateCommand {
                     + permissions.functions().size() + " tracked functions)");
             return 0;
         } catch (MetadataDocumentException e) {
-            err.println("invalid: " + file + ": " + e.getMessage());
+            err.println(INVALID + file + ": " + e.getMessage());
             return 1;
         }
     }

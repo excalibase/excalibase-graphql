@@ -24,6 +24,10 @@ public final class AuthSettingsReader {
 
     private static final ObjectMapper JSON = new ObjectMapper();
     private static final String PREFIX = "APP_AUTH_";
+    private static final String ISSUER = "issuer";
+    private static final String ALGORITHMS = "algorithms";
+    private static final String AUDIENCE = "audience";
+    private static final String CLOCK_SKEW = "clock-skew";
     private static final String SECRET = "secret";
     private static final String SECRET_FILE = "secret-file";
     private static final String EXTRA = "claims.extra";
@@ -49,13 +53,13 @@ public final class AuthSettingsReader {
 
     private static Map<String, String> envToKey() {
         Map<String, String> names = new LinkedHashMap<>();
-        names.put("APP_AUTH_ISSUER", "issuer");
+        names.put("APP_AUTH_ISSUER", ISSUER);
         names.put("APP_AUTH_JWKS_URL", "jwks-url");
         names.put("APP_AUTH_SECRET", SECRET);
         names.put("APP_AUTH_SECRET_FILE", SECRET_FILE);
-        names.put("APP_AUTH_ALGORITHMS", "algorithms");
-        names.put("APP_AUTH_AUDIENCE", "audience");
-        names.put("APP_AUTH_CLOCK_SKEW_SECONDS", "clock-skew");
+        names.put("APP_AUTH_ALGORITHMS", ALGORITHMS);
+        names.put("APP_AUTH_AUDIENCE", AUDIENCE);
+        names.put("APP_AUTH_CLOCK_SKEW_SECONDS", CLOCK_SKEW);
         names.put("APP_AUTH_CLAIMS_ROLE", "claims.role");
         names.put("APP_AUTH_CLAIMS_DEFAULT_ROLE", "claims.default-role");
         names.put("APP_AUTH_CLAIMS_USER_ID", "claims.user-id");
@@ -211,12 +215,12 @@ public final class AuthSettingsReader {
 
     private static ObjectNode tree(UnaryOperator<String> value) {
         ObjectNode node = JSON.createObjectNode();
-        put(node, "issuer", value.apply("issuer"));
+        put(node, ISSUER, value.apply(ISSUER));
         put(node, "jwksUrl", value.apply("jwks-url"));
-        list(node, "algorithms", value.apply("algorithms"));
-        list(node, "audience", value.apply("audience"));
-        if (!blank(value.apply("clock-skew"))) {
-            node.put("clockSkew", seconds(value.apply("clock-skew")));
+        list(node, ALGORITHMS, value.apply(ALGORITHMS));
+        list(node, AUDIENCE, value.apply(AUDIENCE));
+        if (!blank(value.apply(CLOCK_SKEW))) {
+            node.put("clockSkew", seconds(value.apply(CLOCK_SKEW)));
         }
         ObjectNode claims = JSON.createObjectNode();
         put(claims, "role", value.apply("claims.role"));

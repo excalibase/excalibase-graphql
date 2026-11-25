@@ -17,7 +17,7 @@ import java.util.Objects;
 public final class EngineAuth {
 
     public static final EngineAuth NONE = new EngineAuth(false, null, null);
-    private static final EngineAuth LEGACY = new EngineAuth(true, null, null);
+    private static final EngineAuth LEGACY_ENGINE = new EngineAuth(true, null, null);
 
     private final boolean legacy;
     private final JwtSettings settings;
@@ -30,7 +30,7 @@ public final class EngineAuth {
     }
 
     public static EngineAuth of(boolean legacy) {
-        return legacy ? LEGACY : NONE;
+        return legacy ? LEGACY_ENGINE : NONE;
     }
 
     /** @param secret the resolved shared secret; null for a key set */

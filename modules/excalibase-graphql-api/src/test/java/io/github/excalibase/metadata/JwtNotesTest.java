@@ -22,10 +22,22 @@ import static org.assertj.core.api.Assertions.assertThat;
 class JwtNotesTest {
 
     private static final UnaryOperator<String> ENV = name -> AuthSettingsReaderTest.SECRET;
-    private static final String RULES = "tables:\n  - table: public.orders\n    role: user\n    select:\n"
-            + "      filter: {}\n      columns: \"*\"\n";
-    private static final String ANON_ONLY = "tables:\n  - table: public.orders\n    role: anon\n    select:\n"
-            + "      filter: {}\n      columns: \"*\"\n";
+    private static final String RULES = """
+            tables:
+              - table: public.orders
+                role: user
+                select:
+                  filter: {}
+                  columns: "*"
+            """;
+    private static final String ANON_ONLY = """
+            tables:
+              - table: public.orders
+                role: anon
+                select:
+                  filter: {}
+                  columns: "*"
+            """;
     private static final String JWT = "jwt:\n  secret: env:DOC_SECRET\n  audience: my-api\n";
 
     private static List<String> codes(EngineAuth auth, String body) {

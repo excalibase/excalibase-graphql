@@ -3,12 +3,10 @@ package io.github.excalibase.metadata;
 import org.junit.jupiter.api.Test;
 
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.io.TempDir;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.charset.StandardCharsets;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -150,6 +148,6 @@ class AuthSettingsReaderTest {
                 "APP_AUTH_SECRET", "APP_AUTH_SECRET_FILE", "APP_AUTH_ALGORITHMS", "APP_AUTH_AUDIENCE",
                 "APP_AUTH_CLOCK_SKEW_SECONDS", "APP_AUTH_CLAIMS_ROLE", "APP_AUTH_CLAIMS_DEFAULT_ROLE",
                 "APP_AUTH_CLAIMS_USER_ID", "APP_AUTH_CLAIMS_EXTRA");
-        assertThat(List.of("APP_AUTH_CLAIM_ROLE")).doesNotContainAnyElementsOf(AuthSettingsReader.ENV_NAMES);
+        assertThat(AuthSettingsReader.ENV_NAMES).doesNotContain("APP_AUTH_CLAIM_ROLE");
     }
 }

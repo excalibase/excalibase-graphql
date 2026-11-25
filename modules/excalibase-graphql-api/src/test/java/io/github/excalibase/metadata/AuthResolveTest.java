@@ -47,34 +47,40 @@ class AuthResolveTest {
 
     @Test
     void hostedMode_refusesAnyAppAuthName_withTheExactMessage() {
-        assertThatThrownBy(() -> AuthSettingsReader.resolve(inputs(true, true, true, Set.of("APP_AUTH_STRAY"),
-                Set.of(), key -> ""))).isInstanceOf(IllegalStateException.class).hasMessage(HOSTED_REFUSAL);
-        assertThatThrownBy(() -> AuthSettingsReader.resolve(inputs(true, true, false, Set.of(),
-                Set.of("secret", "audience"), BY_KEY))).hasMessage(HOSTED_REFUSAL);
-        assertThatThrownBy(() -> AuthSettingsReader.resolve(inputs(true, true, false, Set.of(),
-                Set.of("claim.role"), key -> ""))).hasMessage(HOSTED_REFUSAL);
+        AuthSettingsReader.Inputs strayName = inputs(true, true, true, Set.of("APP_AUTH_STRAY"), Set.of(), key -> "");
+        AuthSettingsReader.Inputs knownKeys = inputs(true, true, false, Set.of(), Set.of("secret", "audience"), BY_KEY);
+        AuthSettingsReader.Inputs strayKey = inputs(true, true, false, Set.of(), Set.of("claim.role"), key -> "");
+
+        assertThatThrownBy(() -> AuthSettingsReader.resolve(strayName)).isInstanceOf(IllegalStateException.class)
+                .hasMessage(HOSTED_REFUSAL);
+        assertThatThrownBy(() -> AuthSettingsReader.resolve(knownKeys)).hasMessage(HOSTED_REFUSAL);
+        assertThatThrownBy(() -> AuthSettingsReader.resolve(strayKey)).hasMessage(HOSTED_REFUSAL);
     }
 
     @Test
     void appAuthWithAuthenticationOff_refusesStart() {
-        assertThatThrownBy(() -> AuthSettingsReader.resolve(inputs(false, false, false, Set.of(),
-                Set.of("secret", "audience"), BY_KEY))).isInstanceOf(IllegalStateException.class)
+        AuthSettingsReader.Inputs authOff = inputs(false, false, false, Set.of(), Set.of("secret", "audience"), BY_KEY);
+
+        assertThatThrownBy(() -> AuthSettingsReader.resolve(authOff)).isInstanceOf(IllegalStateException.class)
                 .hasMessage("app.auth.* is set but app.security.jwt-enabled is false: the settings would do nothing; "
                         + "remove them or turn authentication on");
     }
 
     @Test
     void appAuthBesideLegacySettings_refusesStart() {
-        assertThatThrownBy(() -> AuthSettingsReader.resolve(inputs(false, true, true, Set.of(),
-                Set.of("secret", "audience"), BY_KEY))).isInstanceOf(IllegalStateException.class)
+        AuthSettingsReader.Inputs both = inputs(false, true, true, Set.of(), Set.of("secret", "audience"), BY_KEY);
+
+        assertThatThrownBy(() -> AuthSettingsReader.resolve(both)).isInstanceOf(IllegalStateException.class)
                 .hasMessage("app.auth.* and app.security.auth.* are both set: configure one token source, not two");
     }
 
     @Test
     void anUnknownNameRefusesStart_beforeAnythingIsBuilt() {
-        assertThatThrownBy(() -> AuthSettingsReader.resolve(inputs(false, true, false, Set.of("APP_AUTH_CLAIM_ROLE"),
-                Set.of(), key -> ""))).hasMessageContaining("APP_AUTH_CLAIM_ROLE");
-        assertThatThrownBy(() -> AuthSettingsReader.resolve(inputs(false, true, false, Set.of(),
-                Set.of("claim.role"), key -> ""))).hasMessageContaining("app.auth.claim.role");
+        AuthSettingsReader.Inputs unknownEnv = inputs(false, true, false, Set.of("APP_AUTH_CLAIM_ROLE"), Set.of(),
+                key -> "");
+        AuthSettingsReader.Inputs unknownKey = inputs(false, true, false, Set.of(), Set.of("claim.role"), key -> "");
+
+        assertThatThrownBy(() -> AuthSettingsReader.resolve(unknownEnv)).hasMessageContaining("APP_AUTH_CLAIM_ROLE");
+        assertThatThrownBy(() -> AuthSettingsReader.resolve(unknownKey)).hasMessageContaining("app.auth.claim.role");
     }
 }
