@@ -2,6 +2,7 @@ package io.github.excalibase.metadata;
 
 import org.junit.jupiter.api.Test;
 
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -75,5 +76,19 @@ class AuthEnvAllowListTest {
         assertThatThrownBy(() -> AuthSettingsReader.fromEnv(Map.of("APP_AUTH_SECRET", AuthSettingsReaderTest.SECRET,
                 "APP_AUTH_AUDIENCE", "api", "APP_AUTH_ALGORITHM", "HS512"))).hasMessageContaining("APP_AUTH_ALGORITHM");
         assertThat(AuthSettingsReader.ENV_NAMES).doesNotContain("APP_AUTH_ALGORITHM");
+    }
+
+    @Test
+    void theSameSettingInTwoCases_isRefused_soInsertionOrderNeverDecidesWhichWins() {
+        Map<String, String> both = new LinkedHashMap<>();
+        both.put("APP_AUTH_SECRET", AuthSettingsReaderTest.SECRET);
+        both.put("app_auth_secret", "another-hmac-secret-of-at-least-32-bytes");
+        both.put("APP_AUTH_AUDIENCE", "api");
+
+        assertThatThrownBy(() -> AuthSettingsReader.fromEnv(both)).isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("APP_AUTH_SECRET").hasMessageContaining("app_auth_secret")
+                .hasMessageContaining("two cases").hasMessageNotContaining(AuthSettingsReaderTest.SECRET);
+        assertThatThrownBy(() -> AuthSettingsReader.refuseUnknown(Set.of("APP_AUTH_ISSUER", "App_Auth_Issuer"),
+                Set.of())).hasMessageContaining("two cases");
     }
 }

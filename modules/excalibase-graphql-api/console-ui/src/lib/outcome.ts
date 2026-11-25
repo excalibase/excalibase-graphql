@@ -17,8 +17,11 @@ export interface Warning {
   message: string;
 }
 
+/** The one token note that describes an outage: nothing verifies a token, so every one is rejected. */
+export const OUTAGE_NOTE_CODE = 'no_token_verifier';
+
 /** Notes about how tokens are checked, which say nothing about the database. */
-export const TOKEN_NOTE_CODES: ReadonlySet<string> = new Set(['jwt_deprecated', 'jwt_identical_remove_it', 'no_token_verifier']);
+export const TOKEN_NOTE_CODES: ReadonlySet<string> = new Set(['jwt_deprecated', 'jwt_identical_remove_it', OUTAGE_NOTE_CODE]);
 
 /** What a save came to, from the status the admin API answered with. Server text is shown as text, never as markup. */
 export function classify(failure: ApiError): Outcome {

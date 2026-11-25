@@ -112,6 +112,7 @@ public final class AuthSettingsReader {
 
     /** @throws IllegalStateException a name that is not one of the engine's token settings */
     public static void refuseUnknown(Collection<String> envNames, Collection<String> propertyKeys) {
+        refuseTwoCases(envNames);
         for (String name : envNames) {
             if (unknownEnvName(name)) {
                 throw new IllegalStateException(name + " is not an engine token setting; the names are: "
@@ -122,6 +123,18 @@ public final class AuthSettingsReader {
             if (unknownPropertyKey(key)) {
                 throw new IllegalStateException("app.auth." + key + " is not an engine token setting; the keys are: "
                         + String.join(", ", KEYS.stream().sorted().toList()));
+            }
+        }
+    }
+
+    /** The same setting in two cases would let the order of the environment decide which value wins. */
+    private static void refuseTwoCases(Collection<String> envNames) {
+        Map<String, String> seen = new LinkedHashMap<>();
+        for (String name : envNames) {
+            String upper = name.toUpperCase(Locale.ROOT);
+            String other = upper.startsWith(PREFIX) ? seen.putIfAbsent(upper, name) : null;
+            if (other != null && !other.equals(name)) {
+                throw new IllegalStateException(other + " and " + name + " are the same setting in two cases: keep one");
             }
         }
     }

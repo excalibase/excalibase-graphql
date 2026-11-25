@@ -1,6 +1,6 @@
 import { useEffect, useRef, type ReactNode } from 'react';
 import type { Change } from '../lib/docmodel';
-import { TOKEN_NOTE_CODES, type Warning } from '../lib/outcome';
+import { OUTAGE_NOTE_CODE, TOKEN_NOTE_CODES, type Warning } from '../lib/outcome';
 
 export function Loading({ label = 'Loading' }: { label?: string }) {
   return (
@@ -33,12 +33,30 @@ export function Empty({ title, children }: { title: string; children?: ReactNode
   );
 }
 
+function TokenNotice({ role, testId, notes }: { role: 'note' | 'alert'; testId: string; notes: Warning[] }) {
+  if (notes.length === 0) {
+    return null;
+  }
+  return (
+    <div className="notice warn" role={role} data-testid={testId}>
+      <p>About how tokens are checked:</p>
+      <ul>
+        {notes.map((note) => (
+          <li key={note.message}>{note.message}</li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 export function Warnings({ warnings, heading }: { warnings: Warning[] | undefined; heading: string }) {
   if (!warnings || warnings.length === 0) {
     return null;
   }
-  const notes = warnings.filter((warning) => warning.code !== undefined && TOKEN_NOTE_CODES.has(warning.code));
-  const schema = warnings.filter((warning) => !notes.includes(warning));
+  const tokenNotes = warnings.filter((warning) => warning.code !== undefined && TOKEN_NOTE_CODES.has(warning.code));
+  const outage = tokenNotes.filter((warning) => warning.code === OUTAGE_NOTE_CODE);
+  const notes = tokenNotes.filter((warning) => warning.code !== OUTAGE_NOTE_CODE);
+  const schema = warnings.filter((warning) => !tokenNotes.includes(warning));
   return (
     <>
       {schema.length > 0 ? (
@@ -51,16 +69,8 @@ export function Warnings({ warnings, heading }: { warnings: Warning[] | undefine
           </ul>
         </div>
       ) : null}
-      {notes.length > 0 ? (
-        <div className="notice warn" role="note" data-testid="token-notes">
-          <p>About how tokens are checked:</p>
-          <ul>
-            {notes.map((note) => (
-              <li key={note.message}>{note.message}</li>
-            ))}
-          </ul>
-        </div>
-      ) : null}
+      <TokenNotice role="note" testId="token-notes" notes={notes} />
+      <TokenNotice role="alert" testId="token-outage" notes={outage} />
     </>
   );
 }

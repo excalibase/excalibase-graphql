@@ -37,6 +37,8 @@ export function historyWarning() {
 
 /** Notes about how tokens are checked: they say nothing about the database and get their own notice. */
 const TOKEN_NOTES = new Set(["jwt_deprecated", "jwt_identical_remove_it", "no_token_verifier"]);
+/** The one note that describes an outage: nothing verifies a token, so every one is rejected. */
+const OUTAGE_NOTE = "no_token_verifier";
 
 /**
  * What a valid document comes with: what the database does not fit (the server's own sentences, shown as text) under
@@ -46,7 +48,9 @@ export function warningList(warnings, heading) {
   if (!Array.isArray(warnings) || warnings.length === 0) {
     return null;
   }
-  const notes = warnings.filter((warning) => TOKEN_NOTES.has(warning.code));
+  const tokenNotes = warnings.filter((warning) => TOKEN_NOTES.has(warning.code));
+  const notes = tokenNotes.filter((warning) => warning.code !== OUTAGE_NOTE);
+  const outage = tokenNotes.filter((warning) => warning.code === OUTAGE_NOTE);
   const schema = warnings.filter((warning) => !TOKEN_NOTES.has(warning.code));
   const parts = [];
   if (schema.length > 0) {
@@ -54,10 +58,17 @@ export function warningList(warnings, heading) {
       h("ul", {}, schema.map((warning) => h("li", {}, warning.message)))));
   }
   if (notes.length > 0) {
-    parts.push(h("div", { class: "warn", role: "note", id: "token-notes" }, h("p", {}, "About how tokens are checked:"),
-      h("ul", {}, notes.map((note) => h("li", {}, note.message)))));
+    parts.push(tokenNotice("note", "token-notes", notes));
+  }
+  if (outage.length > 0) {
+    parts.push(tokenNotice("alert", "token-outage", outage));
   }
   return parts.length === 1 ? parts[0] : h("div", {}, parts);
+}
+
+function tokenNotice(role, id, notes) {
+  return h("div", { class: "warn", role, id }, h("p", {}, "About how tokens are checked:"),
+    h("ul", {}, notes.map((note) => h("li", {}, note.message))));
 }
 
 function errorList(errors) {
