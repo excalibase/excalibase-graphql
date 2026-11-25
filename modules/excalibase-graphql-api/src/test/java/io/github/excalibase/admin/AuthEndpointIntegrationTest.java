@@ -30,8 +30,7 @@ class AuthEndpointIntegrationTest extends EngineIntegrationTest {
 
     @Override
     public Map<String, String> getProperties() {
-        Map<String, String> properties = AdminTestEngine.authPageOn(FILE, -1, ADMIN_PORT);
-        return properties;
+        return AdminTestEngine.authPageOn(FILE, -1, ADMIN_PORT);
     }
 
     private HttpAnswer check(String token) {

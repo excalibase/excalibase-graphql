@@ -73,7 +73,7 @@ class TokenCheckTest {
 
         assertThat(answer).containsEntry(VALID, true).containsEntry(REASON, null).containsEntry("role", "user")
                 .containsEntry("userId", "u-1");
-        assertThat(answer.get("allowedRoles")).isEqualTo(List.of("user"));
+        assertThat(answer).containsEntry("allowedRoles", List.of("user"));
         @SuppressWarnings("unchecked")
         Map<String, String> variables = (Map<String, String>) answer.get("sessionVariables");
         assertThat(variables).containsEntry("x-excalibase-user-id", "u-1").containsEntry("x-excalibase-role", "user")
@@ -134,9 +134,18 @@ class TokenCheckTest {
         JwtService legacy = new JwtService(SECRET);
         String token = AuthTokens.sign(AuthTokens.good(), JWSAlgorithm.HS512, SECRET.repeat(2));
 
-        Map<String, Object> answer = TokenCheck.run((text, project) -> legacy.verify(text, project),
+        Map<String, Object> answer = TokenCheck.run(legacy::verify,
                 token.getBytes(StandardCharsets.UTF_8), null);
 
         assertThat(answer).containsEntry(REASON, "algorithm");
+    }
+
+    @Test
+    @DisplayName("a verifier that answers with no claims is malformed, never an error")
+    void noClaims() {
+        Map<String, Object> answer = TokenCheck.run((text, project) -> null,
+                "a.b.c".getBytes(StandardCharsets.UTF_8), null);
+
+        assertThat(answer).containsEntry(VALID, false).containsEntry(REASON, MALFORMED);
     }
 }

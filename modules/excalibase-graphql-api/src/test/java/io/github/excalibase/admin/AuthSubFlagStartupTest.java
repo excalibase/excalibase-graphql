@@ -3,9 +3,7 @@ package io.github.excalibase.admin;
 import io.micronaut.context.ApplicationContext;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
 
-import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -17,18 +15,17 @@ class AuthSubFlagStartupTest {
     private static final String FALSE = "false";
 
     private static Map<String, Object> engine(String console, String authPage) {
-        Map<String, Object> properties = new HashMap<>(Map.of(
+        return new HashMap<>(Map.of(
                 "spring.datasource.url", "jdbc:postgresql://localhost:59999/nonexistent",
                 "spring.datasource.username", "fake", "spring.datasource.password", "fake",
                 "app.project-id", "demo", "app.nats.enabled", FALSE,
                 "micronaut.server.port", "-1", "endpoints.all.port", "-1",
                 "excalibase.console.enabled", console, "console.auth-page.enabled", authPage));
-        return properties;
     }
 
     @Test
     @DisplayName("the Auth page on with the console off refuses start")
-    void withoutTheConsole(@TempDir Path dir) {
+    void withoutTheConsole() {
         Map<String, Object> properties = engine(FALSE, "true");
 
         assertThatThrownBy(() -> ApplicationContext.run(properties).close())

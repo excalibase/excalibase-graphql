@@ -21,6 +21,7 @@ import org.slf4j.LoggerFactory;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.Date;
 import java.util.HashMap;
@@ -28,6 +29,7 @@ import java.util.Map;
 import java.util.function.Predicate;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.awaitility.Awaitility.await;
 
 /**
  * Moving a compose file or manifest from the document's {@code jwt:} to {@code APP_AUTH_*}, in the order the docs give:
@@ -72,14 +74,9 @@ class UpgradeOrderTest {
         return jwt.serialize();
     }
 
-    private static void awaitServed(MetadataSource source, Predicate<String> text) throws InterruptedException {
-        for (int attempt = 0; attempt < 200; attempt++) {
-            if (source.current().map(snapshot -> text.test(snapshot.text())).orElse(false)) {
-                return;
-            }
-            Thread.sleep(50);
-        }
-        throw new AssertionError("the document was not served in time");
+    private static void awaitServed(MetadataSource source, Predicate<String> text) {
+        await().atMost(Duration.ofSeconds(15)).until(
+                () -> source.current().map(snapshot -> text.test(snapshot.text())).orElse(false));
     }
 
     @Test

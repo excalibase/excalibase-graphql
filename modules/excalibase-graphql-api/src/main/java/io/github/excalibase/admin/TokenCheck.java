@@ -132,7 +132,13 @@ public final class TokenCheck {
     }
 
     private static Map<String, Object> accepted(JwtClaims claims, String projectId) {
+        if (claims == null) {
+            return refused(Reason.MALFORMED);
+        }
         Principal principal = RoleResolver.resolve(claims, null, Map.of());
+        if (principal == null) {
+            return refused(Reason.MALFORMED);
+        }
         Map<String, Object> answer = new LinkedHashMap<>();
         answer.put("valid", true);
         answer.put("reason", null);

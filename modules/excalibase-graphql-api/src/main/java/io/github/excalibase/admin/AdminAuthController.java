@@ -81,7 +81,7 @@ public class AdminAuthController {
                     .body(Map.of(ERROR, "token_too_large"));
         }
         String projectId = validation.projectId() == null || validation.projectId().isBlank() ? null : validation.projectId();
-        TokenVerifier verifier = tokens == null ? null : (text, project) -> tokens.verify(text, project);
+        TokenVerifier verifier = tokens == null ? null : tokens::verify;
         return HttpResponse.ok(TokenCheck.run(verifier, token, projectId));
     }
 }

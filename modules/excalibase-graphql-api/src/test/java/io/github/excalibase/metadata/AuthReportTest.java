@@ -83,7 +83,7 @@ class AuthReportTest {
                 .containsEntry("algorithms", List.of("HS256")).containsEntry("audience", List.of(API))
                 .containsEntry("clockSkew", 30L).containsEntry(DOCUMENT_JWT, ABSENT);
         assertThat(report.get(JWKS_URL)).isNull();
-        assertThat(report.get("claims")).isEqualTo(Map.of("role", "role", "defaultRole", "", "userId", "sub",
+        assertThat(report).containsEntry("claims", Map.of("role", "role", "defaultRole", "", "userId", "sub",
                 "extra", Map.of("org", "app.org")));
         assertThat(report.toString()).doesNotContain(SECRET);
         assertThat(codes(report)).isEmpty();
