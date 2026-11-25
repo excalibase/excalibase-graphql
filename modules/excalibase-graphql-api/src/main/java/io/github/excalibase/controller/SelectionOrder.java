@@ -13,7 +13,8 @@ import graphql.language.OperationDefinition;
 import graphql.language.Selection;
 import graphql.language.SelectionSet;
 import io.github.excalibase.json.JsonFieldOrder;
-import org.springframework.http.ResponseEntity;
+import io.github.excalibase.http.Reply;
+import io.micronaut.http.HttpResponse;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -33,8 +34,8 @@ final class SelectionOrder {
     }
 
     /** {@code answer} with its data in {@code document}'s selection order; anything else as it is. */
-    static ResponseEntity<Object> apply(ResponseEntity<Object> answer, Document document) {
-        if (!(answer.getBody() instanceof Map<?, ?> body) || !(body.get(DATA_KEY) instanceof JsonNode data)) {
+    static HttpResponse<Object> apply(HttpResponse<Object> answer, Document document) {
+        if (!(answer.body() instanceof Map<?, ?> body) || !(body.get(DATA_KEY) instanceof JsonNode data)) {
             return answer;
         }
         List<OperationDefinition> operations = document.getDefinitionsOfType(OperationDefinition.class);
@@ -47,7 +48,7 @@ final class SelectionOrder {
         Map<String, Object> ordered = new LinkedHashMap<>();
         body.forEach((key, value) -> ordered.put(String.valueOf(key), value));
         ordered.put(DATA_KEY, order(data, operations.getFirst().getSelectionSet(), fragments));
-        return ResponseEntity.status(answer.getStatusCode()).headers(answer.getHeaders()).body(ordered);
+        return Reply.status(answer.status()).body(ordered);
     }
 
     private static JsonNode order(JsonNode node, SelectionSet selections, Map<String, FragmentDefinition> fragments) {

@@ -1,0 +1,65 @@
+# The `file` source on Kubernetes: the permissions live in a ConfigMap, mounted as a folder.
+#   kubectl apply -f configmap-file-source.yaml
+# Edit the ConfigMap and apply it again; the kubelet updates the mounted file within about a minute and
+# the engine swaps it in on its next poll. Validate first (export JWT_SECRET, which validate resolves):  excalibase validate permissions.yaml
+#
+# Mount the whole folder. A `subPath` mount never receives ConfigMap updates.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: excalibase-metadata
+data:
+  permissions.yaml: |
+    format: 1
+    projectId: my-app
+    jwt:
+      secret: env:JWT_SECRET
+      algorithms: [HS256]
+      audience: my-app-api
+      claims: {role: role, userId: sub}
+    tables:
+      - table: public.todos
+        role: user
+        select:
+          filter: {"owner_id": {"_eq": "X-Excalibase-User-Id"}}
+          columns: "*"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: excalibase-engine
+spec:
+  replicas: 2            # every replica polls the same ConfigMap; see /actuator/info for each one's version
+  selector:
+    matchLabels: {app: excalibase-engine}
+  template:
+    metadata:
+      labels: {app: excalibase-engine}
+    spec:
+      containers:
+        - name: engine
+          # Needs a build that includes EXC-733 phase 1 (`metadata.source`); `latest` may predate it.
+          image: excalibase/excalibase-graphql:main
+          env:
+            - {name: APP_PROJECT_ID, value: my-app}
+            - {name: APP_DATABASE_TYPE, value: postgres}
+            - {name: METADATA_SOURCE, value: file}
+            - {name: METADATA_FILE_PATH, value: /etc/excalibase}
+            - {name: MANAGEMENT_ENDPOINT_HEALTH_PROBES_ENABLED, value: "true"}
+            # also needed: SPRING_DATASOURCE_URL/USERNAME/PASSWORD and JWT_SECRET (the document's `jwt:` section reads it),
+            # from a Secret (see docker-compose.file.yml for the names)
+          # Not ready while no valid permissions document is loaded, so no traffic is routed here.
+          readinessProbe:
+            httpGet: {path: /actuator/health/readiness, port: 8081}
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: {path: /actuator/health/liveness, port: 8081}
+            periodSeconds: 20
+          volumeMounts:
+            - name: metadata
+              mountPath: /etc/excalibase      # the folder, never a subPath
+              readOnly: true
+      volumes:
+        - name: metadata
+          configMap:
+            name: excalibase-metadata

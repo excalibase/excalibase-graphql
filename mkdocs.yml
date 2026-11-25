@@ -120,6 +120,7 @@ nav:
   - Features:
       - Multi-Schema Support: features/multi-schema.md
       - MySQL Support: features/mysql.md
+      - SQLite (tiny projects): features/sqlite.md
       - Functions: features/functions.md
       - Enhanced PostgreSQL Types: features/enhanced-postgresql-types.md
       - Full-Text & Vector Search: features/search-and-vector.md
@@ -128,7 +129,15 @@ nav:
       - Permission Enforcement: features/rls-architecture.md
       - CORS (per-project origins): features/cors.md
       - Monitoring Level: features/monitoring-level.md
-  - Database Compatibility: database-compatibility.md
+  - Deploy:
+      - Run the Engine on Your Own: deploy/standalone.md
+      - Docker and Compose: deploy/standalone-docker.md
+      - Kubernetes: deploy/standalone-kubernetes.md
+      - Which Engine Image?: deploy/engine-images.md
+  - Databases:
+      - Compatibility Matrix: database-compatibility.md
+      - PostgreSQL: databases/postgresql.md
+      - MySQL: databases/mysql.md
   - SDK (TypeScript): sdk.md
   - Testing: testing.md
   - Contributing: CONTRIBUTING.md

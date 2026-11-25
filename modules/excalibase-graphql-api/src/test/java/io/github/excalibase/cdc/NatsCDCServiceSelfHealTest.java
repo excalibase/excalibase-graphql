@@ -12,7 +12,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.springframework.test.util.ReflectionTestUtils;
+import io.github.excalibase.support.Fields;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.wait.strategy.Wait;
 
@@ -54,11 +54,11 @@ class NatsCDCServiceSelfHealTest {
                 delivered.add(event);
             }
         }, objectMapper);
-        ReflectionTestUtils.setField(service, "natsEnabled", true);
-        ReflectionTestUtils.setField(service, "natsUrl", url);
-        ReflectionTestUtils.setField(service, "streamName", STREAM);
-        ReflectionTestUtils.setField(service, "subjectPrefix", "cdc");
-        ReflectionTestUtils.setField(service, "resubscribeInterval", Duration.ofSeconds(1));
+        Fields.set(service, "natsEnabled", true);
+        Fields.set(service, "natsUrl", url);
+        Fields.set(service, "streamName", STREAM);
+        Fields.set(service, "subjectPrefix", "cdc");
+        Fields.set(service, "resubscribeInterval", Duration.ofSeconds(1));
     }
 
     @AfterEach

@@ -1,0 +1,39 @@
+{
+  "excalibase_realtime_connections": [
+    "project"
+  ],
+  "excalibase_realtime_connections_opened_total": [
+    "project"
+  ],
+  "excalibase_realtime_messages_total": [
+    "project"
+  ],
+  "excalibase_request_metrics_dropped_total": [],
+  "excalibase_request_metrics_info": [
+    "instance"
+  ],
+  "excalibase_request_metrics_start_time_seconds": [
+    "instance"
+  ],
+  "excalibase_requests_seconds_bucket": [
+    "family",
+    "le",
+    "outcome",
+    "project"
+  ],
+  "excalibase_requests_seconds_count": [
+    "family",
+    "outcome",
+    "project"
+  ],
+  "excalibase_requests_seconds_max": [
+    "family",
+    "outcome",
+    "project"
+  ],
+  "excalibase_requests_seconds_sum": [
+    "family",
+    "outcome",
+    "project"
+  ]
+}

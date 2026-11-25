@@ -13,36 +13,84 @@
     <artifactId>excalibase-graphql-api</artifactId>
     <version>0.0.1-SNAPSHOT</version>
 
+    
+    <properties>
+        <!-- Where the built console is read from; a directory that does not exist adds nothing to the jar. -->
+        <console.ui.dist>${project.build.directory}/console-ui-not-built</console.ui.dist>
+        <exec.mainClass>io.github.excalibase.ExcalibaseGraphqlApplication</exec.mainClass>
+        <!-- The all-in-one build has none; a slim build (profile slim-postgres, slim-mysql, slim-sqlite) names its database, so its jar and
+             native binary sit beside the all-in-one ones and never replace them (EXC-799). -->
+        <engine.suffix></engine.suffix>
+    </properties>
+
     <dependencies>
-        <!--Springboot-->
         <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-jdbc</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-actuator</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-web</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-websocket</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-test</artifactId>
+            <groupId>io.github.excalibase</groupId>
+            <artifactId>excalibase-test-support</artifactId>
             <scope>test</scope>
         </dependency>
+        <!-- Micronaut runtime: Netty server, compile-time DI, Jackson -->
         <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-logging</artifactId>
+            <groupId>io.micronaut</groupId>
+            <artifactId>micronaut-inject</artifactId>
         </dependency>
         <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-security</artifactId>
+            <groupId>io.micronaut</groupId>
+            <artifactId>micronaut-http-server-netty</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.micronaut</groupId>
+            <artifactId>micronaut-websocket</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.micronaut</groupId>
+            <artifactId>micronaut-jackson-databind</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.micronaut</groupId>
+            <artifactId>micronaut-management</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.micronaut.micrometer</groupId>
+            <artifactId>micronaut-micrometer-core</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.micronaut.micrometer</groupId>
+            <artifactId>micronaut-micrometer-registry-prometheus</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.micrometer</groupId>
+            <artifactId>micrometer-observation</artifactId>
+        </dependency>
+        <!-- OpenTelemetry SDK + OTLP export; spans leave the process only with OTEL_EXPORTER_OTLP_ENDPOINT -->
+        <dependency>
+            <groupId>io.opentelemetry</groupId>
+            <artifactId>opentelemetry-sdk</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.opentelemetry</groupId>
+            <artifactId>opentelemetry-exporter-otlp</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.micronaut.micrometer</groupId>
+            <artifactId>micronaut-micrometer-registry-otlp</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>com.google.protobuf</groupId>
+            <artifactId>protobuf-java</artifactId>
+            <version>4.29.0</version>
+        </dependency>
+        <dependency>
+            <groupId>ch.qos.logback</groupId>
+            <artifactId>logback-classic</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>jcl-over-slf4j</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.opentelemetry</groupId>
+            <artifactId>opentelemetry-api</artifactId>
         </dependency>
 
         <!--Own modules-->
@@ -60,50 +108,29 @@
         </dependency>
         <dependency>
             <groupId>io.github.excalibase</groupId>
+            <artifactId>excalibase-graphql-sqlite</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.github.excalibase</groupId>
             <artifactId>excalibase-rest-api</artifactId>
         </dependency>
 
-        <!--Graphql-->
         <dependency>
             <groupId>com.graphql-java</groupId>
             <artifactId>graphql-java</artifactId>
         </dependency>
-
-        <!-- Observability: OpenTelemetry tracing + OTLP export -->
         <dependency>
-            <groupId>io.micrometer</groupId>
-            <artifactId>micrometer-tracing-bridge-otel</artifactId>
+            <groupId>org.yaml</groupId>
+            <artifactId>snakeyaml</artifactId>
         </dependency>
         <dependency>
-            <groupId>io.opentelemetry</groupId>
-            <artifactId>opentelemetry-exporter-otlp</artifactId>
+            <groupId>io.nats</groupId>
+            <artifactId>jnats</artifactId>
         </dependency>
         <dependency>
-            <groupId>io.micrometer</groupId>
-            <artifactId>micrometer-registry-otlp</artifactId>
+            <groupId>com.zaxxer</groupId>
+            <artifactId>HikariCP</artifactId>
         </dependency>
-        <!-- Prometheus scrape endpoint at /actuator/prometheus -->
-        <dependency>
-            <groupId>io.micrometer</groupId>
-            <artifactId>micrometer-registry-prometheus</artifactId>
-        </dependency>
-        <!-- OTLP log export: sends Logback records to OTel Collector via OTLP.
-             Spring Boot OtlpLoggingAutoConfiguration picks this up automatically
-             when management.otlp.logging.endpoint is set. -->
-        <dependency>
-            <groupId>io.opentelemetry.instrumentation</groupId>
-            <artifactId>opentelemetry-logback-appender-1.0</artifactId>
-        </dependency>
-
-        <!-- JDBC/HikariCP tracing: wraps DataSource with Micrometer observations
-             → produces connection + query spans inside each GraphQL trace -->
-        <dependency>
-            <groupId>net.ttddyy.observation</groupId>
-            <artifactId>datasource-micrometer-spring-boot</artifactId>
-            <version>1.0.6</version>
-        </dependency>
-
-        <!-- Reactive streams for subscriptions -->
         <dependency>
             <groupId>io.projectreactor</groupId>
             <artifactId>reactor-core</artifactId>
@@ -113,7 +140,6 @@
             <artifactId>reactor-test</artifactId>
             <scope>test</scope>
         </dependency>
-
         <dependency>
             <groupId>org.postgresql</groupId>
             <artifactId>postgresql</artifactId>
@@ -124,11 +150,15 @@
             <artifactId>mysql-connector-j</artifactId>
             <scope>runtime</scope>
         </dependency>
-
-        <!-- JWT verification — Nimbus has first-class GraalVM native image support -->
         <dependency>
-            <groupId>org.springframework.security</groupId>
-            <artifactId>spring-security-oauth2-jose</artifactId>
+            <groupId>org.xerial</groupId>
+            <artifactId>sqlite-jdbc</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+        <!-- JWT verification (Nimbus) -->
+        <dependency>
+            <groupId>com.nimbusds</groupId>
+            <artifactId>nimbus-jose-jwt</artifactId>
         </dependency>
 
         <!--Testing-->
@@ -146,6 +176,49 @@
         <dependency>
             <groupId>org.spockframework</groupId>
             <artifactId>spock-spring</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>io.micronaut.test</groupId>
+            <artifactId>micronaut-test-junit5</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.assertj</groupId>
+            <artifactId>assertj-core</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.mockito</groupId>
+            <artifactId>mockito-core</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.mockito</groupId>
+            <artifactId>mockito-junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.awaitility</groupId>
+            <artifactId>awaitility</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <!-- EnginePluginBoundaryTest: nothing outside a database plugin may depend on one (EXC-799) -->
+        <dependency>
+            <groupId>com.tngtech.archunit</groupId>
+            <artifactId>archunit-junit5</artifactId>
+            <version>1.4.1</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.networknt</groupId>
+            <artifactId>json-schema-validator</artifactId>
+            <version>1.5.8</version>
             <scope>test</scope>
         </dependency>
         <dependency>
@@ -184,13 +257,76 @@
             <version>${testcontainers.version}</version>
             <scope>test</scope>
         </dependency>
+            <!-- commons-compress (managed by the Micronaut platform) needs it when Testcontainers copies files -->
+        <dependency>
+            <groupId>commons-codec</groupId>
+            <artifactId>commons-codec</artifactId>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <build>
+        <finalName>${project.artifactId}-${project.version}${engine.suffix}</finalName>
+        <resources>
+            <resource>
+                <directory>src/main/resources</directory>
+                <filtering>false</filtering>
+                <excludes>
+                    <exclude>app-info.properties</exclude>
+                </excludes>
+            </resource>
+            <resource>
+                <directory>src/main/resources</directory>
+                <filtering>true</filtering>
+                <includes>
+                    <include>app-info.properties</include>
+                </includes>
+            </resource>
+            <!-- The built console (console-ui): served under /console by default. Only the console-ui profile points
+                 this at console-ui/dist, so a stale dist left by an earlier build is never packed by a build that
+                 skipped it; then only the legacy console is in the jar. -->
+            <resource>
+                <directory>${console.ui.dist}</directory>
+                <targetPath>console-next</targetPath>
+                <filtering>false</filtering>
+            </resource>
+        </resources>
         <plugins>
             <plugin>
-                <groupId>org.springframework.boot</groupId>
-                <artifactId>spring-boot-maven-plugin</artifactId>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <configuration>
+                    <annotationProcessorPaths combine.self="override">
+                        <path>
+                            <groupId>io.micronaut</groupId>
+                            <artifactId>micronaut-inject-java</artifactId>
+                            <version>${micronaut.core.version}</version>
+                        </path>
+                        <path>
+                            <groupId>io.micronaut</groupId>
+                            <artifactId>micronaut-http-validation</artifactId>
+                            <version>${micronaut.core.version}</version>
+                        </path>
+                        <path>
+                            <groupId>io.micronaut.micrometer</groupId>
+                            <artifactId>micronaut-micrometer-annotation</artifactId>
+                            <version>5.13.3</version>
+                        </path>
+                    </annotationProcessorPaths>
+                </configuration>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-shade-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>default-shade</id>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>shade</goal>
+                        </goals>
+                    </execution>
+                </executions>
             </plugin>
             <plugin>
                 <groupId>org.jacoco</groupId>
@@ -210,48 +346,481 @@
             </plugin>
         </plugins>
     </build>
-
     <profiles>
+        <!-- The new console (console-ui): its own Node is installed under target/, so no runner needs one. On in every
+             build, because it is the console /console serves. -Dconsole.ui.skip=true leaves it out (a quick Java-only
+             build: the jar then has only the legacy console and serves that). -Dconsole.ui.skipTests=true skips the
+             Vitest run and -Dconsole.ui.skipLint=true the lint (Java -DskipTests does not); CI runs both only in the
+             Console browser test job. Activated by a property, not by default, so -Pnative and the slim
+             profiles do not switch it off. -->
+        <profile>
+            <!-- Both console profiles key on whether console.ui.skip exists, so -Dconsole.ui.skip=false also skips. -->
+            <id>console-ui</id>
+            <activation>
+                <property>
+                    <name>!console.ui.skip</name>
+                </property>
+            </activation>
+            <properties>
+                <console.ui.skipTests>false</console.ui.skipTests>
+                <console.ui.skipLint>false</console.ui.skipLint>
+                <console.ui.dist>${project.basedir}/console-ui/dist</console.ui.dist>
+            </properties>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>com.github.eirslett</groupId>
+                        <artifactId>frontend-maven-plugin</artifactId>
+                        <version>2.0.2</version>
+                        <configuration>
+                            <workingDirectory>console-ui</workingDirectory>
+                            <installDirectory>${project.build.directory}/console-ui-node</installDirectory>
+                        </configuration>
+                        <executions>
+                            <execution>
+                                <id>install-node-and-npm</id>
+                                <goals><goal>install-node-and-npm</goal></goals>
+                                <phase>generate-resources</phase>
+                                <configuration>
+                                    <nodeVersion>v22.14.0</nodeVersion>
+                                    <npmVersion>11.21.3</npmVersion>
+                                </configuration>
+                            </execution>
+                            <execution>
+                                <id>npm-ci</id>
+                                <goals><goal>npm</goal></goals>
+                                <phase>generate-resources</phase>
+                                <configuration>
+                                    <arguments>ci --ignore-scripts --no-audit --no-fund</arguments>
+                                </configuration>
+                            </execution>
+                            <execution>
+                                <id>npm-lint</id>
+                                <goals><goal>npm</goal></goals>
+                                <phase>generate-resources</phase>
+                                <configuration>
+                                    <arguments>run lint</arguments>
+                                    <skip>${console.ui.skipLint}</skip>
+                                </configuration>
+                            </execution>
+                            <execution>
+                                <id>npm-test</id>
+                                <goals><goal>npm</goal></goals>
+                                <phase>generate-resources</phase>
+                                <configuration>
+                                    <arguments>run test</arguments>
+                                    <skip>${console.ui.skipTests}</skip>
+                                </configuration>
+                            </execution>
+                            <execution>
+                                <id>npm-build</id>
+                                <goals><goal>npm</goal></goals>
+                                <phase>generate-resources</phase>
+                                <configuration>
+                                    <arguments>run build</arguments>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+        <!-- A build that leaves the console out must not pack one an earlier build left in target/classes (a build
+             without `clean`): the jar would then serve a stale console. The directory is removed before resources are
+             copied; with it gone, the jar has only the legacy console. scripts/ci/check-console-skip.sh pins this. -->
+        <profile>
+            <!-- Both console profiles key on whether console.ui.skip exists, so -Dconsole.ui.skip=false also skips. -->
+            <id>console-ui-skipped</id>
+            <activation>
+                <property>
+                    <name>console.ui.skip</name>
+                </property>
+            </activation>
+            <build>
+                <plugins>
+                    <plugin>
+                        <artifactId>maven-clean-plugin</artifactId>
+                        <version>3.2.0</version>
+                        <executions>
+                            <execution>
+                                <id>remove-stale-console</id>
+                                <goals><goal>clean</goal></goals>
+                                <phase>initialize</phase>
+                                <configuration>
+                                    <excludeDefaultDirectories>true</excludeDefaultDirectories>
+                                    <filesets>
+                                        <fileset>
+                                            <directory>${project.build.outputDirectory}/console-next</directory>
+                                        </fileset>
+                                    </filesets>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+        <!-- Slim postgres build: the app with the postgres plugin only (EXC-799). The other plugin and its driver drop to test scope,
+             so the shaded jar and the native image carry neither; the enforcer rule fails the build if one comes back. The jar is
+             packaged beside the all-in-one one, and `verify` starts it against a postgres container (SlimBuildSmokeTest). -->
+        <profile>
+            <id>slim-postgres</id>
+            <properties>
+                <engine.suffix>-postgres</engine.suffix>
+                <slim.serves>postgres</slim.serves>
+                <slim.command>${project.build.directory}/${project.build.finalName}.jar</slim.command>
+            </properties>
+            <dependencies>
+                <dependency>
+                    <groupId>io.github.excalibase</groupId>
+                    <artifactId>excalibase-graphql-mysql</artifactId>
+                    <scope>test</scope>
+                </dependency>
+                <dependency>
+                    <groupId>com.mysql</groupId>
+                    <artifactId>mysql-connector-j</artifactId>
+                    <scope>test</scope>
+                </dependency>
+                <dependency>
+                    <groupId>io.github.excalibase</groupId>
+                    <artifactId>excalibase-graphql-sqlite</artifactId>
+                    <scope>test</scope>
+                </dependency>
+                <dependency>
+                    <groupId>org.xerial</groupId>
+                    <artifactId>sqlite-jdbc</artifactId>
+                    <scope>test</scope>
+                </dependency>
+            </dependencies>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-enforcer-plugin</artifactId>
+                        <executions>
+                            <!-- The parent's rule is for the shared modules; this module carries one plugin on purpose. -->
+                            <execution>
+                                <id>no-database-plugins</id>
+                                <phase>none</phase>
+                            </execution>
+                            <execution>
+                                <id>only-postgres</id>
+                                <phase>validate</phase>
+                                <goals>
+                                    <goal>enforce</goal>
+                                </goals>
+                                <configuration>
+                                    <rules>
+                                        <bannedDependencies>
+                                            <searchTransitive>true</searchTransitive>
+                                            <message>The slim-postgres build must not carry the mysql or sqlite plugin or its driver outside tests.</message>
+                                            <excludes>
+                                                <exclude>io.github.excalibase:excalibase-graphql-mysql:*:*:compile</exclude>
+                                                <exclude>io.github.excalibase:excalibase-graphql-mysql:*:*:runtime</exclude>
+                                                <exclude>io.github.excalibase:excalibase-graphql-mysql:*:*:provided</exclude>
+                                                <exclude>com.mysql:mysql-connector-j:*:*:compile</exclude>
+                                                <exclude>com.mysql:mysql-connector-j:*:*:runtime</exclude>
+                                                <exclude>com.mysql:mysql-connector-j:*:*:provided</exclude>
+                                                <exclude>io.github.excalibase:excalibase-graphql-sqlite:*:*:compile</exclude>
+                                                <exclude>io.github.excalibase:excalibase-graphql-sqlite:*:*:runtime</exclude>
+                                                <exclude>io.github.excalibase:excalibase-graphql-sqlite:*:*:provided</exclude>
+                                                <exclude>org.xerial:sqlite-jdbc:*:*:compile</exclude>
+                                                <exclude>org.xerial:sqlite-jdbc:*:*:runtime</exclude>
+                                                <exclude>org.xerial:sqlite-jdbc:*:*:provided</exclude>
+                                            </excludes>
+                                        </bannedDependencies>
+                                    </rules>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                    <!-- Runs after the jar is packaged, whatever -DskipTests says for the unit tests of the other modules. -->
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-surefire-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>slim-smoke</id>
+                                <phase>verify</phase>
+                                <goals>
+                                    <goal>test</goal>
+                                </goals>
+                                <configuration>
+                                    <skipTests>false</skipTests>
+                                    <skip>false</skip>
+                                    <test>SlimBuildSmokeTest</test>
+                                    <failIfNoSpecifiedTests>true</failIfNoSpecifiedTests>
+                                    <systemPropertyVariables>
+                                        <slim.command>${slim.command}</slim.command>
+                                        <slim.serves>${slim.serves}</slim.serves>
+                                    </systemPropertyVariables>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+        <!-- Slim mysql build: the app with the mysql plugin only (EXC-799). The other plugin and its driver drop to test scope,
+             so the shaded jar and the native image carry neither; the enforcer rule fails the build if one comes back. The jar is
+             packaged beside the all-in-one one, and `verify` starts it against a mysql container (SlimBuildSmokeTest). -->
+        <profile>
+            <id>slim-mysql</id>
+            <properties>
+                <engine.suffix>-mysql</engine.suffix>
+                <slim.serves>mysql</slim.serves>
+                <slim.command>${project.build.directory}/${project.build.finalName}.jar</slim.command>
+            </properties>
+            <dependencies>
+                <dependency>
+                    <groupId>io.github.excalibase</groupId>
+                    <artifactId>excalibase-graphql-postgres</artifactId>
+                    <scope>test</scope>
+                </dependency>
+                <dependency>
+                    <groupId>org.postgresql</groupId>
+                    <artifactId>postgresql</artifactId>
+                    <scope>test</scope>
+                </dependency>
+                <dependency>
+                    <groupId>io.github.excalibase</groupId>
+                    <artifactId>excalibase-graphql-sqlite</artifactId>
+                    <scope>test</scope>
+                </dependency>
+                <dependency>
+                    <groupId>org.xerial</groupId>
+                    <artifactId>sqlite-jdbc</artifactId>
+                    <scope>test</scope>
+                </dependency>
+            </dependencies>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-enforcer-plugin</artifactId>
+                        <executions>
+                            <!-- The parent's rule is for the shared modules; this module carries one plugin on purpose. -->
+                            <execution>
+                                <id>no-database-plugins</id>
+                                <phase>none</phase>
+                            </execution>
+                            <execution>
+                                <id>only-mysql</id>
+                                <phase>validate</phase>
+                                <goals>
+                                    <goal>enforce</goal>
+                                </goals>
+                                <configuration>
+                                    <rules>
+                                        <bannedDependencies>
+                                            <searchTransitive>true</searchTransitive>
+                                            <message>The slim-mysql build must not carry the postgres or sqlite plugin or its driver outside tests.</message>
+                                            <excludes>
+                                                <exclude>io.github.excalibase:excalibase-graphql-postgres:*:*:compile</exclude>
+                                                <exclude>io.github.excalibase:excalibase-graphql-postgres:*:*:runtime</exclude>
+                                                <exclude>io.github.excalibase:excalibase-graphql-postgres:*:*:provided</exclude>
+                                                <exclude>org.postgresql:postgresql:*:*:compile</exclude>
+                                                <exclude>org.postgresql:postgresql:*:*:runtime</exclude>
+                                                <exclude>org.postgresql:postgresql:*:*:provided</exclude>
+                                                <exclude>io.github.excalibase:excalibase-graphql-sqlite:*:*:compile</exclude>
+                                                <exclude>io.github.excalibase:excalibase-graphql-sqlite:*:*:runtime</exclude>
+                                                <exclude>io.github.excalibase:excalibase-graphql-sqlite:*:*:provided</exclude>
+                                                <exclude>org.xerial:sqlite-jdbc:*:*:compile</exclude>
+                                                <exclude>org.xerial:sqlite-jdbc:*:*:runtime</exclude>
+                                                <exclude>org.xerial:sqlite-jdbc:*:*:provided</exclude>
+                                            </excludes>
+                                        </bannedDependencies>
+                                    </rules>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                    <!-- Runs after the jar is packaged, whatever -DskipTests says for the unit tests of the other modules. -->
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-surefire-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>slim-smoke</id>
+                                <phase>verify</phase>
+                                <goals>
+                                    <goal>test</goal>
+                                </goals>
+                                <configuration>
+                                    <skipTests>false</skipTests>
+                                    <skip>false</skip>
+                                    <test>SlimBuildSmokeTest</test>
+                                    <failIfNoSpecifiedTests>true</failIfNoSpecifiedTests>
+                                    <systemPropertyVariables>
+                                        <slim.command>${slim.command}</slim.command>
+                                        <slim.serves>${slim.serves}</slim.serves>
+                                    </systemPropertyVariables>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+        <!-- Slim sqlite build: the app with the sqlite plugin only (EXC-799). The other plugin and its driver drop to test scope,
+             so the shaded jar and the native image carry neither; the enforcer rule fails the build if one comes back. The jar is
+             packaged beside the all-in-one one, and `verify` starts it against a SQLite file (SlimBuildSmokeTest). -->
+        <profile>
+            <id>slim-sqlite</id>
+            <properties>
+                <engine.suffix>-sqlite</engine.suffix>
+                <slim.serves>sqlite</slim.serves>
+                <slim.command>${project.build.directory}/${project.build.finalName}.jar</slim.command>
+            </properties>
+            <dependencies>
+                <dependency>
+                    <groupId>io.github.excalibase</groupId>
+                    <artifactId>excalibase-graphql-postgres</artifactId>
+                    <scope>test</scope>
+                </dependency>
+                <dependency>
+                    <groupId>org.postgresql</groupId>
+                    <artifactId>postgresql</artifactId>
+                    <scope>test</scope>
+                </dependency>
+                <dependency>
+                    <groupId>io.github.excalibase</groupId>
+                    <artifactId>excalibase-graphql-mysql</artifactId>
+                    <scope>test</scope>
+                </dependency>
+                <dependency>
+                    <groupId>com.mysql</groupId>
+                    <artifactId>mysql-connector-j</artifactId>
+                    <scope>test</scope>
+                </dependency>
+            </dependencies>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-enforcer-plugin</artifactId>
+                        <executions>
+                            <!-- The parent's rule is for the shared modules; this module carries one plugin on purpose. -->
+                            <execution>
+                                <id>no-database-plugins</id>
+                                <phase>none</phase>
+                            </execution>
+                            <execution>
+                                <id>only-sqlite</id>
+                                <phase>validate</phase>
+                                <goals>
+                                    <goal>enforce</goal>
+                                </goals>
+                                <configuration>
+                                    <rules>
+                                        <bannedDependencies>
+                                            <searchTransitive>true</searchTransitive>
+                                            <message>The slim-sqlite build must not carry the postgres or mysql plugin or its driver outside tests.</message>
+                                            <excludes>
+                                                <exclude>io.github.excalibase:excalibase-graphql-postgres:*:*:compile</exclude>
+                                                <exclude>io.github.excalibase:excalibase-graphql-postgres:*:*:runtime</exclude>
+                                                <exclude>io.github.excalibase:excalibase-graphql-postgres:*:*:provided</exclude>
+                                                <exclude>org.postgresql:postgresql:*:*:compile</exclude>
+                                                <exclude>org.postgresql:postgresql:*:*:runtime</exclude>
+                                                <exclude>org.postgresql:postgresql:*:*:provided</exclude>
+                                                <exclude>io.github.excalibase:excalibase-graphql-mysql:*:*:compile</exclude>
+                                                <exclude>io.github.excalibase:excalibase-graphql-mysql:*:*:runtime</exclude>
+                                                <exclude>io.github.excalibase:excalibase-graphql-mysql:*:*:provided</exclude>
+                                                <exclude>com.mysql:mysql-connector-j:*:*:compile</exclude>
+                                                <exclude>com.mysql:mysql-connector-j:*:*:runtime</exclude>
+                                                <exclude>com.mysql:mysql-connector-j:*:*:provided</exclude>
+                                            </excludes>
+                                        </bannedDependencies>
+                                    </rules>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                    <!-- Runs after the jar is packaged, whatever -DskipTests says for the unit tests of the other modules. -->
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-surefire-plugin</artifactId>
+                        <executions>
+                            <execution>
+                                <id>slim-smoke</id>
+                                <phase>verify</phase>
+                                <goals>
+                                    <goal>test</goal>
+                                </goals>
+                                <configuration>
+                                    <skipTests>false</skipTests>
+                                    <skip>false</skip>
+                                    <test>SlimBuildSmokeTest</test>
+                                    <failIfNoSpecifiedTests>true</failIfNoSpecifiedTests>
+                                    <systemPropertyVariables>
+                                        <slim.command>${slim.command}</slim.command>
+                                        <slim.serves>${slim.serves}</slim.serves>
+                                    </systemPropertyVariables>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
         <profile>
             <id>native</id>
             <build>
                 <plugins>
                     <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-compiler-plugin</artifactId>
+                        <configuration>
+                            <annotationProcessorPaths combine.self="override">
+                                <path>
+                                    <groupId>io.micronaut</groupId>
+                                    <artifactId>micronaut-inject-java</artifactId>
+                                    <version>${micronaut.core.version}</version>
+                                </path>
+                                <path>
+                                    <groupId>io.micronaut</groupId>
+                                    <artifactId>micronaut-http-validation</artifactId>
+                                    <version>${micronaut.core.version}</version>
+                                </path>
+                                <path>
+                                    <groupId>io.micronaut.micrometer</groupId>
+                                    <artifactId>micronaut-micrometer-annotation</artifactId>
+                                    <version>5.13.3</version>
+                                </path>
+                                <path>
+                                    <groupId>io.micronaut</groupId>
+                                    <artifactId>micronaut-graal</artifactId>
+                                    <version>${micronaut.core.version}</version>
+                                </path>
+                            </annotationProcessorPaths>
+                        </configuration>
+                    </plugin>
+                    <plugin>
                         <groupId>org.graalvm.buildtools</groupId>
                         <artifactId>native-maven-plugin</artifactId>
                         <extensions>true</extensions>
                         <configuration>
+                            <imageName>excalibase-graphql-api${engine.suffix}</imageName>
+                            <mainClass>${exec.mainClass}</mainClass>
                             <buildArgs>
                                 <buildArg>--no-fallback</buildArg>
                                 <buildArg>-H:+ReportExceptionStackTraces</buildArg>
-                                <buildArg>-march=compatibility</buildArg>
+                                <buildArg>-march=x86-64-v3</buildArg>
                             </buildArgs>
                         </configuration>
                         <executions>
+                            <!-- Writes the resource config of target/classes (logback.xml, the Micronaut bean metadata) into the image;
+                                 the root pom switches this execution off for every other module. -->
+                            <execution>
+                                <id>test-native</id>
+                                <phase>test</phase>
+                            </execution>
                             <execution>
                                 <id>build-native</id>
                                 <goals>
                                     <goal>compile-no-fork</goal>
                                 </goals>
                                 <phase>package</phase>
-                            </execution>
-                        </executions>
-                    </plugin>
-                    <plugin>
-                        <groupId>org.springframework.boot</groupId>
-                        <artifactId>spring-boot-maven-plugin</artifactId>
-                        <executions>
-                            <execution>
-                                <id>process-aot</id>
-                                <goals>
-                                    <goal>process-aot</goal>
-                                </goals>
-                                <configuration>
-                                    <!-- Tell AOT that JWT beans are active so they're included in the native image.
-                                         @ConditionalOnProperty is evaluated at AOT time; without this the JWT config
-                                         would be excluded because JWT_ENABLED env var is unset during the build. -->
-                                    <jvmArguments>-Dapp.security.jwt-enabled=true</jvmArguments>
-                                </configuration>
                             </execution>
                         </executions>
                     </plugin>

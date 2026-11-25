@@ -13,8 +13,37 @@ import java.util.function.Function;
 
 public class MysqlSchemaLoader implements SchemaLoader {
 
+    /**
+     * Count and a sum of row checksums for what the loader reads from {@code information_schema}, over user
+     * schemas. {@code UPDATE_TIME} is not used: InnoDB does not keep it.
+     */
+    static final String FINGERPRINT = """
+            SELECT CONCAT_WS('|',
+              (SELECT CONCAT(COUNT(*), ':', COALESCE(SUM(CRC32(CONCAT_WS(',', table_schema, table_name, table_type))), 0))
+                 FROM information_schema.tables WHERE table_schema NOT IN ('information_schema', 'performance_schema', 'mysql', 'sys')),
+              (SELECT CONCAT(COUNT(*), ':', COALESCE(SUM(CRC32(CONCAT_WS(',', table_schema, table_name, column_name,
+                        ordinal_position, column_type, is_nullable, column_key, extra))), 0))
+                 FROM information_schema.columns WHERE table_schema NOT IN ('information_schema', 'performance_schema', 'mysql', 'sys')),
+              (SELECT CONCAT(COUNT(*), ':', COALESCE(SUM(CRC32(CONCAT_WS(',', table_schema, table_name, index_name,
+                        non_unique, seq_in_index, column_name, index_type))), 0))
+                 FROM information_schema.statistics WHERE table_schema NOT IN ('information_schema', 'performance_schema', 'mysql', 'sys')),
+              (SELECT CONCAT(COUNT(*), ':', COALESCE(SUM(CRC32(CONCAT_WS(',', constraint_schema, table_name, constraint_name,
+                        referenced_table_name))), 0))
+                 FROM information_schema.referential_constraints WHERE constraint_schema NOT IN ('information_schema', 'performance_schema', 'mysql', 'sys')),
+              (SELECT CONCAT(COUNT(*), ':', COALESCE(SUM(CRC32(CONCAT_WS(',', routine_schema, routine_name, routine_type,
+                        data_type, is_deterministic, security_type))), 0))
+                 FROM information_schema.routines WHERE routine_schema NOT IN ('information_schema', 'performance_schema', 'mysql', 'sys'))
+            ) AS fingerprint
+            """;
+
+    @Override
+    public String fingerprint(JdbcTemplate jdbc) {
+        return jdbc.queryForObject(FINGERPRINT, String.class);
+    }
+
     private static final String COL_TABLE_NAME = "table_name";
     private static final String COL_COLUMN_NAME = "column_name";
+    private static final String COL_POSITION = "position";
     private static final String COL_TABLE_SCHEMA = "table_schema";
     private static final String COL_DATA_TYPE = "data_type";
     private static final String COL_COLUMN_TYPE = "column_type";
@@ -42,14 +71,15 @@ public class MysqlSchemaLoader implements SchemaLoader {
               cols AS (
                 SELECT 'column' as kind, table_schema, table_name, column_name, data_type, column_type,
                        NULL as constraint_name, NULL as from_column, NULL as to_table, NULL as to_column,
-                       character_set_name, collation_name, extra
+                       character_set_name, collation_name, extra, ordinal_position as position
                 FROM information_schema.columns
                 WHERE table_schema IN """ + inClause + """
                 ORDER BY table_schema, table_name, ordinal_position
               ),
               pkeys AS (
                 SELECT 'pk' as kind, tc.table_schema, tc.table_name, kcu.column_name, NULL as data_type,
-                       NULL as constraint_name, NULL as from_column, NULL as to_table, NULL as to_column
+                       NULL as constraint_name, NULL as from_column, NULL as to_table, NULL as to_column,
+                       kcu.ordinal_position as position
                 FROM information_schema.table_constraints tc
                 JOIN information_schema.key_column_usage kcu
                     ON tc.constraint_name = kcu.constraint_name
@@ -61,11 +91,12 @@ public class MysqlSchemaLoader implements SchemaLoader {
                 SELECT 'fk' as kind, kcu.TABLE_SCHEMA as table_schema, kcu.TABLE_NAME as table_name,
                        NULL as column_name, NULL as data_type,
                        kcu.CONSTRAINT_NAME as constraint_name, kcu.COLUMN_NAME as from_column,
-                       kcu.REFERENCED_TABLE_NAME as to_table, kcu.REFERENCED_COLUMN_NAME as to_column,
-                       kcu.ORDINAL_POSITION as position
+                       kcu.REFERENCED_TABLE_SCHEMA as to_schema, kcu.REFERENCED_TABLE_NAME as to_table,
+                       kcu.REFERENCED_COLUMN_NAME as to_column, kcu.ORDINAL_POSITION as position
                 FROM information_schema.KEY_COLUMN_USAGE kcu
                 WHERE kcu.TABLE_SCHEMA IN """ + inClause + """
                   AND kcu.REFERENCED_TABLE_NAME IS NOT NULL
+                  AND kcu.REFERENCED_TABLE_SCHEMA IN """ + inClause + """
               ),
               views AS (
                 SELECT 'view' as kind, table_schema, table_name, NULL as column_name, NULL as data_type,
@@ -81,16 +112,16 @@ public class MysqlSchemaLoader implements SchemaLoader {
                    'constraint_name', constraint_name, 'from_column', from_column,
                    'to_table', to_table, 'to_column', to_column,
                    'character_set_name', character_set_name, 'collation_name', collation_name,
-                   'extra', extra) as row_json
+                   'extra', extra, 'position', position) as row_json
             FROM cols
             UNION ALL SELECT JSON_OBJECT('kind', kind, 'table_schema', table_schema, 'table_name', table_name,
                    'column_name', column_name, 'data_type', data_type,
                    'constraint_name', constraint_name, 'from_column', from_column,
-                   'to_table', to_table, 'to_column', to_column) FROM pkeys
+                   'to_table', to_table, 'to_column', to_column, 'position', position) FROM pkeys
             UNION ALL SELECT JSON_OBJECT('kind', kind, 'table_schema', table_schema, 'table_name', table_name,
                    'column_name', column_name, 'data_type', data_type,
                    'constraint_name', constraint_name, 'from_column', from_column,
-                   'to_table', to_table, 'to_column', to_column, 'position', position) FROM fkeys
+                   'to_schema', to_schema, 'to_table', to_table, 'to_column', to_column, 'position', position) FROM fkeys
             UNION ALL SELECT JSON_OBJECT('kind', kind, 'table_schema', table_schema, 'table_name', table_name,
                    'column_name', column_name, 'data_type', data_type,
                    'constraint_name', constraint_name, 'from_column', from_column,
@@ -107,8 +138,9 @@ public class MysqlSchemaLoader implements SchemaLoader {
         if (schemas.isEmpty()) return;
         String[] schemaArray = schemas.toArray(new String[0]);
         String sql = buildMysqlBulkQuery(schemas.size());
-        int cteCount = 5; // cols, pkeys, fkeys, views, full_text_columns
+        int cteCount = 6; // cols, pkeys, fkeys (two lists: the table's and its target's), views, full_text_columns
         List<KeyColumn> keyColumns = new ArrayList<>();
+        Introspected introspected = new Introspected();
 
         jdbc.query(sql, ps -> {
             int idx = 1;
@@ -117,13 +149,62 @@ public class MysqlSchemaLoader implements SchemaLoader {
                     ps.setString(idx++, schema);
                 }
             }
-        }, (RowCallbackHandler) rs -> dispatchMysqlRow(rs.getString(1), perSchema, keyColumns));
+        }, (RowCallbackHandler) rs -> dispatchMysqlRow(rs.getString(1), perSchema, keyColumns, introspected));
+        introspected.apply(perSchema, this);
         addForeignKeys(keyColumns, perSchema::get);
+        for (String schema : schemas) {
+            SchemaInfo info = perSchema.get(schema);
+            if (info != null) loadUniqueKeys(jdbc, schema, info);
+        }
+    }
+
+    /** Each unique index other than the primary key, by name: what an {@code onConflict} constraint names. */
+    private static void loadUniqueKeys(JdbcTemplate jdbc, String schema, SchemaInfo info) {
+        Map<List<String>, List<String>> keys = new LinkedHashMap<>();
+        jdbc.query("""
+            SELECT table_name, index_name, column_name
+            FROM information_schema.statistics
+            WHERE table_schema = ? AND non_unique = 0 AND index_name <> 'PRIMARY'
+            ORDER BY table_name, index_name, seq_in_index
+            """, (RowCallbackHandler) rs -> keys.computeIfAbsent(
+                        List.of(rs.getString(COL_TABLE_NAME), rs.getString("index_name")), k -> new ArrayList<>())
+                .add(rs.getString(COL_COLUMN_NAME)), schema);
+        // A functional key part has no column: the index cannot be named by columns, so it is not offered.
+        keys.forEach((key, columns) -> {
+            if (!columns.contains(null)) info.addUniqueKey(key.get(0), key.get(1), columns);
+        });
+    }
+
+    /**
+     * Columns and primary key parts in the order the table declares them. The query's own ORDER BY sits inside a CTE,
+     * which MySQL may drop, so rows arrive in any order and each carries its position instead.
+     */
+    static final class Introspected {
+        private static final Comparator<JsonNode> DECLARED = Comparator
+                .comparing((JsonNode node) -> node.get(COL_TABLE_SCHEMA).asText())
+                .thenComparing(node -> node.get(COL_TABLE_NAME).asText())
+                .thenComparingInt(node -> node.get(COL_POSITION).asInt());
+
+        final List<JsonNode> columns = new ArrayList<>();
+        final List<JsonNode> primaryKeyParts = new ArrayList<>();
+
+        void apply(Map<String, SchemaInfo> perSchema, MysqlSchemaLoader loader) {
+            columns.sort(DECLARED);
+            primaryKeyParts.sort(DECLARED);
+            for (JsonNode node : columns) {
+                String schema = node.get(COL_TABLE_SCHEMA).asText();
+                loader.handleColumnRow(node, schema, perSchema.get(schema));
+            }
+            for (JsonNode node : primaryKeyParts) {
+                perSchema.get(node.get(COL_TABLE_SCHEMA).asText())
+                        .addPrimaryKey(node.get(COL_TABLE_NAME).asText(), node.get(COL_COLUMN_NAME).asText());
+            }
+        }
     }
 
     /** One column of a foreign key, at {@code position} within its constraint. */
     private record KeyColumn(String schema, String table, String constraint, int position, String column,
-                             String refTable, String refColumn) {}
+                             String refSchema, String refTable, String refColumn) {}
 
     /** Each constraint as one key: a composite key joins on all its columns, never on one of them. */
     private static void addForeignKeys(List<KeyColumn> keyColumns, Function<String, SchemaInfo> infoOf) {
@@ -138,16 +219,17 @@ public class MysqlSchemaLoader implements SchemaLoader {
             SchemaInfo info = infoOf.apply(first.schema());
             if (info == null) continue;
             if (columns.size() == 1) {
-                info.addForeignKey(first.table(), first.column(), first.refTable(), first.refColumn());
+                info.addForeignKey(first.table(), first.column(), first.refSchema(), first.refTable(), first.refColumn());
             } else {
                 info.addCompositeForeignKey(first.table(), columns.stream().map(KeyColumn::column).toList(),
-                        first.refTable(), columns.stream().map(KeyColumn::refColumn).toList());
+                        first.refSchema(), first.refTable(), columns.stream().map(KeyColumn::refColumn).toList());
             }
         }
     }
 
     /** Dispatch a single MySQL introspection row to its handler. */
-    private void dispatchMysqlRow(String rowJson, Map<String, SchemaInfo> perSchema, List<KeyColumn> keyColumns) {
+    private void dispatchMysqlRow(String rowJson, Map<String, SchemaInfo> perSchema, List<KeyColumn> keyColumns,
+                                  Introspected introspected) {
         try {
             JsonNode node = JSON.readTree(rowJson);
             String kind = node.get("kind").asText();
@@ -157,11 +239,12 @@ public class MysqlSchemaLoader implements SchemaLoader {
             SchemaInfo info = perSchema.computeIfAbsent(schema, k -> new SchemaInfo());
 
             switch (kind) {
-                case "column" -> handleColumnRow(node, schema, info);
-                case "pk" -> info.addPrimaryKey(node.get(COL_TABLE_NAME).asText(), node.get(COL_COLUMN_NAME).asText());
+                case "column" -> introspected.columns.add(node);
+                case "pk" -> introspected.primaryKeyParts.add(node);
                 case "fk" -> keyColumns.add(new KeyColumn(schema, node.get(COL_TABLE_NAME).asText(),
-                        node.get("constraint_name").asText(), node.get("position").asInt(),
-                        node.get("from_column").asText(), node.get("to_table").asText(), node.get("to_column").asText()));
+                        node.get("constraint_name").asText(), node.get(COL_POSITION).asInt(),
+                        node.get("from_column").asText(), node.get("to_schema").asText(),
+                        node.get("to_table").asText(), node.get("to_column").asText()));
                 case "view" -> info.addView(node.get(COL_TABLE_NAME).asText());
                 case "fulltext" -> info.addFullTextColumn(node.get(COL_TABLE_NAME).asText(),
                         node.get(COL_COLUMN_NAME).asText());
@@ -211,6 +294,7 @@ public class MysqlSchemaLoader implements SchemaLoader {
             addAutoIncrement(info, table, col, rs.getString("extra"));
             info.setTableSchema(table, schema);
         }, schema);
+        loadUniqueKeys(jdbc, schema, info);
         jdbc.query(FULL_TEXT_COLUMNS + "(?)" + FULL_TEXT_GROUPING, (RowCallbackHandler) rs ->
                 info.addFullTextColumn(rs.getString(COL_TABLE_NAME), rs.getString(COL_COLUMN_NAME)), schema);
     }
@@ -221,12 +305,14 @@ public class MysqlSchemaLoader implements SchemaLoader {
         jdbc.query("""
             SELECT kcu.TABLE_NAME AS from_table, kcu.COLUMN_NAME AS from_column, kcu.CONSTRAINT_NAME AS constraint_name,
                    kcu.ORDINAL_POSITION AS position,
-                   kcu.REFERENCED_TABLE_NAME AS to_table, kcu.REFERENCED_COLUMN_NAME AS to_column
+                   kcu.REFERENCED_TABLE_SCHEMA AS to_schema, kcu.REFERENCED_TABLE_NAME AS to_table,
+                   kcu.REFERENCED_COLUMN_NAME AS to_column
             FROM information_schema.KEY_COLUMN_USAGE kcu
             WHERE kcu.TABLE_SCHEMA = ? AND kcu.REFERENCED_TABLE_NAME IS NOT NULL
+              AND kcu.REFERENCED_TABLE_SCHEMA = ?
             """, (RowCallbackHandler) rs -> keyColumns.add(new KeyColumn(schema, rs.getString("from_table"),
-                    rs.getString("constraint_name"), rs.getInt("position"), rs.getString("from_column"),
-                    rs.getString("to_table"), rs.getString("to_column"))), schema);
+                    rs.getString("constraint_name"), rs.getInt(COL_POSITION), rs.getString("from_column"),
+                    rs.getString("to_schema"), rs.getString("to_table"), rs.getString("to_column"))), schema, schema);
         addForeignKeys(keyColumns, ignored -> info);
     }
 

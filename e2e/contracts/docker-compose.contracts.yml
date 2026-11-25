@@ -1,0 +1,160 @@
+# Black-box contract stack: the engine image under test plus the minimum around it.
+# Nothing here knows which framework the engine is built on.
+name: excalibase-contracts
+
+x-engine-env: &engine-env
+  APP_DATABASE_TYPE: postgres
+  APP_SECURITY_AUTH_HMAC_SECRET: contract-test-hmac-secret-0123456789abcdef
+  APP_SECURITY_MULTI_TENANT_PROVISIONING_URL: http://mock-vault:8080/api
+  APP_SECURITY_MULTI_TENANT_PROVISIONING_PAT: contract-pat
+  APP_SECURITY_RLS_POLICY_URL: http://mock-vault:8080/api
+  TENANT_DB_SSLMODE: disable
+  APP_NATS_ENABLED: "true"
+  APP_NATS_ALLOW_UNTENANTED_REALTIME: "true"
+  APP_NATS_URL: nats://nats:4222
+  MANAGEMENT_ENDPOINTS_WEB_EXPOSURE_INCLUDE: health,info,metrics,prometheus
+  MANAGEMENT_ENDPOINT_HEALTH_PROBES_ENABLED: "true"
+  APP_REQUEST_METRICS_ENABLED: "true"
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg15
+    environment:
+      POSTGRES_DB: hana
+      POSTGRES_USER: hana001
+      POSTGRES_PASSWORD: password123
+      POSTGRES_INITDB_ARGS: "--auth-host=scram-sha-256"
+    volumes:
+      - ../../scripts/initdb.sql:/docker-entrypoint-initdb.d/01-initdb.sql:ro
+      - ../../scripts/initdb-complex-domain.sql:/docker-entrypoint-initdb.d/02-complex-domain.sql:ro
+    command: postgres -c wal_level=logical -c max_replication_slots=10 -c max_wal_senders=10
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hana001 -d hana"]
+      interval: 3s
+      timeout: 5s
+      retries: 30
+    networks: [contracts]
+
+  mock-vault:
+    image: wiremock/wiremock:3.10.0
+    volumes:
+      # Own mappings: contracts run no auth, so no /info stub (it would answer the engine's CORS lookup).
+      - ./wiremock/mappings:/home/wiremock/mappings:ro
+      - ../wiremock/__files:/home/wiremock/__files:ro
+    ports:
+      - "127.0.0.1:14080:8080"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/__admin/mappings"]
+      interval: 3s
+      timeout: 5s
+      retries: 20
+    networks: [contracts]
+
+  nats:
+    image: nats:2.10
+    command: ["-js", "-m", "8222"]
+    healthcheck:
+      test: ["CMD", "/nats-server", "--help"]
+      interval: 3s
+      timeout: 5s
+      retries: 10
+    networks: [contracts]
+
+  nats-init:
+    image: natsio/nats-box:latest
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        nats --server=nats://nats:4222 stream add CDC --subjects='cdc.>' --storage=memory --retention=limits --max-age=5m --discard=old --max-msgs=-1 --max-bytes=-1 --max-msg-size=-1 --replicas=1 --dupe-window=2m --no-allow-rollup --no-deny-delete --no-deny-purge --defaults || true
+    depends_on:
+      nats: {condition: service_healthy}
+    restart: "no"
+    networks: [contracts]
+
+  watcher:
+    image: excalibase/excalibase-watcher-go:1.7.5@sha256:e31bbddc0753189510be1f536fb70535f68b706795b7bf049da0a8af612f1069
+    command: ["--config", "/config/config.yaml"]
+    environment:
+      WATCHER_POSTGRES_USERNAME: hana001
+      WATCHER_POSTGRES_PASSWORD: password123
+      WATCHER_NATS_URL: nats://nats:4222
+    volumes:
+      - ../watcher-go/config.yaml:/config/config.yaml:ro
+    healthcheck:
+      disable: true
+    depends_on:
+      postgres: {condition: service_healthy}
+      nats-init: {condition: service_completed_successfully}
+    networks: [contracts]
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.119.0
+    user: "0:0"
+    command: ["--config=/etc/otelcol/config.yaml"]
+    volumes:
+      - ./otel-collector.yaml:/etc/otelcol/config.yaml:ro
+      - ./out:/out
+    networks: [contracts]
+
+  engine:
+    image: ${ENGINE_IMAGE:-excalibase/excalibase-graphql}
+    environment:
+      <<: *engine-env
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
+      OTEL_TRACES_SAMPLER_ARG: "1.0"
+    ports:
+      - "127.0.0.1:14000:10000"
+      - "127.0.0.1:14081:8081"
+      - "127.0.0.1:14464:9464"
+    depends_on:
+      postgres: {condition: service_healthy}
+      mock-vault: {condition: service_healthy}
+      nats: {condition: service_healthy}
+      otel-collector: {condition: service_started}
+    networks: [contracts]
+
+  # Single-database mode: the one datasource is a Spring bean, so Hikari and JDBC metrics and JDBC spans exist here.
+  engine-single:
+    image: ${ENGINE_IMAGE:-excalibase/excalibase-graphql}
+    environment:
+      <<: *engine-env
+      POSTGRES_URL: jdbc:postgresql://postgres:5432/hana
+      POSTGRES_USER: app_user
+      POSTGRES_PASSWORD: password123
+      APP_PROJECT_ID: e2e-test
+      APP_SECURITY_MULTI_TENANT_PROVISIONING_URL: ""
+      APP_SECURITY_RLS_POLICY_PAT: contract-pat
+      APP_NATS_ENABLED: "false"
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
+    ports:
+      - "127.0.0.1:14200:10000"
+      - "127.0.0.1:14281:8081"
+    depends_on:
+      postgres: {condition: service_healthy}
+      mock-vault: {condition: service_healthy}
+      otel-collector: {condition: service_started}
+    networks: [contracts]
+
+  # Same engine on one CPU with tiny connection bounds, for the overload contract.
+  engine-overload:
+    image: ${ENGINE_IMAGE:-excalibase/excalibase-graphql}
+    environment:
+      <<: *engine-env
+      APP_NATS_ENABLED: "false"
+      APP_OVERLOAD_ENABLED: "true"
+      APP_OVERLOAD_MAX_CONNECTIONS_PER_CPU: "4"
+      APP_OVERLOAD_ACCEPT_COUNT_PER_CPU: "2"
+      # Long enough that a queued request is never refused by the clock while the test frees its slot.
+      APP_OVERLOAD_ADMISSION_WAIT_MS: "30000"
+    ports:
+      - "127.0.0.1:14100:10000"
+      - "127.0.0.1:14181:8081"
+    cpus: 1
+    depends_on:
+      postgres: {condition: service_healthy}
+      mock-vault: {condition: service_healthy}
+    networks: [contracts]
+
+networks:
+  contracts:
+    name: excalibase-contracts-net

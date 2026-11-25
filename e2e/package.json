@@ -12,13 +12,14 @@
     "test:ecommerce": "jest ecommerce.test.js --forceExit",
     "test:kanban": "jest kanban.test.js --forceExit",
     "test:clinic": "jest clinic.test.js --forceExit",
+    "test:contracts": "jest contracts --runInBand --forceExit",
     "test:study-cases": "jest ecommerce.test.js kanban.test.js clinic.test.js --forceExit",
     "test": "jest --forceExit"
   },
   "dependencies": {
     "graphql": "^16.9.0",
     "graphql-request": "^6.1.0",
-    "ws": "^8.20.1"
+    "ws": "^8.23.0"
   },
   "devDependencies": {
     "jest": "^29.7.0"

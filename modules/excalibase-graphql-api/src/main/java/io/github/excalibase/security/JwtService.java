@@ -1,25 +1,24 @@
 package io.github.excalibase.security;
 
 import com.nimbusds.jose.JWSAlgorithm;
-import com.nimbusds.jose.jwk.ECKey;
-import com.nimbusds.jose.jwk.JWKSet;
 import com.nimbusds.jose.crypto.ECDSAVerifier;
 import com.nimbusds.jose.crypto.MACVerifier;
 import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.SignedJWT;
-import io.github.excalibase.cache.TTLCache;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.nio.charset.StandardCharsets;
 import java.security.interfaces.ECPublicKey;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Supplier;
 
 /**
  * Verifies JWTs. Two modes:
@@ -36,14 +35,17 @@ import java.util.Set;
 public class JwtService {
 
     private static final Logger log = LoggerFactory.getLogger(JwtService.class);
-    private static final String CACHE_KEY = "jwks";
+    /** A failed fetch, and a token naming a key we do not hold, wait this long before reaching the auth service again. */
+    private static final Duration JWKS_MIN_RETRY = Duration.ofSeconds(10);
 
     // JWKS mode
     private final String jwksUrl;
-    private final TTLCache<String, List<ECPublicKey>> keyCache;
+    private final JwksKeys keys;
 
     // HMAC mode
     private final byte[] hmacSecret;
+
+    private Supplier<TokenVerifier> documentVerifier = () -> null;
 
     // Expected token issuer (iss). null = don't validate (back-compat / standalone).
     // When set, a token whose `iss` claim differs is rejected — stops tokens minted
@@ -73,11 +75,11 @@ public class JwtService {
     /** JWKS mode — fetches EC public keys from the given URL, caches with TTL. */
     public JwtService(String jwksUrl, int ttlMinutes) {
         this.jwksUrl = jwksUrl;
-        this.keyCache = new TTLCache<>(Duration.ofMinutes(ttlMinutes));
         this.hmacSecret = null;
 
         try {
-            keyCache.put(CACHE_KEY, fetchKeys());
+            this.keys = new JwksKeys(() -> JwksKeys.fetchEcKeys(jwksUrl), Duration.ofMinutes(ttlMinutes), JWKS_MIN_RETRY,
+                    System::currentTimeMillis, JwksKeys.fetchEcKeys(jwksUrl));
             log.info("jwt_keys_loaded jwks_url={}", jwksUrl);
         } catch (Exception e) {
             throw new IllegalStateException("Cannot start with jwt-enabled=true — failed to load JWKS from: " + jwksUrl, e);
@@ -91,16 +93,48 @@ public class JwtService {
         }
         this.hmacSecret = hmacSecret.getBytes(StandardCharsets.UTF_8);
         this.jwksUrl = null;
-        this.keyCache = null;
+        this.keys = null;
         log.info("jwt_service_mode=hmac");
+    }
+
+    /** When the token expires, from a claims map that holds {@code exp} as the library's Date, an Instant or epoch seconds. */
+    public static Instant expiresAt(JwtClaims claims) {
+        Object exp = claims.extraClaims().get("exp");
+        if (exp instanceof Date date) {
+            return date.toInstant();
+        }
+        if (exp instanceof Instant instant) {
+            return instant;
+        }
+        return exp instanceof Number seconds ? Instant.ofEpochSecond(seconds.longValue()) : null;
+    }
+
+    /** No keys of its own: it verifies only through the verifier a metadata document supplies. */
+    public static JwtService documentOnly() {
+        return new JwtService();
+    }
+
+    private JwtService() {
+        this.jwksUrl = null;
+        this.keys = null;
+        this.hmacSecret = null;
     }
 
     /** Test constructor — inject EC key directly, no remote fetch. */
     public JwtService(ECPublicKey publicKey) {
         this.jwksUrl = "test";
-        this.keyCache = new TTLCache<>(Duration.ofHours(24));
-        this.keyCache.put(CACHE_KEY, List.of(publicKey));
+        this.keys = new JwksKeys(() -> List.of(new JwksKeys.Key(null, publicKey)), Duration.ofHours(24),
+                JWKS_MIN_RETRY, System::currentTimeMillis, List.of(new JwksKeys.Key(null, publicKey)));
         this.hmacSecret = null;
+    }
+
+    /**
+     * Defers to the verifier the metadata document's JWT section supplies, read per token so a reload takes
+     * effect at once. While the supplier answers null the keys this service was built with decide, as before.
+     */
+    public JwtService documentVerifier(Supplier<TokenVerifier> verifier) {
+        this.documentVerifier = verifier;
+        return this;
     }
 
     /**
@@ -145,6 +179,13 @@ public class JwtService {
      * in the request path. Pass null when the route carries no project.
      */
     public JwtClaims verify(String token, String expectedProjectId) {
+        TokenVerifier fromDocument = documentVerifier.get();
+        if (fromDocument != null) {
+            return fromDocument.verify(token, expectedProjectId);
+        }
+        if (keys == null && hmacSecret == null) {
+            throw new JwtVerificationException("No JWT verifier is configured: the metadata document has no jwt section");
+        }
         try {
             SignedJWT jwt = SignedJWT.parse(token);
 
@@ -175,17 +216,16 @@ public class JwtService {
     // -------------------------------------------------------------------------
 
     /**
-     * Validates the time window ({@code exp}, {@code nbf}) and issuer binding.
-     * API-key tokens ({@code scope=api-key}) are allowed to omit {@code exp};
-     * the issuer check applies only when an expected issuer is configured.
+     * Validates the time window ({@code exp}, {@code nbf}) and issuer binding. Every token
+     * must carry {@code exp}, an API key included; the issuer check applies only when an
+     * expected issuer is configured.
      */
     private void validateTemporalAndIssuer(JWTClaimsSet claims) throws JwtVerificationException {
         Date expiration = claims.getExpirationTime();
-        boolean isApiKey = "api-key".equals(claims.getClaim("scope"));
-        if (expiration == null && !isApiKey) {
+        if (expiration == null) {
             throw new JwtVerificationException("JWT missing required 'exp' claim");
         }
-        if (expiration != null && new Date().after(expiration)) {
+        if (new Date().after(expiration)) {
             throw new JwtVerificationException("JWT token expired");
         }
         Date notBefore = claims.getNotBeforeTime();
@@ -248,13 +288,13 @@ public class JwtService {
         // Pin ES256 explicitly. ECDSAVerifier otherwise accepts ES384/ES512/ES256K,
         // and this closes any header-driven algorithm ambiguity ("alg confusion").
         requireAlg(jwt, JWSAlgorithm.ES256);
-        List<ECPublicKey> keys = getKeys();
+        List<JwksKeys.Key> candidates = keys.keysFor(jwt.getHeader().getKeyID());
         // Fail closed on an empty/absent key set — never fall through to "verified".
-        if (keys == null || keys.isEmpty()) {
+        if (candidates.isEmpty()) {
             throw new JwtVerificationException("No JWKS verification keys available");
         }
-        for (ECPublicKey key : keys) {
-            if (jwt.verify(new ECDSAVerifier(key))) {
+        for (JwksKeys.Key candidate : candidates) {
+            if (candidate.publicKey() instanceof ECPublicKey ecKey && jwt.verify(new ECDSAVerifier(ecKey))) {
                 return;
             }
         }
@@ -358,34 +398,5 @@ public class JwtService {
             return sub;
         }
         throw new JwtVerificationException("Missing required claim: userId or sub");
-    }
-
-    private List<ECPublicKey> getKeys() {
-        return keyCache.computeIfAbsent(CACHE_KEY, k -> {
-            try {
-                log.info("jwt_keys_refresh jwks_url={}", jwksUrl);
-                return fetchKeys();
-            } catch (Exception e) {
-                throw new JwtVerificationException("Failed to refresh JWKS from: " + jwksUrl, e);
-            }
-        });
-    }
-
-    private List<ECPublicKey> fetchKeys() throws java.io.IOException, java.text.ParseException, java.net.URISyntaxException {
-        JWKSet jwkSet = JWKSet.load(new java.net.URI(jwksUrl).toURL());
-        List<ECPublicKey> ecKeys = jwkSet.getKeys().stream()
-                .filter(ECKey.class::isInstance)
-                .map(k -> {
-                    try {
-                        return ((ECKey) k).toECPublicKey();
-                    } catch (com.nimbusds.jose.JOSEException e) {
-                        throw new JwtVerificationException("Failed to parse EC key from JWKS", e);
-                    }
-                })
-                .toList();
-        if (ecKeys.isEmpty()) {
-            throw new IllegalStateException("No EC keys found in JWKS at: " + jwksUrl);
-        }
-        return ecKeys;
     }
 }

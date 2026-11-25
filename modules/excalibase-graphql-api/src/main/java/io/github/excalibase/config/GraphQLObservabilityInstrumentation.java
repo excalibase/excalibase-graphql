@@ -3,8 +3,9 @@ package io.github.excalibase.config;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.observation.Observation;
 import io.micrometer.observation.ObservationRegistry;
-import org.springframework.http.ResponseEntity;
-import org.springframework.stereotype.Component;
+import io.github.excalibase.http.Reply;
+import io.micronaut.http.HttpResponse;
+import jakarta.inject.Singleton;
 
 import java.util.List;
 import java.util.Map;
@@ -20,7 +21,7 @@ import java.util.function.Supplier;
  *   <li>{@code graphql.request.errors} counter — incremented when the response contains errors</li>
  * </ul>
  */
-@Component
+@Singleton
 public class GraphQLObservabilityInstrumentation {
 
     private static final String METRIC_REQUEST = "graphql.request";
@@ -43,8 +44,8 @@ public class GraphQLObservabilityInstrumentation {
      * @param action    the actual execution logic
      * @return the response from the action
      */
-    public ResponseEntity<Object> observe(String query, String operation,
-                                          Supplier<ResponseEntity<Object>> action) {
+    public HttpResponse<Object> observe(String query, String operation,
+                                          Supplier<HttpResponse<Object>> action) {
         String operationType = detectOperationType(query);
         String operationName = operation != null ? operation : "anonymous";
 
@@ -54,7 +55,7 @@ public class GraphQLObservabilityInstrumentation {
                 .start();
 
         try {
-            ResponseEntity<Object> response = action.get();
+            HttpResponse<Object> response = action.get();
             countErrors(response, operationType);
             return response;
         } catch (Exception e) {
@@ -66,8 +67,8 @@ public class GraphQLObservabilityInstrumentation {
     }
 
     @SuppressWarnings("unchecked")
-    private void countErrors(ResponseEntity<Object> response, String operationType) {
-        if (response.getBody() instanceof Map<?, ?> body
+    private void countErrors(HttpResponse<Object> response, String operationType) {
+        if (response.body() instanceof Map<?, ?> body
                 && body.get("errors") instanceof List<?> errors
                 && !errors.isEmpty()) {
             meterRegistry.counter(METRIC_ERRORS, "operation.type", operationType)

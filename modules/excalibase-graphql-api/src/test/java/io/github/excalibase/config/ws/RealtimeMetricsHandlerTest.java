@@ -1,5 +1,7 @@
 package io.github.excalibase.config.ws;
 
+import io.github.excalibase.config.ws.WsSession.CloseStatus;
+import io.github.excalibase.config.ws.WsSession.TextMessage;
 import io.github.excalibase.compiler.ParsedQueries;
 import graphql.parser.Parser;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -10,11 +12,6 @@ import io.github.excalibase.schema.AccessPlans;
 import io.github.excalibase.security.JwtService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.ObjectProvider;
-import org.springframework.web.socket.CloseStatus;
-import org.springframework.web.socket.TextMessage;
-import org.springframework.web.socket.WebSocketSession;
-import org.springframework.web.socket.handler.TextWebSocketHandler;
 
 import java.time.Duration;
 import java.util.List;
@@ -42,17 +39,18 @@ class RealtimeMetricsHandlerTest {
     @DisplayName("GraphQL WS: a session counts while open and each delivered change counts once")
     void graphqlHandler() throws Exception {
         GraphQLWebSocketHandler handler = new GraphQLWebSocketHandler(subscriptionService, mapper,
-                provider((JwtService) null), new WebSocketHeartbeat(0), provider((AccessPlans) null),
-                provider(metrics), new ParsedQueries(1_000_000, Parser::parse));
+                (JwtService) null, new WebSocketHeartbeat(0), (AccessPlans) null,
+                metrics, new ParsedQueries(1_000_000, Parser::parse));
         List<String> sent = new CopyOnWriteArrayList<>();
-        WebSocketSession session = session(sent, PROJECT);
+        WsSession session = session(sent, PROJECT);
 
         handler.afterConnectionEstablished(session);
+        handler.handleTextMessage(session, new TextMessage("{\"type\":\"connection_init\"}"));
         handler.handleTextMessage(session, new TextMessage("{\"type\":\"ping\"}"));
         handler.handleTextMessage(session, new TextMessage(mapper.writeValueAsString(Map.of("type", "subscribe",
                 "id", "s1", "payload", Map.of("query", "subscription { publicCustomerChanges { operation } }")))));
         subscriptionService.publish(null, new CDCEvent("INSERT", "public", "customer", "{\"id\":1}", 0L));
-        await().atMost(Duration.ofSeconds(2)).until(() -> sent.size() == 2);
+        await().atMost(Duration.ofSeconds(2)).until(() -> sent.size() == 3);
 
         assertThat(metrics.scrape())
                 .contains("excalibase_realtime_connections{project=\"proj-ws\"} 1")
@@ -67,10 +65,10 @@ class RealtimeMetricsHandlerTest {
     @DisplayName("REST realtime WS: a session counts while open and each delivered change counts once")
     void realtimeHandler() throws Exception {
         RealtimeWebSocketHandler handler = new RealtimeWebSocketHandler(subscriptionService, mapper,
-                provider((JwtService) null), new WebSocketHeartbeat(0), provider((AccessPlans) null),
-                provider(metrics));
+                (JwtService) null, new WebSocketHeartbeat(0), (AccessPlans) null,
+                metrics);
         List<String> sent = new CopyOnWriteArrayList<>();
-        WebSocketSession session = session(sent, PROJECT);
+        WsSession session = session(sent, PROJECT);
 
         handler.afterConnectionEstablished(session);
         handler.handleTextMessage(session, new TextMessage(mapper.writeValueAsString(Map.of(
@@ -92,9 +90,9 @@ class RealtimeMetricsHandlerTest {
     @DisplayName("a session without a path project is not counted, and closing it changes nothing")
     void sessionWithoutProject() throws Exception {
         RealtimeWebSocketHandler handler = new RealtimeWebSocketHandler(subscriptionService, mapper,
-                provider((JwtService) null), new WebSocketHeartbeat(0), provider((AccessPlans) null),
-                provider(metrics));
-        WebSocketSession session = session(new CopyOnWriteArrayList<>(), null);
+                (JwtService) null, new WebSocketHeartbeat(0), (AccessPlans) null,
+                metrics);
+        WsSession session = session(new CopyOnWriteArrayList<>(), null);
 
         handler.afterConnectionEstablished(session);
         handler.afterConnectionClosed(session, CloseStatus.NORMAL);
@@ -105,10 +103,10 @@ class RealtimeMetricsHandlerTest {
     @Test
     @DisplayName("with metrics off the handlers run unchanged")
     void metricsOff() throws Exception {
-        TextWebSocketHandler handler = new RealtimeWebSocketHandler(subscriptionService, mapper,
-                provider((JwtService) null), new WebSocketHeartbeat(0), provider((AccessPlans) null),
-                provider((RequestMetrics) null));
-        WebSocketSession session = session(new CopyOnWriteArrayList<>(), PROJECT);
+        TextWsHandler handler = new RealtimeWebSocketHandler(subscriptionService, mapper,
+                (JwtService) null, new WebSocketHeartbeat(0), (AccessPlans) null,
+                (RequestMetrics) null);
+        WsSession session = session(new CopyOnWriteArrayList<>(), PROJECT);
 
         handler.afterConnectionEstablished(session);
         handler.afterConnectionClosed(session, CloseStatus.NORMAL);
@@ -116,14 +114,15 @@ class RealtimeMetricsHandlerTest {
         assertThat(metrics.scrape()).doesNotContain(PROJECT);
     }
 
-    private static WebSocketSession session(List<String> sink, String projectId) throws Exception {
-        WebSocketSession session = mock(WebSocketSession.class);
+    private static WsSession session(List<String> sink, String projectId) throws Exception {
+        WsSession session = mock(WsSession.class);
         when(session.getId()).thenReturn("metrics-session-" + System.nanoTime());
         when(session.isOpen()).thenReturn(true);
         Map<String, Object> attributes = new ConcurrentHashMap<>();
         if (projectId != null) {
             attributes.put(GraphQLWebSocketHandler.SESSION_PROJECT_KEY, projectId);
         }
+        attributes.put(WsRuntime.INITIALISED_KEY, Boolean.TRUE);
         when(session.getAttributes()).thenReturn(attributes);
         doAnswer(invocation -> {
             TextMessage message = invocation.getArgument(0);
@@ -133,12 +132,4 @@ class RealtimeMetricsHandlerTest {
         return session;
     }
 
-    private static <T> ObjectProvider<T> provider(T value) {
-        return new ObjectProvider<>() {
-            @Override public T getObject() { return value; }
-            @Override public T getObject(Object... args) { return value; }
-            @Override public T getIfAvailable() { return value; }
-            @Override public T getIfUnique() { return value; }
-        };
-    }
 }

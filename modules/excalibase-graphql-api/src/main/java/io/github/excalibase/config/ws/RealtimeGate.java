@@ -9,8 +9,9 @@ import io.github.excalibase.permissions.PermissionEvaluationException;
 import io.github.excalibase.permissions.PermissionsUnavailableException;
 import io.github.excalibase.schema.AccessPlans;
 import io.github.excalibase.schema.SchemaUnavailableException;
+import io.github.excalibase.schema.SubscriptionsUnsupportedException;
 import io.github.excalibase.security.Principal;
-import org.springframework.web.socket.WebSocketSession;
+import io.github.excalibase.security.ProjectPausedException;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -19,7 +20,7 @@ import java.util.Optional;
 /**
  * Where both websocket handlers get what a subscription may deliver: the role's access plan decides
  * whether the table can be subscribed to at all, then judges and projects each change. A session with
- * no project in its path is the single-tenant path and passes changes through.
+ * no project in its path is refused: the handshake admits no such session, and none is given the unfiltered stream.
  */
 final class RealtimeGate {
 
@@ -40,6 +41,16 @@ final class RealtimeGate {
 
     /** One subscription's delivery rule; {@code access} is null for the pass-through path. */
     record Delivery(AccessPlans.RealtimeAccess access) {
+
+        /** The permission document this subscription's plan was built from; negative when there is none. */
+        long permissionsVersion() {
+            return access == null ? -1 : access.permissionsVersion();
+        }
+
+        /** False for a change of another table than the one this subscription resolved to. */
+        boolean isFor(CDCEvent event) {
+            return access == null || access.table().equals(event.schema() + "." + event.table());
+        }
 
         /** As {@link #render}, with values written the way a GraphQL query reads them. */
         Optional<Object> renderForGraphql(CDCEvent event, Object parsed) {
@@ -71,9 +82,23 @@ final class RealtimeGate {
                 JsonInclude.Value.construct(JsonInclude.Include.ALWAYS, JsonInclude.Include.ALWAYS));
     }
 
-    static Opening open(AccessPlans plans, WebSocketSession session, String subscriptionKey) {
+    /**
+     * The tenant a subscription is routed under. With tenant-in-subject on, changes arrive under the project in
+     * the URL (the token was checked against it); otherwise under the token's tenant, as before.
+     */
+    static String sinkTenant(WsSession session, boolean tenantInSubject) {
+        Map<String, Object> attributes = session.getAttributes();
+        Object key = tenantInSubject ? GraphQLWebSocketHandler.SESSION_PROJECT_KEY
+                : GraphQLWebSocketHandler.SESSION_TENANT_KEY;
+        return (String) attributes.get(key);
+    }
+
+    static Opening open(AccessPlans plans, WsSession session, String subscriptionKey) {
         String projectId = (String) session.getAttributes().get(GraphQLWebSocketHandler.SESSION_PROJECT_KEY);
-        if (plans == null || projectId == null) {
+        if (projectId == null) {
+            return Opening.refused("Unknown project");
+        }
+        if (plans == null) {
             return new Opening(new Delivery(null), null, false);
         }
         Principal principal = GraphQLWebSocketHandler.principalOf(session);
@@ -84,6 +109,10 @@ final class RealtimeGate {
                     .orElseGet(() -> Opening.refused("Unknown subscription: " + subscriptionKey));
         } catch (PermissionsUnavailableException e) {
             return new Opening(null, PermissionsUnavailableException.CODE, true);
+        } catch (SubscriptionsUnsupportedException e) {
+            return Opening.refused(e.getMessage());
+        } catch (ProjectPausedException _) {
+            return new Opening(null, "project_paused", true);
         } catch (SchemaUnavailableException e) {
             return new Opening(null, "project_unavailable", true);
         } catch (PermissionEvaluationException e) {

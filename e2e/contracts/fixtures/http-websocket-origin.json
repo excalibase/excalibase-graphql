@@ -1,0 +1,5 @@
+{
+  "refused origin, one Upgrade header": "HTTP/1.1 403",
+  "refused origin, two Upgrade headers": "HTTP/1.1 405",
+  "allowed origin, two Upgrade headers": "HTTP/1.1 405"
+}

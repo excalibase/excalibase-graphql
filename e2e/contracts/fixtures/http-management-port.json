@@ -1,0 +1,87 @@
+{
+  "get graphql": {
+    "status": 404,
+    "headers": {
+      "content-type": "application/json",
+      "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+      "x-content-type-options": "nosniff",
+      "x-frame-options": "DENY",
+      "x-xss-protection": "0",
+      "vary": "Origin, Access-Control-Request-Method, Access-Control-Request-Headers"
+    },
+    "body": {
+      "timestamp": "<timestamp>",
+      "status": 404,
+      "error": "Not Found",
+      "path": "/e2e-test/graphql"
+    }
+  },
+  "post graphql": {
+    "status": 404,
+    "headers": {
+      "content-type": "application/json",
+      "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+      "x-content-type-options": "nosniff",
+      "x-frame-options": "DENY",
+      "x-xss-protection": "0",
+      "vary": "Origin, Access-Control-Request-Method, Access-Control-Request-Headers"
+    },
+    "body": {
+      "timestamp": "<timestamp>",
+      "status": 404,
+      "error": "Not Found",
+      "path": "/e2e-test/graphql"
+    }
+  },
+  "get rest": {
+    "status": 404,
+    "headers": {
+      "content-type": "application/json",
+      "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+      "x-content-type-options": "nosniff",
+      "x-frame-options": "DENY",
+      "x-xss-protection": "0",
+      "vary": "Origin, Access-Control-Request-Method, Access-Control-Request-Headers"
+    },
+    "body": {
+      "timestamp": "<timestamp>",
+      "status": 404,
+      "error": "Not Found",
+      "path": "/e2e-test/api/v1/customer"
+    }
+  },
+  "get realtime": {
+    "status": 404,
+    "headers": {
+      "content-type": "application/json",
+      "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+      "x-content-type-options": "nosniff",
+      "x-frame-options": "DENY",
+      "x-xss-protection": "0",
+      "vary": "Origin, Access-Control-Request-Method, Access-Control-Request-Headers"
+    },
+    "body": {
+      "timestamp": "<timestamp>",
+      "status": 404,
+      "error": "Not Found",
+      "path": "/e2e-test/api/v1/realtime"
+    }
+  },
+  "get unscoped graphql": {
+    "status": 404,
+    "headers": {
+      "content-type": "application/json",
+      "cache-control": "no-cache, no-store, max-age=0, must-revalidate",
+      "x-content-type-options": "nosniff",
+      "x-frame-options": "DENY",
+      "x-xss-protection": "0",
+      "vary": "Origin, Access-Control-Request-Method, Access-Control-Request-Headers"
+    },
+    "body": {
+      "timestamp": "<timestamp>",
+      "status": 404,
+      "error": "Not Found",
+      "path": "/graphql"
+    }
+  }
+}

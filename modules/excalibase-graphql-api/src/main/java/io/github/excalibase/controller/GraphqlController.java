@@ -4,9 +4,11 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import graphql.GraphQLException;
 import graphql.language.Document;
+import graphql.language.OperationDefinition;
 import io.github.excalibase.SqlDialect;
 import io.github.excalibase.compiler.ParsedQueries;
 import io.github.excalibase.compiler.SqlCompilationException;
+import io.github.excalibase.compiler.QueryRejectedException;
 import io.github.excalibase.compiler.SqlCompiler;
 import io.github.excalibase.errors.DataError;
 import io.github.excalibase.errors.DataErrors;
@@ -22,19 +24,24 @@ import io.github.excalibase.security.PermissionErrors;
 import io.github.excalibase.security.Principal;
 import io.github.excalibase.security.SecurityConstants;
 import io.github.excalibase.service.QueryExecutionService;
-import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.ObjectProvider;
-import org.springframework.http.HttpStatus;
-import org.springframework.http.ResponseEntity;
+import io.github.excalibase.http.Reply;
+import io.micronaut.http.HttpResponse;
+import io.micronaut.http.HttpStatus;
+import io.micronaut.core.annotation.Nullable;
+import io.micronaut.http.HttpRequest;
+import io.micronaut.http.annotation.Body;
+import io.micronaut.http.annotation.Controller;
+import io.micronaut.http.annotation.PathVariable;
+import io.micronaut.http.MediaType;
+import io.micronaut.http.annotation.Post;
+import io.micronaut.http.annotation.Produces;
+import io.micronaut.scheduling.TaskExecutors;
+import io.micronaut.scheduling.annotation.ExecuteOn;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 
 import java.sql.SQLException;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RestController;
 
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -46,7 +53,9 @@ import java.util.Optional;
  * Delegates schema lifecycle to {@link GraphqlSchemaManager}
  * and query execution to {@link QueryExecutionService}.
  */
-@RestController
+@Controller
+@Produces({MediaType.APPLICATION_JSON, MediaType.ALL})
+@ExecuteOn(TaskExecutors.BLOCKING)
 public class GraphqlController {
 
     private static final Logger log = LoggerFactory.getLogger(GraphqlController.class);
@@ -65,12 +74,12 @@ public class GraphqlController {
     public GraphqlController(GraphqlSchemaManager schemaManager,
                              QueryExecutionService queryExecutor,
                              GraphQLObservabilityInstrumentation observability,
-                             ObjectProvider<RequestMetrics> requestMetrics,
+                             @Nullable RequestMetrics requestMetrics,
                              ParsedQueries parsedQueries) {
         this.schemaManager = schemaManager;
         this.queryExecutor = queryExecutor;
         this.observability = observability;
-        this.requestMetricsOn = requestMetrics.getIfAvailable() != null;
+        this.requestMetricsOn = requestMetrics != null;
         this.parsedQueries = parsedQueries;
     }
 
@@ -83,20 +92,20 @@ public class GraphqlController {
      * only to make the route match — there is no unscoped route, so RLS always
      * has a project to enforce against.
      */
-    @PostMapping("/{projectId}/graphql")
-    public ResponseEntity<Object> graphql(
+    @Post("/{projectId}/graphql")
+    public HttpResponse<Object> graphql(
             @PathVariable String projectId,
-            @RequestBody Map<String, Object> request,
-            HttpServletRequest httpRequest) {
+            @Body Map<String, Object> request,
+            HttpRequest<?> httpRequest) {
 
-        var jwtClaims = (JwtClaims) httpRequest.getAttribute(JwtAuthFilter.JWT_CLAIMS_ATTR);
-        final Principal principal = (Principal) httpRequest.getAttribute(SecurityConstants.PRINCIPAL_ATTR);
+        var jwtClaims = (JwtClaims) httpRequest.getAttribute(JwtAuthFilter.JWT_CLAIMS_ATTR).orElse(null);
+        final Principal principal = (Principal) httpRequest.getAttribute(SecurityConstants.PRINCIPAL_ATTR).orElse(null);
         // anon has no user, even when its token (a publishable key) carries a subject.
         String userId = jwtClaims != null && principal != null && !Principal.ANON.equals(principal.role())
                 ? jwtClaims.userId() : null;
 
         if (!(request.get("query") instanceof String query) || query.isBlank()) {
-            return ResponseEntity.badRequest().body(Map.of(
+            return Reply.badRequest().body(Map.of(
                     ERRORS_KEY, List.of(Map.of(MESSAGE_KEY, "Missing or invalid 'query' field"))));
         }
 
@@ -108,29 +117,33 @@ public class GraphqlController {
         final JwtClaims finalClaims = jwtClaims;
         final String finalQuery = query;
 
-        ResponseEntity<Object> answer = observability.observe(query, null, () -> {
+        HttpResponse<Object> answer = observability.observe(query, null, () -> {
             GraphqlSchemaManager.EngineState state = null;
             try {
                 state = schemaManager.resolveEngineState(principal);
                 Document document = parsedQueries.parse(finalQuery);
                 if (state.compiler().isIntrospection(document)) {
-                    ResponseEntity<Object> introspection = handleIntrospection(state, finalQuery, variables);
+                    HttpResponse<Object> introspection = handleIntrospection(state, finalQuery, variables);
                     Optional<Document> dataPart = MixedQuery.dataPart(document);
                     if (dataPart.isEmpty()) {
                         return introspection;
                     }
                     SqlCompiler.CompiledQuery compiled = state.compiler().compile(dataPart.get(), variables);
                     return merge(introspection, SelectionOrder.apply(
-                            dispatchCompiled(compiled, state, finalUserId, finalClaims), dataPart.get()));
+                            dispatchCompiled(compiled, state, finalUserId, finalClaims, isMutation(dataPart.get())), dataPart.get()));
                 }
                 SqlCompiler.CompiledQuery compiled = state.compiler().compile(document, variables);
-                return SelectionOrder.apply(dispatchCompiled(compiled, state, finalUserId, finalClaims), document);
+                return SelectionOrder.apply(dispatchCompiled(compiled, state, finalUserId, finalClaims, isMutation(document)), document);
             } catch (Exception e) {
                 return errorResponse(e, state == null ? null : state.compiler().dialect());
+            } catch (StackOverflowError e) {
+                log.warn("GraphQL request refused: nesting too deep for the compiler");
+                return Reply.badRequest().body(Map.of(
+                        ERRORS_KEY, List.of(Map.of(MESSAGE_KEY, "Query is nested too deeply"))));
             }
         });
-        if (requestMetricsOn && answer.getBody() instanceof Map<?, ?> body && body.containsKey(ERRORS_KEY)) {
-            httpRequest.setAttribute(RequestMetrics.GRAPHQL_ERRORS_ATTR, Boolean.TRUE);
+        if (requestMetricsOn && answer.body() instanceof Map<?, ?> body && body.containsKey(ERRORS_KEY)) {
+            httpRequest.getAttributes().put(RequestMetrics.GRAPHQL_ERRORS_ATTR, Boolean.TRUE);
         }
         return answer;
     }
@@ -142,32 +155,39 @@ public class GraphqlController {
      * malformed value, a column it may not write) carries its code too; a request the compiler rejects
      * keeps its message; anything else is the server's fault, logged here and answered 500 without detail.
      */
-    private static ResponseEntity<Object> errorResponse(Exception e, SqlDialect dialect) {
+    private static HttpResponse<Object> errorResponse(Exception e, SqlDialect dialect) {
         if (e instanceof PermissionsUnavailableException) {
-            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(Map.of(ERRORS_KEY, List.of(
+            return Reply.status(HttpStatus.SERVICE_UNAVAILABLE).body(Map.of(ERRORS_KEY, List.of(
                     PermissionErrors.graphqlError(PermissionsUnavailableException.CODE, "Permissions unavailable"))));
         }
+        if (e instanceof QueryRejectedException) {
+            log.info("GraphQL request refused: {}", e.getMessage());
+            return Reply.badRequest().body(Map.of(ERRORS_KEY, List.of(Map.of(MESSAGE_KEY, e.getMessage()))));
+        }
         if (e instanceof PermissionEvaluationException evaluation) {
-            return ResponseEntity.ok(Map.of(ERRORS_KEY,
+            return Reply.ok(Map.of(ERRORS_KEY,
                     List.of(PermissionErrors.graphqlError(evaluation.code(), evaluation.getMessage()))));
         }
         Optional<PermissionCheckFailedException> failed = PermissionCheckFailedException.find(e);
         if (failed.isPresent()) {
             log.info("GraphQL mutation refused: {}", failed.get().getMessage());
-            return ResponseEntity.ok(Map.of(ERRORS_KEY,
+            return Reply.ok(Map.of(ERRORS_KEY,
                     List.of(PermissionErrors.graphqlError(failed.get().code(), failed.get().getMessage()))));
         }
         Optional<DataError> dataError = DataErrors.describe(e, dialect);
         if (dataError.isPresent()) {
             log.info("GraphQL request refused: {}", dataError.get().code());
-            return ResponseEntity.ok(Map.of(ERRORS_KEY, List.of(dataError.get().graphqlError())));
+            Map<String, Object> body = Map.of(ERRORS_KEY, List.of(dataError.get().graphqlError()));
+            return dataError.get().status() >= HttpStatus.INTERNAL_SERVER_ERROR.getCode()
+                    ? Reply.status(HttpStatus.valueOf(dataError.get().status())).body(body)
+                    : Reply.ok(body);
         }
         if (isRequestError(e)) {
-            return ResponseEntity.ok(Map.of(ERRORS_KEY, List.of(Map.of(MESSAGE_KEY,
+            return Reply.ok(Map.of(ERRORS_KEY, List.of(Map.of(MESSAGE_KEY,
                     e.getMessage() == null ? "Invalid request" : e.getMessage()))));
         }
         log.error("GraphQL request failed", e);
-        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of(ERRORS_KEY,
+        return Reply.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of(ERRORS_KEY,
                 List.of(PermissionErrors.graphqlError(INTERNAL_ERROR, "Internal server error"))));
     }
 
@@ -177,12 +197,12 @@ public class GraphqlController {
                 || e instanceof GraphQLException || e instanceof UnsupportedOperationException;
     }
 
-    private ResponseEntity<Object> handleIntrospection(GraphqlSchemaManager.EngineState state,
+    private HttpResponse<Object> handleIntrospection(GraphqlSchemaManager.EngineState state,
                                                        String query, Map<String, Object> variables) {
         if (state.introspectionHandler() != null) {
-            return ResponseEntity.ok(state.introspectionHandler().execute(query, variables));
+            return Reply.ok(state.introspectionHandler().execute(query, variables));
         }
-        return ResponseEntity.ok(Map.of(DATA_KEY, Map.of("__schema", Map.of("queryType", Map.of("name", "Query")))));
+        return Reply.ok(Map.of(DATA_KEY, Map.of("__schema", Map.of("queryType", Map.of("name", "Query")))));
     }
 
     /**
@@ -190,9 +210,9 @@ public class GraphqlController {
      * field order, each data field replaced by what the database answered. A data error answers alone.
      */
     @SuppressWarnings("unchecked")
-    private static ResponseEntity<Object> merge(ResponseEntity<Object> introspection, ResponseEntity<Object> data) {
-        if (!(data.getBody() instanceof Map<?, ?> dataBody) || dataBody.containsKey(ERRORS_KEY)
-                || !(introspection.getBody() instanceof Map<?, ?> introspectionBody)) {
+    private static HttpResponse<Object> merge(HttpResponse<Object> introspection, HttpResponse<Object> data) {
+        if (!(data.body() instanceof Map<?, ?> dataBody) || dataBody.containsKey(ERRORS_KEY)
+                || !(introspection.body() instanceof Map<?, ?> introspectionBody)) {
             return data;
         }
         Map<String, Object> merged = new LinkedHashMap<>();
@@ -207,19 +227,26 @@ public class GraphqlController {
         if (introspectionBody.containsKey(ERRORS_KEY)) {
             body.put(ERRORS_KEY, introspectionBody.get(ERRORS_KEY));
         }
-        return ResponseEntity.ok(body);
+        return Reply.ok(body);
     }
 
-    private ResponseEntity<Object> dispatchCompiled(SqlCompiler.CompiledQuery compiled,
+    private static boolean isMutation(Document document) {
+        return document.getDefinitionsOfType(OperationDefinition.class).stream()
+                .anyMatch(operation -> operation.getOperation() == OperationDefinition.Operation.MUTATION);
+    }
+
+    private HttpResponse<Object> dispatchCompiled(SqlCompiler.CompiledQuery compiled,
                                                     GraphqlSchemaManager.EngineState state,
-                                                    String userId, JwtClaims claims) throws SQLException, JsonProcessingException {
+                                                    String userId, JwtClaims claims, boolean mutation)
+            throws SQLException, JsonProcessingException {
         if (compiled.isSequenced()) {
             return queryExecutor.executeSequence(compiled);
         }
         MapSqlParameterSource params = new MapSqlParameterSource(compiled.params());
         // A write and its read-back share one connection and transaction of the project's own database.
         boolean hasCaller = (userId != null && !userId.isBlank()) || claims != null;
-        if (compiled.isTwoPhase() || hasCaller) {
+        // A write always runs in a transaction it commits itself, so a connection lost at commit is told apart from one lost before it.
+        if (compiled.isTwoPhase() || hasCaller || mutation) {
             return queryExecutor.executeInContext(compiled, params, state.mutationExecutor());
         }
         return queryExecutor.executeQuery(compiled, params);

@@ -1,16 +1,51 @@
 {
   "resources": {
     "includes": [
-      { "pattern": "application\\.yaml" },
-      { "pattern": "application-.*\\.yaml" },
-      { "pattern": "application\\.properties" },
-      { "pattern": "application-.*\\.properties" },
-      { "pattern": ".*\\.sql" },
-      { "pattern": "graphql/.*\\.graphqls" },
-      { "pattern": "graphql/.*\\.graphql" },
-      { "pattern": "META-INF/spring\\.factories" },
-      { "pattern": "META-INF/spring/.*" },
-      { "pattern": "META-INF/services/.*" }
+      {
+        "pattern": "application\\.yml"
+      },
+      {
+        "pattern": "application-.*\\.yml"
+      },
+      {
+        "pattern": "logback\\.xml"
+      },
+      {
+        "pattern": ".*\\.sql"
+      },
+      {
+        "pattern": "console/.*"
+      },
+      {
+        "pattern": "console-next/.*"
+      },
+      {
+        "pattern": "graphql/.*\\.graphqls"
+      },
+      {
+        "pattern": "graphql/.*\\.graphql"
+      },
+      {
+        "pattern": "META-INF/services/.*"
+      },
+      {
+        "pattern": "META-INF/micronaut/.*"
+      },
+      {
+        "pattern": "META-INF/native-image/.*"
+      },
+      {
+        "pattern": "org/springframework/jdbc/support/sql-error-codes\\.xml"
+      },
+      {
+        "pattern": "sql-error-codes\\.xml"
+      },
+      {
+        "pattern": "org/postgresql/.*\\.properties"
+      },
+      {
+        "pattern": "com/zaxxer/hikari/.*"
+      }
     ]
   }
 }

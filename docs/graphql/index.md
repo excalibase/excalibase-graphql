@@ -2,9 +2,11 @@
 
 Excalibase GraphQL automatically generates a complete GraphQL schema from your database tables, views, and tracked functions. This page documents the shape of that schema.
 
+Every route is under a project id, and a path without one is a 404. Replace `{projectId}` with your project (the sample stack uses `e2e-test`).
+
 **Default endpoints:**
-- PostgreSQL: `http://localhost:10000/graphql`
-- MySQL: `http://localhost:10001/graphql`
+- PostgreSQL: `http://localhost:10000/{projectId}/graphql`
+- MySQL: `http://localhost:10001/{projectId}/graphql`
 
 ---
 

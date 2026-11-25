@@ -5,7 +5,8 @@ import graphql.language.AstPrinter;
 import graphql.language.Document;
 import graphql.parser.Parser;
 import org.junit.jupiter.api.Test;
-import org.springframework.http.ResponseEntity;
+import io.github.excalibase.http.Reply;
+import io.micronaut.http.HttpResponse;
 
 import java.util.Map;
 
@@ -20,9 +21,9 @@ class ParsedDocumentTest {
         Document document = Parser.parse("{ t { b a } }");
         var data = MAPPER.readTree("{\"t\":{\"a\":1,\"b\":2}}");
 
-        ResponseEntity<Object> ordered = SelectionOrder.apply(ResponseEntity.ok(Map.of("data", data)), document);
+        HttpResponse<Object> ordered = SelectionOrder.apply(Reply.ok(Map.of("data", data)), document);
 
-        assertThat(((Map<?, ?>) ordered.getBody()).get("data").toString()).isEqualTo("{\"t\":{\"b\":2,\"a\":1}}");
+        assertThat(((Map<?, ?>) ordered.body()).get("data").toString()).isEqualTo("{\"t\":{\"b\":2,\"a\":1}}");
     }
 
     @Test

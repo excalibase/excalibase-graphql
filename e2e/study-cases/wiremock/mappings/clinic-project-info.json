@@ -1,0 +1,11 @@
+{
+  "request": {
+    "method": "GET",
+    "url": "/api/projects/clinic/info"
+  },
+  "response": {
+    "status": 200,
+    "headers": { "Content-Type": "application/json" },
+    "jsonBody": { "projectId": "clinic", "allowNewUsers": true, "requireEmailVerification": false, "projectName": "clinic", "orgSlug": "study-cases" }
+  }
+}

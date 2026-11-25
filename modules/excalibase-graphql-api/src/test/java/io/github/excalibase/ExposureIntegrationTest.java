@@ -1,5 +1,8 @@
 package io.github.excalibase;
 
+import io.github.excalibase.support.EngineIntegrationTest;
+import io.github.excalibase.support.EngineProperties;
+import io.github.excalibase.support.HttpAnswer;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.nimbusds.jose.JWSAlgorithm;
 import com.nimbusds.jose.JWSHeader;
@@ -14,17 +17,7 @@ import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.http.MediaType;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
-import org.springframework.test.web.servlet.MockMvc;
-import org.springframework.test.web.servlet.ResultActions;
 import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
@@ -48,12 +41,9 @@ import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.greaterThanOrEqualTo;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.not;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import static io.github.excalibase.support.Expect.content;
+import static io.github.excalibase.support.Expect.jsonPath;
+import static io.github.excalibase.support.Expect.status;
 
 /**
  * End-to-end proof that a role's schema is exactly its permissions (docs/features/permissions.md §5):
@@ -61,10 +51,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * answers "unknown field", REST 404 (or 403 for a method on a table it can see), and introspection
  * never names it. The document is served by a stub control plane and re-read on every request.
  */
-@SpringBootTest
-@AutoConfigureMockMvc
-@Testcontainers
-class ExposureIntegrationTest {
+class ExposureIntegrationTest extends EngineIntegrationTest {
 
     private static final String PROJECT = "proj-exposure";
     /** The role excalibase-auth gives a signed-in end user; requests with that token run as it. */
@@ -75,8 +62,7 @@ class ExposureIntegrationTest {
     private static final AtomicReference<String> PERMISSIONS = new AtomicReference<>();
     private static final AtomicLong VERSION = new AtomicLong();
 
-    @Container
-    static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16-alpine")
+    static final PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16-alpine")
             .withInitScript("init-exposure.sql");
 
     static ECPrivateKey privateKey;
@@ -111,24 +97,24 @@ class ExposureIntegrationTest {
         if (mockVault != null) mockVault.stop(0);
     }
 
-    @DynamicPropertySource
-    static void configureProperties(DynamicPropertyRegistry registry) {
-        registry.add("spring.datasource.url", postgres::getJdbcUrl);
-        registry.add("spring.datasource.username", postgres::getUsername);
-        registry.add("spring.datasource.password", postgres::getPassword);
-        registry.add("app.database-type", () -> "postgres");
-        registry.add("app.max-rows", () -> 30);
-        registry.add("app.security.jwt-enabled", () -> "true");
-        registry.add("app.project-id", () -> PROJECT);
-        registry.add("app.security.auth.jwks-url",
-                () -> "http://localhost:" + mockVaultPort + "/.well-known/jwks.json");
-        registry.add("app.security.rls.policy-url", () -> "http://localhost:" + mockVaultPort + "/api");
-        registry.add("app.security.rls.policy-pat", () -> "test-pat");
-        registry.add("app.security.rls.policy-ttl-ms", () -> 0);
+    @Override
+    public Map<String, String> getProperties() {
+        postgres.start();
+        Map<String, String> properties = EngineProperties.isolated();
+        properties.put("spring.datasource.url", postgres.getJdbcUrl());
+        properties.put("spring.datasource.username", postgres.getUsername());
+        properties.put("spring.datasource.password", postgres.getPassword());
+        properties.put("app.database-type", "postgres");
+        properties.put("app.max-rows", String.valueOf(30));
+        properties.put("app.security.jwt-enabled", "true");
+        properties.put("app.project-id", String.valueOf(PROJECT));
+        properties.put("app.security.auth.jwks-url", String.valueOf("http://localhost:" + mockVaultPort + "/.well-known/jwks.json"));
+        properties.put("app.security.rls.policy-url", String.valueOf("http://localhost:" + mockVaultPort + "/api"));
+        properties.put("app.security.rls.policy-pat", "test-pat");
+        properties.put("app.security.rls.policy-ttl-ms", String.valueOf(0));
+        return properties;
     }
 
-    @Autowired
-    private MockMvc mockMvc;
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
@@ -162,26 +148,20 @@ class ExposureIntegrationTest {
         return signed.serialize();
     }
 
-    private ResultActions graphql(String query) throws Exception {
+    private HttpAnswer graphql(String query) throws Exception {
         return graphqlAs(ROLE, "authenticated", query);
     }
 
-    private ResultActions graphqlAs(String role, String scope, String query) throws Exception {
-        return mockMvc.perform(post("/" + PROJECT + "/graphql")
-                .header("Authorization", "Bearer " + jwt(role, scope))
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(body(query)));
+    private HttpAnswer graphqlAs(String role, String scope, String query) throws Exception {
+        return http.post("/" + PROJECT + "/graphql", body(query), "Authorization", "Bearer " + jwt(role, scope), "Content-Type", "application/json");
     }
 
-    private ResultActions anonymousGraphql(String query) throws Exception {
-        return mockMvc.perform(post("/" + PROJECT + "/graphql")
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(body(query)));
+    private HttpAnswer anonymousGraphql(String query) throws Exception {
+        return http.post("/" + PROJECT + "/graphql", body(query), "Content-Type", "application/json");
     }
 
-    private ResultActions rest(String path) throws Exception {
-        return mockMvc.perform(get("/" + PROJECT + "/api/v1/" + path)
-                .header("Authorization", "Bearer " + jwt(ROLE, "authenticated")).header("Accept-Profile", "public"));
+    private HttpAnswer rest(String path) throws Exception {
+        return http.get("/" + PROJECT + "/api/v1/" + path, "Authorization", "Bearer " + jwt(ROLE, "authenticated"), "Accept-Profile", "public");
     }
 
     // ---- tables ----
@@ -191,21 +171,21 @@ class ExposureIntegrationTest {
     void eachRole_seesOnlyTheTablesItMaySelect() throws Exception {
         permit(entry("public.orders", ANON, selectAll()), entry("public.secrets", ROLE, selectAll()));
 
-        anonymousGraphql("{ publicOrders { id } }").andExpect(jsonPath("$.errors").doesNotExist());
+        anonymousGraphql("{ publicOrders { id } }").expect(jsonPath("$.errors").doesNotExist());
         anonymousGraphql("{ publicSecrets { id token } }")
-                .andExpect(jsonPath("$.errors[0].message", containsString("Unknown field")));
-        graphql("{ publicSecrets { id token } }").andExpect(jsonPath("$.errors").doesNotExist());
+                .expect(jsonPath("$.errors[0].message", containsString("Unknown field")));
+        graphql("{ publicSecrets { id token } }").expect(jsonPath("$.errors").doesNotExist());
         graphql("{ publicOrders { id } }")
-                .andExpect(jsonPath("$.errors[0].message", containsString("Unknown field")));
+                .expect(jsonPath("$.errors[0].message", containsString("Unknown field")));
     }
 
     @Test
     void aRoleWithoutPermissions_hasAnEmptySchema() throws Exception {
         graphql("{ publicOrders { id } }")
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.errors[0].message", containsString("Unknown field")));
+                .expect(status().isOk())
+                .expect(jsonPath("$.errors[0].message", containsString("Unknown field")));
         graphql("{ __schema { queryType { fields { name } } } }")
-                .andExpect(content().string(not(containsString("publicOrders"))));
+                .expect(content().string(not(containsString("publicOrders"))));
     }
 
     @Test
@@ -213,17 +193,17 @@ class ExposureIntegrationTest {
         permit(entry("public.secrets", "editor", selectAll()));
 
         graphqlAs("editor", "authenticated", "{ publicSecrets { id token } }")
-                .andExpect(jsonPath("$.data.publicSecrets", hasSize(1)));
+                .expect(jsonPath("$.data.publicSecrets", hasSize(1)));
         graphql("{ publicSecrets { id } }")
-                .andExpect(jsonPath("$.errors[0].message", containsString("Unknown field")));
+                .expect(jsonPath("$.errors[0].message", containsString("Unknown field")));
     }
 
     @Test
     void theServiceRole_bypassesPermissions() throws Exception {
         graphqlAs("service", "service", "{ publicSecrets { id token } }")
-                .andExpect(jsonPath("$.data.publicSecrets", hasSize(1)));
+                .expect(jsonPath("$.data.publicSecrets", hasSize(1)));
         graphqlAs("service", "service", "{ __schema { queryType { fields { name } } } }")
-                .andExpect(content().string(not(containsString("RecentOrders"))));
+                .expect(content().string(not(containsString("RecentOrders"))));
     }
 
     @Test
@@ -231,16 +211,16 @@ class ExposureIntegrationTest {
         permit(entry("public.orders", ROLE, selectAll()));
 
         graphql("{ __schema { queryType { fields { name } } } }")
-                .andExpect(content().string(containsString("publicOrders")))
-                .andExpect(content().string(not(containsString("publicSecrets"))));
+                .expect(content().string(containsString("publicOrders")))
+                .expect(content().string(not(containsString("publicSecrets"))));
     }
 
     @Test
     void rest_aTableTheRoleCannotSelect_isNotFound() throws Exception {
         permit(entry("public.orders", ROLE, selectAll()));
 
-        rest("secrets").andExpect(status().isNotFound());
-        rest("orders").andExpect(status().isOk()).andExpect(jsonPath("$.data", hasSize(greaterThanOrEqualTo(2))));
+        rest("secrets").expect(status().isNotFound());
+        rest("orders").expect(status().isOk()).expect(jsonPath("$.data", hasSize(greaterThanOrEqualTo(2))));
     }
 
     // ---- columns ----
@@ -250,19 +230,19 @@ class ExposureIntegrationTest {
         permit(entry("public.orders", ROLE, select("{}", "[\"id\",\"customer\"]")));
 
         graphql("{ publicOrders { id customer } }")
-                .andExpect(jsonPath("$.data.publicOrders[0].customer").exists());
+                .expect(jsonPath("$.data.publicOrders[0].customer").exists());
         graphql("{ publicOrders { id customer total } }")
-                .andExpect(jsonPath("$.errors[0].message", containsString("Unknown field(s): total")))
-                .andExpect(jsonPath("$.data").doesNotExist());
+                .expect(jsonPath("$.errors[0].message", containsString("Unknown field(s): total")))
+                .expect(jsonPath("$.data").doesNotExist());
         graphql("{ publicOrders(where: { total: { gt: 15 } }) { id } }")
-                .andExpect(jsonPath("$.errors[0].message", containsString("total")));
+                .expect(jsonPath("$.errors[0].message", containsString("total")));
         graphql("{ publicOrders(orderBy: { total: DESC }) { id } }")
-                .andExpect(jsonPath("$.errors[0].message", containsString("total")));
+                .expect(jsonPath("$.errors[0].message", containsString("total")));
         graphql("{ __type(name: \"PublicOrders\") { fields { name } } }")
-                .andExpect(content().string(not(containsString("\"total\""))));
-        rest("orders?total=gt.15").andExpect(status().isBadRequest());
-        rest("orders?select=id,total").andExpect(status().isBadRequest());
-        rest("orders").andExpect(content().string(not(containsString("total"))));
+                .expect(content().string(not(containsString("\"total\""))));
+        rest("orders?total=gt.15").expect(status().isBadRequest());
+        rest("orders?select=id,total").expect(status().isBadRequest());
+        rest("orders").expect(content().string(not(containsString("total"))));
     }
 
     // ---- limit and aggregations ----
@@ -271,10 +251,10 @@ class ExposureIntegrationTest {
     void theRoleLimit_capsEverySelect() throws Exception {
         permit(entry("public.orders", ROLE, select("{}", ALL, 1, false)));
 
-        graphql("{ publicOrders(limit: 10) { id } }").andExpect(jsonPath("$.data.publicOrders", hasSize(1)));
+        graphql("{ publicOrders(limit: 10) { id } }").expect(jsonPath("$.data.publicOrders", hasSize(1)));
         graphql("{ publicOrdersConnection(first: 10) { edges { node { id } } } }")
-                .andExpect(jsonPath("$.data.publicOrdersConnection.edges", hasSize(1)));
-        rest("orders?limit=10").andExpect(jsonPath("$.data", hasSize(1)));
+                .expect(jsonPath("$.data.publicOrdersConnection.edges", hasSize(1)));
+        rest("orders?limit=10").expect(jsonPath("$.data", hasSize(1)));
     }
 
     @Test
@@ -282,18 +262,16 @@ class ExposureIntegrationTest {
         permit(entry("public.orders", ROLE, select("{}", ALL, null, false)));
 
         graphql("{ publicOrdersAggregate { count } }")
-                .andExpect(jsonPath("$.errors[0].message", containsString("Unknown field")));
+                .expect(jsonPath("$.errors[0].message", containsString("Unknown field")));
         graphql("{ publicOrdersConnection { totalCount } }")
-                .andExpect(jsonPath("$.errors[0].message", containsString("totalCount")));
-        mockMvc.perform(get("/" + PROJECT + "/api/v1/orders")
-                        .header("Authorization", "Bearer " + jwt(ROLE, "authenticated"))
-                        .header("Accept-Profile", "public").header("Prefer", "count=exact"))
-                .andExpect(status().isForbidden())
-                .andExpect(jsonPath("$.code").value("permission_denied"));
+                .expect(jsonPath("$.errors[0].message", containsString("totalCount")));
+        http.get("/" + PROJECT + "/api/v1/orders", "Authorization", "Bearer " + jwt(ROLE, "authenticated"), "Accept-Profile", "public", "Prefer", "count=exact")
+                .expect(status().isForbidden())
+                .expect(jsonPath("$.code").value("permission_denied"));
 
         permit(entry("public.orders", ROLE, select("{}", ALL, null, true)));
         graphql("{ publicOrdersAggregate { count } }")
-                .andExpect(jsonPath("$.data.publicOrdersAggregate.count", greaterThanOrEqualTo(2)));
+                .expect(jsonPath("$.data.publicOrdersAggregate.count", greaterThanOrEqualTo(2)));
     }
 
     // ---- operations ----
@@ -303,8 +281,8 @@ class ExposureIntegrationTest {
         permit(entry("public.orders", ROLE, selectAll(), insert("{}", ALL, "{}")));
 
         graphql("{ __schema { mutationType { fields { name } } } }")
-                .andExpect(content().string(containsString("createPublicOrders")))
-                .andExpect(content().string(not(containsString("deletePublicOrders"))));
+                .expect(content().string(containsString("createPublicOrders")))
+                .expect(content().string(not(containsString("deletePublicOrders"))));
     }
 
     @Test
@@ -312,9 +290,9 @@ class ExposureIntegrationTest {
         permit(entry("public.orders", ROLE, selectAll(), insert("{}", ALL, "{}")));
 
         graphql("mutation { deletePublicOrders(where: { id: { eq: 1 } }) { id } }")
-                .andExpect(jsonPath("$.data.deletePublicOrders").doesNotExist());
+                .expect(jsonPath("$.data.deletePublicOrders").doesNotExist());
         graphql("{ publicOrders(where: { id: { eq: 1 } }) { id } }")
-                .andExpect(jsonPath("$.data.publicOrders", hasSize(1)));
+                .expect(jsonPath("$.data.publicOrders", hasSize(1)));
     }
 
     @Test
@@ -322,7 +300,7 @@ class ExposureIntegrationTest {
         permit(entry("public.orders", ROLE, selectAll(), insert("{}", ALL, "{}")));
 
         graphql("mutation { createPublicOrders(input: { id: 90, customer: \"carol\", total: 5 }) { id } }")
-                .andExpect(jsonPath("$.data.createPublicOrders.id").value(90));
+                .expect(jsonPath("$.data.createPublicOrders.id").value(90));
     }
 
     @Test
@@ -331,9 +309,9 @@ class ExposureIntegrationTest {
 
         graphql("mutation { createPublicOrders(input: { id: 1, customer: \"mallory\", total: 1 }, "
                 + "onConflict: { constraint: \"orders_pkey\", update_columns: [\"customer\"] }) { id } }")
-                .andExpect(jsonPath("$.errors[0].message", containsString("onConflict")));
+                .expect(jsonPath("$.errors[0].message", containsString("onConflict")));
         graphql("{ publicOrders(where: { id: { eq: 1 } }) { customer } }")
-                .andExpect(jsonPath("$.data.publicOrders[0].customer").value("alice"));
+                .expect(jsonPath("$.data.publicOrders[0].customer").value("alice"));
     }
 
     @Test
@@ -343,31 +321,77 @@ class ExposureIntegrationTest {
 
         graphql("mutation { createPublicOrders(input: { id: 2, customer: \"bob-renamed\", total: 1 }, "
                 + "onConflict: { constraint: \"orders_pkey\", update_columns: [\"customer\"] }) { id } }")
-                .andExpect(jsonPath("$.errors").doesNotExist());
+                .expect(jsonPath("$.errors").doesNotExist());
         graphql("mutation { createPublicOrders(input: { id: 1, customer: \"alice-renamed\", total: 1 }, "
                 + "onConflict: { constraint: \"orders_pkey\", update_columns: [\"customer\"] }) { id } }")
-                .andExpect(jsonPath("$.errors").doesNotExist());
+                .expect(jsonPath("$.errors").doesNotExist());
 
         graphql("{ publicOrders(where: { id: { in: [1, 2] } }, orderBy: { id: ASC }) { customer } }")
-                .andExpect(jsonPath("$.data.publicOrders[0].customer").value("alice"))
-                .andExpect(jsonPath("$.data.publicOrders[1].customer").value("bob-renamed"));
+                .expect(jsonPath("$.data.publicOrders[0].customer").value("alice"))
+                .expect(jsonPath("$.data.publicOrders[1].customer").value("bob-renamed"));
+    }
+
+    private HttpAnswer restPost(String body, String prefer) throws Exception {
+        return http.post("/" + PROJECT + "/api/v1/orders", body, "Authorization", "Bearer " + jwt(ROLE, "authenticated"),
+                "Content-Profile", "public", "Prefer", prefer, "Content-Type", "application/json");
+    }
+
+    private String customerOf(int id) throws Exception {
+        return rest("orders?select=customer&id=eq." + id).json().get("data").get(0).get("customer").asText();
+    }
+
+    @Test
+    void rest_bulkMerge_withoutTheUpdatePermission_isForbidden() throws Exception {
+        permit(entry("public.orders", ROLE, selectAll(), insert("{}", ALL, "{}")));
+
+        restPost("[{\"id\":1,\"customer\":\"mallory\",\"total\":1},{\"id\":320,\"customer\":\"x\",\"total\":1}]",
+                "return=representation, resolution=merge-duplicates")
+                .expect(status().isForbidden())
+                .expect(jsonPath("$.code").value("permission_denied"));
+        restPost("[{\"id\":1,\"customer\":\"mallory\",\"total\":1}]", "resolution=ignore-duplicates")
+                .expect(status().isCreated());
+    }
+
+    @Test
+    void rest_bulkMerge_reachesOnlyRowsTheUpdateFilterPasses() throws Exception {
+        permit(entry("public.orders", ROLE, selectAll(), insert("{}", ALL, "{}"),
+                update("{\"customer\":{\"_eq\":\"bob\"}}", "{}", ALL, "{}")));
+        restPost("[{\"id\":310,\"customer\":\"bob\",\"total\":1},{\"id\":311,\"customer\":\"alice\",\"total\":1}]",
+                "return=representation").expect(status().isCreated());
+
+        restPost("[{\"id\":310,\"customer\":\"bob\",\"total\":2},{\"id\":311,\"customer\":\"hijacked\",\"total\":2}]",
+                "return=representation, resolution=merge-duplicates")
+                .expect(status().isCreated())
+                .expect(jsonPath("$.data.length()").value(1))
+                .expect(jsonPath("$.data[0].id").value(310));
+
+        org.assertj.core.api.Assertions.assertThat(customerOf(311)).isEqualTo("alice");
+    }
+
+    @Test
+    void rest_bulkMerge_whoseResultFailsTheUpdateCheck_isRefusedWhole() throws Exception {
+        permit(entry("public.orders", ROLE, selectAll(), insert("{}", ALL, "{}"),
+                update("{\"customer\":{\"_eq\":\"bob\"}}", "{\"customer\":{\"_eq\":\"bob\"}}", ALL, "{}")));
+        restPost("[{\"id\":330,\"customer\":\"bob\",\"total\":1}]", "return=representation").expect(status().isCreated());
+
+        restPost("[{\"id\":330,\"customer\":\"carol\",\"total\":2},{\"id\":331,\"customer\":\"bob\",\"total\":2}]",
+                "return=representation, resolution=merge-duplicates")
+                .expect(status().isForbidden())
+                .expect(jsonPath("$.code").value("permission_check_failed"));
+
+        org.assertj.core.api.Assertions.assertThat(customerOf(330)).isEqualTo("bob");
+        rest("orders?id=eq.331").expect(jsonPath("$.data.length()").value(0));
     }
 
     @Test
     void rest_aMethodTheRoleDoesNotHold_isForbidden() throws Exception {
         permit(entry("public.orders", ROLE, selectAll(), insert("{}", ALL, "{}")));
 
-        mockMvc.perform(delete("/" + PROJECT + "/api/v1/orders?id=eq.1")
-                        .header("Authorization", "Bearer " + jwt(ROLE, "authenticated"))
-                        .header("Content-Profile", "public"))
-                .andExpect(status().isForbidden())
-                .andExpect(jsonPath("$.code").value("permission_denied"));
-        mockMvc.perform(post("/" + PROJECT + "/api/v1/orders")
-                        .header("Authorization", "Bearer " + jwt(ROLE, "authenticated"))
-                        .header("Content-Profile", "public")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{\"id\":91,\"customer\":\"dave\",\"total\":3}"))
-                .andExpect(status().isCreated());
+        http.delete("/" + PROJECT + "/api/v1/orders?id=eq.1", "Authorization", "Bearer " + jwt(ROLE, "authenticated"), "Content-Profile", "public")
+                .expect(status().isForbidden())
+                .expect(jsonPath("$.code").value("permission_denied"));
+        http.post("/" + PROJECT + "/api/v1/orders", "{\"id\":91,\"customer\":\"dave\",\"total\":3}", "Authorization", "Bearer " + jwt(ROLE, "authenticated"), "Content-Profile", "public", "Content-Type", "application/json")
+                .expect(status().isCreated());
     }
 
     @Test
@@ -377,8 +401,8 @@ class ExposureIntegrationTest {
         graphql("mutation { createPublicOrders(input: { id: 95, customer: \"erin\", total: 1 }) { id } }");
 
         graphql("mutation { deletePublicOrders(where: { id: { in: [1, 95] } }) { id } }")
-                .andExpect(jsonPath("$.data.deletePublicOrders", hasSize(1)))
-                .andExpect(jsonPath("$.data.deletePublicOrders[0].id").value(95));
+                .expect(jsonPath("$.data.deletePublicOrders", hasSize(1)))
+                .expect(jsonPath("$.data.deletePublicOrders[0].id").value(95));
     }
 
     // ---- functions: only tracked ones are reachable (spec §6) ----
@@ -388,13 +412,9 @@ class ExposureIntegrationTest {
         permit(entry("public.orders", ROLE, selectAll()));
 
         graphql("{ __schema { queryType { fields { name } } } }")
-                .andExpect(content().string(not(containsString("RecentOrders"))));
-        mockMvc.perform(post("/" + PROJECT + "/api/v1/rpc/recent_orders")
-                        .header("Authorization", "Bearer " + jwt(ROLE, "authenticated"))
-                        .header("Content-Profile", "public")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("{}"))
-                .andExpect(status().isNotFound());
+                .expect(content().string(not(containsString("RecentOrders"))));
+        http.post("/" + PROJECT + "/api/v1/rpc/recent_orders", "{}", "Authorization", "Bearer " + jwt(ROLE, "authenticated"), "Content-Profile", "public", "Content-Type", "application/json")
+                .expect(status().isNotFound());
     }
 
     // ---- an unreadable document ----
@@ -405,12 +425,12 @@ class ExposureIntegrationTest {
                 + ",\"enforced\":false}");
 
         graphql("{ publicOrders { id } }")
-                .andExpect(status().isServiceUnavailable())
-                .andExpect(jsonPath("$.errors[0].extensions.code").value("permissions_unavailable"));
-        rest("orders").andExpect(status().isServiceUnavailable());
+                .expect(status().isServiceUnavailable())
+                .expect(jsonPath("$.errors[0].extensions.code").value("permissions_unavailable"));
+        rest("orders").expect(status().isServiceUnavailable());
         graphqlAs("service", "service", "{ publicOrders { id } }")
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.publicOrders", hasSize(greaterThanOrEqualTo(2))));
+                .expect(status().isOk())
+                .expect(jsonPath("$.data.publicOrders", hasSize(greaterThanOrEqualTo(2))));
     }
 
     private static String buildJwks(ECPublicKey key) {

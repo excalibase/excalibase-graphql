@@ -1,18 +1,11 @@
 package io.github.excalibase;
 
+import io.github.excalibase.support.EngineIntegrationTest;
+import io.github.excalibase.support.EngineProperties;
+import io.github.excalibase.support.HttpAnswer;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.http.MediaType;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
-import org.springframework.test.web.servlet.MockMvc;
-import org.springframework.test.web.servlet.ResultActions;
 import org.testcontainers.containers.MySQLContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.sql.Connection;
 import java.sql.DriverManager;
@@ -23,39 +16,35 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import static io.github.excalibase.support.Expect.jsonPath;
+import static io.github.excalibase.support.Expect.status;
 
 /**
  * A variable placed inside an inline mutation input or filter writes and matches the value it holds on
  * real MySQL, whose create and update read their input through the same shared path as Postgres updates.
  */
-@SpringBootTest
-@AutoConfigureMockMvc
-@Testcontainers
-class MysqlMutationVariablesIntegrationTest {
+class MysqlMutationVariablesIntegrationTest extends EngineIntegrationTest {
 
-    @Container
-    static MySQLContainer<?> mysql = new MySQLContainer<>("mysql:8.0")
+    static final MySQLContainer<?> mysql = new MySQLContainer<>("mysql:8.0")
             .withInitScript("init-mysql-mutation-variables.sql");
 
-    @DynamicPropertySource
-    static void configureProperties(DynamicPropertyRegistry registry) {
-        registry.add("spring.datasource.url", mysql::getJdbcUrl);
-        registry.add("spring.datasource.username", mysql::getUsername);
-        registry.add("spring.datasource.password", mysql::getPassword);
-        registry.add("spring.datasource.driver-class-name", () -> "com.mysql.cj.jdbc.Driver");
-        registry.add("app.project-id", () -> "test-proj");
-        registry.add("app.security.jwt-enabled", () -> "false");
-        registry.add("app.security.insecure-dev-mode", () -> "true");
-        registry.add("app.database-type", () -> "mysql");
+    @Override
+    public Map<String, String> getProperties() {
+        mysql.start();
+        Map<String, String> properties = EngineProperties.isolated();
+        properties.put("spring.datasource.url", mysql.getJdbcUrl());
+        properties.put("spring.datasource.username", mysql.getUsername());
+        properties.put("spring.datasource.password", mysql.getPassword());
+        properties.put("spring.datasource.driver-class-name", "com.mysql.cj.jdbc.Driver");
+        properties.put("app.project-id", "test-proj");
+        properties.put("app.security.jwt-enabled", "false");
+        properties.put("app.security.insecure-dev-mode", "true");
+        properties.put("app.database-type", "mysql");
+        return properties;
     }
 
-    private static final ObjectMapper MAPPER = new ObjectMapper();
 
-    @Autowired
-    private MockMvc mockMvc;
+    private static final ObjectMapper MAPPER = new ObjectMapper();
 
     @Test
     void update_inlineInputVariables_storeTheirValues() throws Exception {
@@ -64,8 +53,8 @@ class MysqlMutationVariablesIntegrationTest {
                   updateTestTasks(where: { title: { eq: $t } },
                                   input: { author: $a, status: $s, priority: $p, meta: { tag: $tag } }) { author }
                 }""", vars("t", "seed-update", "a", "bob", "s", "doing", "p", 3, "tag", "x"))
-                .andExpect(jsonPath("$.errors").doesNotExist())
-                .andExpect(jsonPath("$.data.updateTestTasks[0].author").value("bob"));
+                .expect(jsonPath("$.errors").doesNotExist())
+                .expect(jsonPath("$.data.updateTestTasks[0].author").value("bob"));
 
         Map<String, Object> row = row("seed-update");
         assertThat(row.get("author")).isEqualTo("bob");
@@ -80,7 +69,7 @@ class MysqlMutationVariablesIntegrationTest {
                 mutation ($t: String!, $a: String, $s: String) {
                   updateTestTasks(where: { title: { eq: $t } }, input: { author: $a, status: $s }) { title }
                 }""", vars("t", "seed-unset", "s", "done"))
-                .andExpect(jsonPath("$.errors").doesNotExist());
+                .expect(jsonPath("$.errors").doesNotExist());
 
         assertThat(row("seed-unset").get("author")).isEqualTo("alice");
         assertThat(row("seed-unset").get("status")).isEqualTo("done");
@@ -92,8 +81,8 @@ class MysqlMutationVariablesIntegrationTest {
                 mutation ($t: String!, $a: String, $s: String) {
                   createTestTasks(input: { title: $t, author: $a, status: $s }) { title author }
                 }""", vars("t", "created-inline", "a", "dana", "s", "doing"))
-                .andExpect(jsonPath("$.errors").doesNotExist())
-                .andExpect(jsonPath("$.data.createTestTasks.author").value("dana"));
+                .expect(jsonPath("$.errors").doesNotExist())
+                .expect(jsonPath("$.data.createTestTasks.author").value("dana"));
 
         assertThat(row("created-inline").get("status")).isEqualTo("doing");
     }
@@ -104,7 +93,7 @@ class MysqlMutationVariablesIntegrationTest {
                 mutation ($a: String, $s: String) {
                   createManyTestTasks(inputs: [{ title: "many-1", author: $a, status: $s }]) { title }
                 }""", vars("a", "erin", "s", "done"))
-                .andExpect(jsonPath("$.errors").doesNotExist());
+                .expect(jsonPath("$.errors").doesNotExist());
 
         assertThat(row("many-1").get("author")).isEqualTo("erin");
         assertThat(row("many-1").get("status")).isEqualTo("done");
@@ -116,20 +105,18 @@ class MysqlMutationVariablesIntegrationTest {
                 mutation ($a: String!) {
                   deleteTestTasks(where: { author: { in: [$a] } }) { title }
                 }""", vars("a", "carol"))
-                .andExpect(jsonPath("$.errors").doesNotExist())
-                .andExpect(jsonPath("$.data.deleteTestTasks[0].title").value("seed-delete"));
+                .expect(jsonPath("$.errors").doesNotExist())
+                .expect(jsonPath("$.data.deleteTestTasks[0].title").value("seed-delete"));
 
         assertThat(row("seed-delete")).isEmpty();
     }
 
-    private ResultActions perform(String query, Map<String, Object> variables) throws Exception {
+    private HttpAnswer perform(String query, Map<String, Object> variables) throws Exception {
         Map<String, Object> body = new HashMap<>();
         body.put("query", query);
         body.put("variables", variables);
-        return mockMvc.perform(post("/test-proj/graphql")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(MAPPER.writeValueAsString(body)))
-                .andExpect(status().isOk());
+        return http.post("/test-proj/graphql", MAPPER.writeValueAsString(body), "Content-Type", "application/json")
+                .expect(status().isOk());
     }
 
     private static Map<String, Object> vars(Object... pairs) {

@@ -1,18 +1,18 @@
 package io.github.excalibase.rls;
 
 import io.github.excalibase.nats.NatsOptionsFactory;
+import io.github.excalibase.permissions.PermissionVersions;
 import io.nats.client.Connection;
 import io.nats.client.Dispatcher;
 import io.nats.client.Message;
 import io.nats.client.Nats;
 import io.nats.client.Options;
-import jakarta.annotation.PostConstruct;
-import jakarta.annotation.PreDestroy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.time.Duration;
 import java.util.List;
+import java.util.OptionalLong;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
@@ -35,6 +35,8 @@ public class PolicyChangeSubscriber {
     static final String SUBJECT = "policies.*.changed";
 
     private final List<ProjectCacheEvictor> evictors;
+    private final PermissionVersions permissionVersions;
+    private final ProjectSockets sockets;
     private final boolean natsEnabled;
     private final String natsUrl;
     private final String natsUsername;
@@ -61,7 +63,19 @@ public class PolicyChangeSubscriber {
      */
     public PolicyChangeSubscriber(List<ProjectCacheEvictor> evictors, boolean natsEnabled, String natsUrl,
                                   String natsUsername, String natsPassword, String natsInboxPrefix) {
+        this(evictors, null, null, natsEnabled, natsUrl, natsUsername, natsPassword, natsInboxPrefix);
+    }
+
+    /**
+     * @param permissionVersions compares the permission document before and after the eviction
+     * @param sockets     the project's open sockets, closed only when the document actually changed
+     */
+    public PolicyChangeSubscriber(List<ProjectCacheEvictor> evictors, PermissionVersions permissionVersions,
+                                  ProjectSockets sockets, boolean natsEnabled, String natsUrl,
+                                  String natsUsername, String natsPassword, String natsInboxPrefix) {
         this.evictors = List.copyOf(evictors);
+        this.permissionVersions = permissionVersions;
+        this.sockets = sockets;
         this.natsEnabled = natsEnabled;
         this.natsUrl = natsUrl;
         this.natsUsername = natsUsername;
@@ -69,7 +83,6 @@ public class PolicyChangeSubscriber {
         this.natsInboxPrefix = natsInboxPrefix;
     }
 
-    @PostConstruct
     public void start() {
         if (!natsEnabled) {
             log.info("Policy-change subscriber disabled (app.nats.enabled=false); "
@@ -93,7 +106,6 @@ public class PolicyChangeSubscriber {
         }
     }
 
-    @PreDestroy
     public void stop() {
         try {
             if (connection != null) {
@@ -124,14 +136,49 @@ public class PolicyChangeSubscriber {
      * non-empty, non-wildcard project token — dropping an invalidation is safe
      * (TTL catches up), acting on a malformed one is not.
      */
-    void evictFor(String subject) {
+    public void evictFor(String subject) {
         String projectId = parseProjectId(subject);
         if (projectId == null) {
             log.warn("Ignoring policy-change on malformed subject: {}", subject);
             return;
         }
         log.info("Policy change for project {} - evicting cached policies and engines", projectId);
-        evictors.forEach(evictor -> evictor.evict(projectId));
+        boolean watched = sockets != null && sockets.hasSockets(projectId);
+        RuntimeException failure = evictAll(projectId);
+        if (watched) {
+            settleSockets(projectId, failure != null);
+        }
+        if (failure != null) {
+            throw failure;
+        }
+    }
+
+    /** Every holder is asked even if one fails; the first failure is returned. */
+    private RuntimeException evictAll(String projectId) {
+        RuntimeException failure = null;
+        for (ProjectCacheEvictor evictor : evictors) {
+            try {
+                evictor.evict(projectId);
+            } catch (RuntimeException e) {
+                failure = failure == null ? e : failure;
+            }
+        }
+        return failure;
+    }
+
+    /**
+     * The sockets stream under the plan worked out when each subscription opened, so only a close protects them
+     * from a permission change. An event that leaves the document as the sockets hold it (a plain statement run in
+     * Studio publishes one too) closes nothing. When the document cannot be read back, or anything failed on the
+     * way, every socket of the project closes: they subscribe again under whatever is current.
+     */
+    private void settleSockets(String projectId, boolean failed) {
+        OptionalLong current = failed ? OptionalLong.empty() : permissionVersions.current(projectId);
+        if (current.isPresent()) {
+            sockets.permissionsAre(projectId, current.getAsLong());
+        } else {
+            sockets.closeForPermissionChange(projectId);
+        }
     }
 
     static String parseProjectId(String subject) {

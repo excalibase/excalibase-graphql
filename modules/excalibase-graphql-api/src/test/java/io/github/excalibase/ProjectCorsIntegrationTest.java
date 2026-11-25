@@ -1,38 +1,29 @@
 package io.github.excalibase;
 
-import com.sun.net.httpserver.HttpServer;
+import io.github.excalibase.support.EngineIntegrationTest;
+import io.github.excalibase.support.EngineProperties;
+import io.github.excalibase.support.HttpAnswer;
+import io.github.excalibase.support.StubControlPlane;
+import io.github.excalibase.support.WsClient;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.http.HttpHeaders;
-import org.springframework.http.MediaType;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
-import org.springframework.test.web.servlet.MockMvc;
-import org.springframework.test.web.servlet.ResultMatcher;
-import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
 
-import java.net.InetSocketAddress;
-import java.nio.charset.StandardCharsets;
+import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ExecutionException;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.hamcrest.Matchers.hasItem;
-
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.options;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * End-to-end proof that CORS on the data plane is decided per project from the
@@ -42,240 +33,194 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * WebSocket upgrade, which browsers do not guard, refuses unlisted web origins
  * itself; non-project routes keep the platform default.
  */
-@SpringBootTest
-@AutoConfigureMockMvc
-@Testcontainers
-class ProjectCorsIntegrationTest {
+class ProjectCorsIntegrationTest extends EngineIntegrationTest {
 
     private static final String PROJECT = "proj-cors";
     private static final String LOCKED_PROJECT = "proj-locked";
     private static final String ALLOWED = "https://app.example.com";
     private static final String OTHER = "https://evil.example";
-    private static final String ALLOW_ORIGIN = HttpHeaders.ACCESS_CONTROL_ALLOW_ORIGIN;
-    private static final String TYPENAME_QUERY = "{\"query\":\"{ __typename }\"}";
-
-    @Container
-    static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16-alpine")
-            .withInitScript("init.sql");
-
+    private static final String ALLOW_ORIGIN = "Access-Control-Allow-Origin";
+    private static final String TYPENAME_QUERY = "{ __typename }";
     private static final String FILE_TOKEN = "file-delivered-pat";
 
-    static HttpServer stub;
-    static int stubPort;
-    static Path tokenFile;
-    static volatile String authHeaderSeen;
+    static final PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16-alpine")
+            .withInitScript("init.sql");
 
-    static {
+    static final Path tokenFile = writeTokenFile();
+
+    static final StubControlPlane provisioning = new StubControlPlane()
+            .serveJson("/api/projects/" + PROJECT + "/info",
+                    "{\"projectId\":\"" + PROJECT + "\",\"corsAllowedOrigins\":[\"" + ALLOWED + "\"]}")
+            .serveJson("/api/projects/" + LOCKED_PROJECT + "/info",
+                    "{\"projectId\":\"" + LOCKED_PROJECT + "\",\"corsAllowedOrigins\":[]}")
+            .start();
+
+    private static Path writeTokenFile() {
         try {
-            tokenFile = Files.createTempFile("provisioning-token", ".txt");
-            tokenFile.toFile().deleteOnExit();
-            Files.writeString(tokenFile, FILE_TOKEN + "\n");
-            stub = HttpServer.create(new InetSocketAddress(0), 0);
-            stubPort = stub.getAddress().getPort();
-            serve("/api/projects/" + PROJECT + "/info",
-                    "{\"projectId\":\"" + PROJECT + "\",\"corsAllowedOrigins\":[\"" + ALLOWED + "\"]}");
-            serve("/api/projects/" + LOCKED_PROJECT + "/info",
-                    "{\"projectId\":\"" + LOCKED_PROJECT + "\",\"corsAllowedOrigins\":[]}");
-            stub.start();
-        } catch (Exception e) {
-            throw new RuntimeException("stub setup failed", e);
+            Path file = Files.createTempFile("provisioning-token", ".txt");
+            file.toFile().deleteOnExit();
+            Files.writeString(file, FILE_TOKEN + "\n");
+            return file;
+        } catch (IOException failure) {
+            throw new UncheckedIOException(failure);
         }
-    }
-
-    private static void serve(String path, String body) {
-        stub.createContext(path, exchange -> {
-            authHeaderSeen = exchange.getRequestHeaders().getFirst("Authorization");
-            byte[] bytes = body.getBytes(StandardCharsets.UTF_8);
-            exchange.getResponseHeaders().set("Content-Type", "application/json");
-            exchange.sendResponseHeaders(200, bytes.length);
-            exchange.getResponseBody().write(bytes);
-            exchange.close();
-        });
     }
 
     @AfterAll
     static void teardown() {
-        if (stub != null) stub.stop(0);
+        provisioning.close();
     }
 
-    @DynamicPropertySource
-    static void props(DynamicPropertyRegistry registry) {
-        registry.add("spring.datasource.url", postgres::getJdbcUrl);
-        registry.add("spring.datasource.username", postgres::getUsername);
-        registry.add("spring.datasource.password", postgres::getPassword);
-        registry.add("app.project-id", () -> PROJECT);
-        registry.add("app.security.jwt-enabled", () -> "false");
-        registry.add("app.security.insecure-dev-mode", () -> "true");
-        registry.add("app.allowed-schema", () -> "test_schema");
-        registry.add("app.database-type", () -> "postgres");
-        registry.add("app.cors.allowed-origins", () -> "*");
-        registry.add("app.cors.provisioning-url", () -> "http://localhost:" + stubPort + "/api");
+    @Override
+    public Map<String, String> getProperties() {
+        Map<String, String> properties = new HashMap<>(EngineProperties.postgres(postgres, PROJECT));
+        properties.put("app.allowed-schema", "test_schema");
+        properties.put("app.cors.allowed-origins", "*");
+        properties.put("app.cors.provisioning-url", provisioning.url("/api"));
         // Token file only, exactly as the platform mounts it: the CORS provider must
         // read the shared provisioning token source, not a CORS-specific literal.
-        registry.add("app.security.multi-tenant.provisioning-pat-file", tokenFile::toString);
+        properties.put("app.security.multi-tenant.provisioning-pat-file", tokenFile.toString());
+        return properties;
     }
 
-    @Autowired
-    private MockMvc mockMvc;
+    private HttpAnswer graphqlFrom(String project, String origin) {
+        return origin == null ? http.graphql("/" + project + "/graphql", TYPENAME_QUERY)
+                : http.graphql("/" + project + "/graphql", TYPENAME_QUERY, "Origin", origin);
+    }
+
+    private static void assertVariesOnOrigin(HttpAnswer answer) {
+        assertThat(answer.headers().allValues("Vary")).contains("Origin");
+    }
 
     @Test
     @DisplayName("GraphQL: an origin on the project's allowlist is echoed")
-    void graphqlAllowedOrigin() throws Exception {
-        mockMvc.perform(post("/" + PROJECT + "/graphql")
-                        .header(HttpHeaders.ORIGIN, ALLOWED)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(TYPENAME_QUERY))
-                .andExpect(status().isOk())
-                .andExpect(header().string(ALLOW_ORIGIN, ALLOWED))
-                .andExpect(header().doesNotExist(HttpHeaders.ACCESS_CONTROL_ALLOW_CREDENTIALS));
+    void graphqlAllowedOrigin() {
+        HttpAnswer answer = graphqlFrom(PROJECT, ALLOWED);
+
+        assertThat(answer.status()).isEqualTo(200);
+        assertThat(answer.header(ALLOW_ORIGIN)).isEqualTo(ALLOWED);
+        assertThat(answer.header("Access-Control-Allow-Credentials")).isNull();
     }
 
     @Test
     @DisplayName("GraphQL: an unlisted origin is served but granted nothing, so a browser cannot read it")
-    void graphqlUnlistedOriginServedWithoutGrant() throws Exception {
-        mockMvc.perform(post("/" + PROJECT + "/graphql")
-                        .header(HttpHeaders.ORIGIN, OTHER)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(TYPENAME_QUERY))
-                .andExpect(status().isOk())
-                .andExpect(header().doesNotExist(ALLOW_ORIGIN))
-                .andExpect(header().stringValues(HttpHeaders.VARY, hasItem(HttpHeaders.ORIGIN)));
+    void graphqlUnlistedOriginServedWithoutGrant() {
+        HttpAnswer answer = graphqlFrom(PROJECT, OTHER);
+
+        assertThat(answer.status()).isEqualTo(200);
+        assertThat(answer.header(ALLOW_ORIGIN)).isNull();
+        assertVariesOnOrigin(answer);
     }
 
     @ParameterizedTest
     @ValueSource(strings = {"capacitor://localhost", "tauri://localhost", "null", "http://localhost:5173"})
     @DisplayName("GraphQL and REST: native-app and proxied origins are served, never refused for their Origin")
-    void nativeAndProxiedOriginsAreServed(String origin) throws Exception {
-        mockMvc.perform(post("/" + PROJECT + "/graphql")
-                        .header(HttpHeaders.ORIGIN, origin)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(TYPENAME_QUERY))
-                .andExpect(status().isOk())
-                .andExpect(header().doesNotExist(ALLOW_ORIGIN));
+    void nativeAndProxiedOriginsAreServed(String origin) {
+        HttpAnswer graphql = graphqlFrom(PROJECT, origin);
+        assertThat(graphql.status()).isEqualTo(200);
+        assertThat(graphql.header(ALLOW_ORIGIN)).isNull();
 
-        mockMvc.perform(get("/" + PROJECT + "/api/v1/customer")
-                        .header(HttpHeaders.ORIGIN, origin))
-                .andExpect(status().isOk())
-                .andExpect(header().doesNotExist(ALLOW_ORIGIN));
+        HttpAnswer rest = http.get("/" + PROJECT + "/api/v1/customer", "Origin", origin);
+        assertThat(rest.status()).isEqualTo(200);
+        assertThat(rest.header(ALLOW_ORIGIN)).isNull();
     }
 
     @Test
     @DisplayName("preflight follows the project's allowlist")
-    void preflight() throws Exception {
-        mockMvc.perform(options("/" + PROJECT + "/graphql")
-                        .header(HttpHeaders.ORIGIN, ALLOWED)
-                        .header(HttpHeaders.ACCESS_CONTROL_REQUEST_METHOD, "POST")
-                        .header(HttpHeaders.ACCESS_CONTROL_REQUEST_HEADERS, "authorization,content-type"))
-                .andExpect(status().isOk())
-                .andExpect(header().string(ALLOW_ORIGIN, ALLOWED))
-                .andExpect(header().exists(HttpHeaders.ACCESS_CONTROL_ALLOW_METHODS));
+    void preflight() {
+        HttpAnswer listed = http.send("OPTIONS", "/" + PROJECT + "/graphql", null,
+                "Origin", ALLOWED,
+                "Access-Control-Request-Method", "POST",
+                "Access-Control-Request-Headers", "authorization,content-type");
+        assertThat(listed.status()).isEqualTo(200);
+        assertThat(listed.header(ALLOW_ORIGIN)).isEqualTo(ALLOWED);
+        assertThat(listed.header("Access-Control-Allow-Methods")).isNotNull();
 
-        mockMvc.perform(options("/" + PROJECT + "/graphql")
-                        .header(HttpHeaders.ORIGIN, OTHER)
-                        .header(HttpHeaders.ACCESS_CONTROL_REQUEST_METHOD, "POST"))
-                .andExpect(status().isForbidden())
-                .andExpect(header().doesNotExist(ALLOW_ORIGIN));
+        HttpAnswer unlisted = http.send("OPTIONS", "/" + PROJECT + "/graphql", null,
+                "Origin", OTHER,
+                "Access-Control-Request-Method", "POST");
+        assertThat(unlisted.status()).isEqualTo(403);
+        assertThat(unlisted.header(ALLOW_ORIGIN)).isNull();
     }
 
     // A project with an empty allowlist is covered by ProjectCorsConfigurationSourceTest:
     // a single-database deployment serves one project, so it has no second one to lock.
 
     @Test
-    @DisplayName("an unknown project is a 404 before any CORS lookup — never the platform default")
-    void unknownProjectDenied() throws Exception {
-        mockMvc.perform(post("/proj-does-not-exist/graphql")
-                        .header(HttpHeaders.ORIGIN, ALLOWED)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(TYPENAME_QUERY))
-                .andExpect(status().isNotFound())
-                .andExpect(header().doesNotExist(ALLOW_ORIGIN));
+    @DisplayName("an unknown project is a 404 before any CORS lookup, never the platform default")
+    void unknownProjectDenied() {
+        HttpAnswer answer = graphqlFrom("proj-does-not-exist", ALLOWED);
+
+        assertThat(answer.status()).isEqualTo(404);
+        assertThat(answer.header(ALLOW_ORIGIN)).isNull();
     }
 
     @Test
     @DisplayName("REST: the same allowlist governs /{projectId}/api/v1")
-    void restFollowsProjectAllowlist() throws Exception {
-        mockMvc.perform(get("/" + PROJECT + "/api/v1/customer")
-                        .header(HttpHeaders.ORIGIN, ALLOWED))
-                .andExpect(status().isOk())
-                .andExpect(header().string(ALLOW_ORIGIN, ALLOWED));
+    void restFollowsProjectAllowlist() {
+        HttpAnswer listed = http.get("/" + PROJECT + "/api/v1/customer", "Origin", ALLOWED);
+        assertThat(listed.status()).isEqualTo(200);
+        assertThat(listed.header(ALLOW_ORIGIN)).isEqualTo(ALLOWED);
 
-        mockMvc.perform(get("/" + PROJECT + "/api/v1/customer")
-                        .header(HttpHeaders.ORIGIN, OTHER))
-                .andExpect(status().isOk())
-                .andExpect(header().doesNotExist(ALLOW_ORIGIN));
+        HttpAnswer unlisted = http.get("/" + PROJECT + "/api/v1/customer", "Origin", OTHER);
+        assertThat(unlisted.status()).isEqualTo(200);
+        assertThat(unlisted.header(ALLOW_ORIGIN)).isNull();
     }
 
-    @Test
-    @DisplayName("WebSocket upgrade: an unlisted web origin is refused at the handshake on both routes")
-    void websocketRefusesUnlistedWebOrigin() throws Exception {
-        mockMvc.perform(wsUpgrade("/" + PROJECT + "/graphql", OTHER))
-                .andExpect(status().isForbidden())
-                .andExpect(header().doesNotExist(ALLOW_ORIGIN));
-
-        mockMvc.perform(wsUpgrade("/" + PROJECT + "/api/v1/realtime", OTHER))
-                .andExpect(status().isForbidden());
-    }
-
-    // An admitted upgrade reaches the handshake handler, which then fails on the
-    // Sec-WebSocket-* headers MockMvc cannot supply; what matters is that the
-    // origin check let it through rather than answering 403.
     @ParameterizedTest
-    @ValueSource(strings = {ALLOWED, "capacitor://localhost", "tauri://localhost", "null"})
-    @DisplayName("WebSocket upgrade: a listed web origin and native-app origins pass the origin check")
-    void websocketAdmitsListedAndNativeOrigins(String origin) throws Exception {
-        mockMvc.perform(wsUpgrade("/" + PROJECT + "/api/v1/realtime", origin))
-                .andExpect(PASSED_ORIGIN_CHECK);
-        mockMvc.perform(wsUpgrade("/" + PROJECT + "/graphql", origin))
-                .andExpect(PASSED_ORIGIN_CHECK);
+    @ValueSource(strings = {"/" + PROJECT + "/graphql", "/" + PROJECT + "/api/v1/realtime"})
+    @DisplayName("WebSocket upgrade: an unlisted web origin is refused at the handshake on both routes")
+    void websocketRefusesUnlistedWebOrigin(String path) {
+        assertThatThrownBy(() -> openSocket(path, OTHER))
+                .isInstanceOf(ExecutionException.class)
+                .satisfies(failure -> {
+                    assertThat(WsClient.refusedStatus(failure)).isEqualTo(403);
+                    assertThat(WsClient.refusal(failure).headers().firstValue(ALLOW_ORIGIN)).isEmpty();
+                });
     }
 
-    @Test
-    @DisplayName("WebSocket upgrade: no Origin (server-side client) passes the origin check")
-    void websocketAdmitsNoOrigin() throws Exception {
-        mockMvc.perform(get("/" + PROJECT + "/api/v1/realtime")
-                        .header(HttpHeaders.UPGRADE, "websocket")
-                        .header(HttpHeaders.CONNECTION, "Upgrade"))
-                .andExpect(PASSED_ORIGIN_CHECK);
+    @ParameterizedTest
+    @ValueSource(strings = {ALLOWED, "capacitor://localhost", "tauri://localhost", ""})
+    @DisplayName("WebSocket upgrade: a listed web origin, native-app origins and no Origin pass the origin check")
+    void websocketAdmitsListedNativeAndAbsentOrigins(String origin) throws Exception {
+        String sent = origin.isEmpty() ? null : origin;
+        try (WsClient realtime = openSocket("/" + PROJECT + "/api/v1/realtime", sent);
+             WsClient graphql = openSocket("/" + PROJECT + "/graphql", sent)) {
+            assertThat(realtime.isOpen()).isTrue();
+            assertThat(graphql.isOpen()).isTrue();
+        }
     }
 
-    private static final ResultMatcher PASSED_ORIGIN_CHECK =
-            result -> assertThat(result.getResponse().getStatus()).as("refused by the origin check").isNotEqualTo(403);
-
-    private static MockHttpServletRequestBuilder wsUpgrade(String path, String origin) {
-        return get(path)
-                .header(HttpHeaders.ORIGIN, origin)
-                .header(HttpHeaders.UPGRADE, "websocket")
-                .header(HttpHeaders.CONNECTION, "Upgrade");
+    private WsClient openSocket(String path, String origin) throws Exception {
+        return WsClient.open(URI.create("ws://localhost:" + server.getPort() + path), origin, List.of());
     }
 
     @Test
     @DisplayName("the /info call authenticates with the mounted token file")
-    void infoCallUsesTheMountedTokenFile() throws Exception {
-        mockMvc.perform(post("/" + PROJECT + "/graphql")
-                        .header(HttpHeaders.ORIGIN, ALLOWED)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(TYPENAME_QUERY))
-                .andExpect(status().isOk());
+    void infoCallUsesTheMountedTokenFile() {
+        assertThat(graphqlFrom(PROJECT, ALLOWED).status()).isEqualTo(200);
 
-        assertThat(authHeaderSeen).isEqualTo("Bearer " + FILE_TOKEN);
+        assertThat(provisioning.lastAuthorization()).isEqualTo("Bearer " + FILE_TOKEN);
     }
 
     @Test
     @DisplayName("non-browser clients (no Origin) are unaffected")
-    void noOriginIsNotCors() throws Exception {
+    void noOriginIsNotCors() {
         // This deployment serves PROJECT only, so the locked project is answered by
         // the project check (404), not refused by CORS (403).
-        mockMvc.perform(post("/" + LOCKED_PROJECT + "/graphql")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(TYPENAME_QUERY))
-                .andExpect(status().isNotFound())
-                .andExpect(header().doesNotExist(ALLOW_ORIGIN));
+        HttpAnswer answer = graphqlFrom(LOCKED_PROJECT, null);
+
+        assertThat(answer.status()).isEqualTo(404);
+        assertThat(answer.header(ALLOW_ORIGIN)).isNull();
     }
 
     @Test
-    @DisplayName("non-project routes keep the platform default")
-    void platformRoutesKeepGlobalDefault() throws Exception {
-        mockMvc.perform(get("/actuator/health").header(HttpHeaders.ORIGIN, OTHER))
-                .andExpect(header().string(ALLOW_ORIGIN, "*"));
+    @DisplayName("a route with no project is the project 404 on the public port, and names no origin as allowed")
+    void platformRoutesAreNotFound() {
+        HttpAnswer answer = http.get("/actuator/health", "Origin", OTHER);
+
+        assertThat(answer.status()).isEqualTo(404);
+        assertThat(answer.body()).contains("project_not_found");
+        assertThat(http.get("/actuator/health", "Origin", "null").header(ALLOW_ORIGIN)).isNull();
     }
 }

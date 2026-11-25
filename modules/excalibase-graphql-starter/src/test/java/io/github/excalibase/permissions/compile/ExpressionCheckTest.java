@@ -70,4 +70,14 @@ class ExpressionCheckTest {
         assertThatThrownBy(() -> check("{\"id\": {\"_like\": \"1%\"}}"))
                 .isInstanceOf(PermissionEvaluationException.class);
     }
+
+    @Test
+    void aLikePatternOverTheCap_isRefusedWhenThePolicyLoads() {
+        String atCap = "a".repeat(PermissionLikePattern.MAX_PATTERN_CODE_POINTS);
+        check("{\"title\": {\"_like\": \"" + atCap + "\"}}");
+        String overCap = atCap + "a";
+        assertThatThrownBy(() -> check("{\"title\": {\"_like\": \"" + overCap + "\"}}"))
+                .isInstanceOf(PermissionEvaluationException.class)
+                .hasMessageContaining("too long");
+    }
 }

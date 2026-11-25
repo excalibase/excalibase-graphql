@@ -1,0 +1,10 @@
+<configuration>
+  <!-- ECS JSON (parseable by any log collector) -->
+  <appender name="ecs" class="ch.qos.logback.core.ConsoleAppender">
+    <encoder class="io.github.excalibase.observability.logging.EcsEncoder"/>
+  </appender>
+  <logger name="io.github.excalibase" level="${log.level.app:-info}"/>
+  <root level="${log.level.root:-info}">
+    <appender-ref ref="ecs"/>
+  </root>
+</configuration>

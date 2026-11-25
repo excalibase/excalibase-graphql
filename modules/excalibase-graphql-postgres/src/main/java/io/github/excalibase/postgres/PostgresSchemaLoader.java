@@ -14,6 +14,11 @@ import java.util.*;
 
 public class PostgresSchemaLoader implements SchemaLoader {
 
+    @Override
+    public String fingerprint(JdbcTemplate jdbc) {
+        return jdbc.queryForObject(FINGERPRINT, String.class);
+    }
+
     private static final String COL_TABLE_NAME = "table_name";
     private static final String COL_COLUMN_NAME = "column_name";
     private static final String COL_DATA_TYPE = "data_type";
@@ -26,6 +31,35 @@ public class PostgresSchemaLoader implements SchemaLoader {
     );
 
     private static final ObjectMapper JSON = new ObjectMapper();
+
+    /**
+     * Count and a sum of row hashes for each catalog the loader reads, over user schemas, privileges included:
+     * what a GRANT or REVOKE changes is what the loader can see. Hashes are of the
+     * columns that carry meaning, not of {@code xmin}: ANALYZE and autovacuum rewrite {@code pg_class} rows
+     * all day without changing the schema.
+     */
+    static final String FINGERPRINT = """
+            WITH ns AS (SELECT oid FROM pg_namespace WHERE nspname NOT LIKE 'pg\\_%' AND nspname <> 'information_schema')
+            SELECT concat_ws('|',
+              (SELECT count(*) || ':' || coalesce(sum(hashtext(concat_ws(',', n.oid, n.nspname))::bigint), 0)
+                 FROM pg_namespace n WHERE n.oid IN (SELECT oid FROM ns)),
+              (SELECT count(*) || ':' || coalesce(sum(hashtext(concat_ws(',', c.oid, c.relname, c.relkind, c.relnamespace, c.relacl))::bigint), 0)
+                 FROM pg_class c WHERE c.relnamespace IN (SELECT oid FROM ns)),
+              (SELECT count(*) || ':' || coalesce(sum(hashtext(concat_ws(',', a.attrelid, a.attname, a.attnum, a.atttypid,
+                        a.atttypmod, a.attnotnull, a.attisdropped, a.attacl))::bigint), 0)
+                 FROM pg_attribute a JOIN pg_class c ON c.oid = a.attrelid
+                WHERE a.attnum > 0 AND c.relnamespace IN (SELECT oid FROM ns)),
+              (SELECT count(*) || ':' || coalesce(sum(hashtext(concat_ws(',', k.oid, k.conname, k.contype, k.conkey,
+                        k.confkey, k.confrelid))::bigint), 0)
+                 FROM pg_constraint k WHERE k.connamespace IN (SELECT oid FROM ns)),
+              (SELECT count(*) || ':' || coalesce(sum(hashtext(concat_ws(',', p.oid, p.proname, p.prokind, p.provolatile,
+                        p.prosecdef, p.proretset, p.prorettype, p.proargtypes, p.proargmodes, p.proargnames, p.pronargdefaults, p.proacl))::bigint), 0)
+                 FROM pg_proc p WHERE p.pronamespace IN (SELECT oid FROM ns)),
+              (SELECT count(*) || ':' || coalesce(sum(hashtext(concat_ws(',', t.oid, t.typname, t.typtype))::bigint), 0)
+                 FROM pg_type t WHERE t.typnamespace IN (SELECT oid FROM ns)),
+              (SELECT count(*) || ':' || coalesce(sum(hashtext(concat_ws(',', e.oid, e.enumlabel))::bigint), 0) FROM pg_enum e),
+              (SELECT coalesce(string_agg(x.extname || x.extversion, ',' ORDER BY x.extname), '') FROM pg_extension x))
+            """;
 
     /**
      * Every function and procedure of the schemas, with what deciding whether one may be tracked
@@ -81,12 +115,13 @@ public class PostgresSchemaLoader implements SchemaLoader {
                 SELECT 'fk' as kind, n.nspname as table_schema, cl.relname as table_name, NULL as column_name,
                        NULL as data_type, NULL as udt_name, NULL::int as character_maximum_length,
                        c.conname as constraint_name, a.attname as from_column,
-                       clf.relname as to_table, af.attname as to_column,
+                       clf.relname as to_table, nf.nspname as to_schema, af.attname as to_column,
                        u.ord as ordinal, NULL as enum_label, NULL::double precision as sort_order,
                        NULL as proc_name, NULL as args_signature, NULL as return_type, NULL as function_name
                 FROM pg_constraint c
                 JOIN pg_class cl ON c.conrelid = cl.oid
                 JOIN pg_class clf ON c.confrelid = clf.oid
+                JOIN pg_namespace nf ON clf.relnamespace = nf.oid
                 JOIN pg_namespace n ON c.connamespace = n.oid
                 CROSS JOIN LATERAL unnest(c.conkey, c.confkey) WITH ORDINALITY AS u(from_attnum, to_attnum, ord)
                 JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = u.from_attnum
@@ -238,7 +273,7 @@ public class PostgresSchemaLoader implements SchemaLoader {
             switch (kind) {
                 case "column", "matview_col" -> handleColumnKind(kind, node, schema, info);
                 case "pk" -> info.addPrimaryKey(node.get(COL_TABLE_NAME).asText(), node.get(COL_COLUMN_NAME).asText());
-                case "fk" -> handleForeignKeyRow(node, schema, fkTables, fkColumns);
+                case "fk" -> handleForeignKeyRow(node, schema, schemaArray, fkTables, fkColumns);
                 case "view", "matview" -> handleViewKind(kind, node, info);
                 case "enum" -> info.addEnumValue(node.get(COL_UDT_NAME).asText(), node.get("enum_label").asText());
                 case "composite" -> info.addCompositeTypeField(
@@ -302,15 +337,23 @@ public class PostgresSchemaLoader implements SchemaLoader {
         return type;
     }
 
-    private void handleForeignKeyRow(JsonNode node, String schema,
+    /**
+     * A foreign key is kept only when the table it points at is in a loaded schema, and it keeps the schema of
+     * that table: a key into a schema that was not loaded (an internal one) is dropped, and one into a loaded
+     * schema never binds to a same-named table of another.
+     */
+    private void handleForeignKeyRow(JsonNode node, String schema, String[] loadedSchemas,
                                      Map<String, String[]> fkTables,
                                      Map<String, List<String[]>> fkColumns) {
+        if (!Arrays.asList(loadedSchemas).contains(node.path("to_schema").asText())) {
+            return;
+        }
         String constraintKey = schema + "." + node.get("constraint_name").asText();
         String fromTable = node.get(COL_TABLE_NAME).asText();
         String fromCol = node.get("from_column").asText();
         String toTable = node.get("to_table").asText();
         String toCol = node.get("to_column").asText();
-        fkTables.putIfAbsent(constraintKey, new String[]{fromTable, toTable, schema});
+        fkTables.putIfAbsent(constraintKey, new String[]{fromTable, toTable, schema, node.get("to_schema").asText()});
         fkColumns.computeIfAbsent(constraintKey, k -> new ArrayList<>())
                 .add(new String[]{fromCol, toCol});
     }
@@ -362,15 +405,16 @@ public class PostgresSchemaLoader implements SchemaLoader {
             String fromTable = tables[0];
             String toTable = tables[1];
             String fkSchema = tables[2];
+            String toSchema = tables[3];
             SchemaInfo info = perSchema.get(fkSchema);
             if (info == null) continue;
             List<String[]> colPairs = entry.getValue();
             if (colPairs.size() == 1) {
-                info.addForeignKey(fromTable, colPairs.get(0)[0], toTable, colPairs.get(0)[1]);
+                info.addForeignKey(fromTable, colPairs.get(0)[0], toSchema, toTable, colPairs.get(0)[1]);
             } else {
                 List<String> fkCols = colPairs.stream().map(p -> p[0]).toList();
                 List<String> refCols = colPairs.stream().map(p -> p[1]).toList();
-                info.addCompositeForeignKey(fromTable, fkCols, toTable, refCols);
+                info.addCompositeForeignKey(fromTable, fkCols, toSchema, toTable, refCols);
             }
         }
     }
@@ -437,7 +481,7 @@ public class PostgresSchemaLoader implements SchemaLoader {
             CROSS JOIN LATERAL unnest(c.conkey, c.confkey) WITH ORDINALITY AS u(from_attnum, to_attnum, ord)
             JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = u.from_attnum
             JOIN pg_attribute af ON af.attrelid = c.confrelid AND af.attnum = u.to_attnum
-            WHERE c.contype = 'f' AND n.nspname = ?
+            WHERE c.contype = 'f' AND n.nspname = ? AND clf.relnamespace = c.connamespace
             ORDER BY c.conname, u.ord
             """, rs -> {
             String constraintName = rs.getString("constraint_name");

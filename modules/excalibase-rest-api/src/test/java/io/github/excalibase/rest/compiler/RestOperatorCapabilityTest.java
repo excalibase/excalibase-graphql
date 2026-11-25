@@ -68,6 +68,28 @@ class RestOperatorCapabilityTest {
     }
 
     @Test
+    void anUpsertTheDatabaseCannotRunIsRefused() {
+        PostgresDialect withoutUpsert = new PostgresDialect() {
+            @Override
+            public java.util.Set<io.github.excalibase.DialectFeature> features() {
+                return java.util.Set.of();
+            }
+        };
+        SchemaInfo schema = new SchemaInfo();
+        schema.addColumn(TABLE, "id", "integer");
+        schema.addPrimaryKey(TABLE, "id");
+        schema.setTableSchema(TABLE, "public");
+        RestQueryCompiler compiler = new RestQueryCompiler(schema, withoutUpsert, "public", 30);
+
+        Map<String, Object> input = Map.of("id", 1);
+        List<String> conflict = List.of("id");
+
+        assertThatThrownBy(() -> compiler.compileUpsert(TABLE, input, conflict))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("Postgres does not support upsert");
+    }
+
+    @Test
     void postgresStillRunsEveryOperator() {
         assertThat(compiler(FilterCapabilities.ALL).compileSelect(select(List.of(filter("title", "match", "^a")),
                 List.of())).sql()).contains("~");

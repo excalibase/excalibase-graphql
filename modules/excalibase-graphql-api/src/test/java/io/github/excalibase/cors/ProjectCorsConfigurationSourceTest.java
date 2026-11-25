@@ -2,8 +2,8 @@ package io.github.excalibase.cors;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
-import org.springframework.mock.web.MockHttpServletRequest;
-import org.springframework.web.cors.CorsConfiguration;
+import io.micronaut.http.HttpRequest;
+import io.micronaut.http.MutableHttpRequest;
 
 import java.util.List;
 import java.util.Map;
@@ -23,12 +23,11 @@ class ProjectCorsConfigurationSourceTest {
     private static final String ORIGIN_EVIL = "https://evil.example";
     private static final String GLOBAL_ORIGIN = "https://studio.example.com";
 
-    private static final CorsConfiguration GLOBAL = ProjectCorsConfigurationSource.configFor(List.of(GLOBAL_ORIGIN));
+    private static final CorsRules GLOBAL = ProjectCorsConfigurationSource.configFor(List.of(GLOBAL_ORIGIN));
 
-    private static MockHttpServletRequest request(String uri, String origin) {
-        MockHttpServletRequest request = new MockHttpServletRequest("POST", uri);
-        request.setRequestURI(uri);
-        if (origin != null) request.addHeader("Origin", origin);
+    private static MutableHttpRequest<?> request(String uri, String origin) {
+        MutableHttpRequest<?> request = HttpRequest.POST(uri, "");
+        if (origin != null) request.header("Origin", origin);
         return request;
     }
 
@@ -46,13 +45,13 @@ class ProjectCorsConfigurationSourceTest {
         ProjectCorsConfigurationSource source = new ProjectCorsConfigurationSource(
                 providerWith(Map.of(PROJECT, List.of(ORIGIN_A))), GLOBAL);
 
-        CorsConfiguration config = source.getCorsConfiguration(request("/" + PROJECT + "/graphql", ORIGIN_A));
+        CorsRules config = source.getCorsConfiguration(request("/" + PROJECT + "/graphql", ORIGIN_A));
 
         assertThat(config).isNotNull();
         assertThat(config.checkOrigin(ORIGIN_A)).isEqualTo(ORIGIN_A);
         assertThat(config.checkOrigin(ORIGIN_EVIL)).isNull();
         assertThat(config.checkOrigin(GLOBAL_ORIGIN)).as("platform default must not leak into a project").isNull();
-        assertThat(config.getAllowCredentials()).isFalse();
+        assertThat(config.allowCredentials()).isFalse();
     }
 
     @Test
@@ -73,22 +72,22 @@ class ProjectCorsConfigurationSourceTest {
         ProjectCorsConfigurationSource source = new ProjectCorsConfigurationSource(
                 providerWith(Map.of(PROJECT, List.of())), GLOBAL);
 
-        CorsConfiguration config = source.getCorsConfiguration(request("/" + PROJECT + "/graphql", ORIGIN_A));
+        CorsRules config = source.getCorsConfiguration(request("/" + PROJECT + "/graphql", ORIGIN_A));
 
         assertThat(config).isNotNull();
         assertThat(config.checkOrigin(ORIGIN_A)).isNull();
     }
 
     @Test
-    @DisplayName("the wildcard entry allows any origin without credentials")
+    @DisplayName("the wildcard entry allows any valid origin by echoing it, never by sending *, without credentials")
     void wildcardAllowsAnyOrigin() {
         ProjectCorsConfigurationSource source = new ProjectCorsConfigurationSource(
                 providerWith(Map.of(PROJECT, List.of("*"))), GLOBAL);
 
-        CorsConfiguration config = source.getCorsConfiguration(request("/" + PROJECT + "/graphql", ORIGIN_EVIL));
+        CorsRules config = source.getCorsConfiguration(request("/" + PROJECT + "/graphql", ORIGIN_EVIL));
 
-        assertThat(config.checkOrigin(ORIGIN_EVIL)).isEqualTo("*");
-        assertThat(config.getAllowCredentials()).isFalse();
+        assertThat(config.checkOrigin(ORIGIN_EVIL)).isEqualTo(ORIGIN_EVIL);
+        assertThat(config.allowCredentials()).isFalse();
     }
 
     @Test
@@ -97,7 +96,7 @@ class ProjectCorsConfigurationSourceTest {
         ProjectCorsConfigurationSource source = new ProjectCorsConfigurationSource(
                 providerWith(Map.of()), GLOBAL);
 
-        CorsConfiguration config = source.getCorsConfiguration(request("/unknown/graphql", GLOBAL_ORIGIN));
+        CorsRules config = source.getCorsConfiguration(request("/unknown/graphql", GLOBAL_ORIGIN));
 
         assertThat(config).isNotNull();
         assertThat(config.checkOrigin(GLOBAL_ORIGIN)).isNull();
@@ -133,11 +132,11 @@ class ProjectCorsConfigurationSourceTest {
     @Test
     @DisplayName("the shared configuration carries the browser API's methods and exposed headers")
     void configForCarriesSharedSettings() {
-        CorsConfiguration config = ProjectCorsConfigurationSource.configFor(List.of(ORIGIN_A));
+        CorsRules config = ProjectCorsConfigurationSource.configFor(List.of(ORIGIN_A));
 
-        assertThat(config.getAllowedMethods()).contains("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS");
-        assertThat(config.getExposedHeaders()).contains("Content-Range", "Location");
-        assertThat(config.getAllowedHeaders()).contains("*");
-        assertThat(config.getMaxAge()).isEqualTo(3600L);
+        assertThat(config.allowedMethods()).contains("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS");
+        assertThat(config.exposedHeaders()).contains("Content-Range", "Location");
+        assertThat(config.allowedHeaders()).contains("*");
+        assertThat(config.maxAgeSeconds()).isEqualTo(3600L);
     }
 }

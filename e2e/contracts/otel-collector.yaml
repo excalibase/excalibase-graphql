@@ -1,0 +1,26 @@
+receivers:
+  otlp:
+    protocols:
+      http:
+        endpoint: 0.0.0.0:4318
+exporters:
+  file/traces:
+    path: /out/traces.jsonl
+    flush_interval: 1s
+  file/logs:
+    path: /out/logs.jsonl
+    flush_interval: 1s
+  file/metrics:
+    path: /out/metrics.jsonl
+    flush_interval: 1s
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      exporters: [file/traces]
+    metrics:
+      receivers: [otlp]
+      exporters: [file/metrics]
+    logs:
+      receivers: [otlp]
+      exporters: [file/logs]

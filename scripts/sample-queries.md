@@ -482,12 +482,12 @@ make query-enhanced-types
 make query-schema
 
 # Or test with curl directly
-curl -X POST http://localhost:10001/graphql \
+curl -X POST http://localhost:10001/{projectId}/graphql \
   -H "Content-Type: application/json" \
   -d '{"query": "{ customer { customer_id first_name last_name } }"}'
 
 # Test enhanced types
-curl -X POST http://localhost:10001/graphql \
+curl -X POST http://localhost:10001/{projectId}/graphql \
   -H "Content-Type: application/json" \
   -d '{"query": "{ enhanced_types { id name json_col int_array } }"}'
 

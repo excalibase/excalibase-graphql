@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Fallback for Maven Central (EXC-786). mvn-retry.sh passes this with -s on its
+  last attempts, so a Central that keeps answering "not found" or 429 is replaced
+  by Google's Central mirror for that run only. Normal runs never read this file.
+
+  - The mirror id is "central" on purpose: Maven records which repository id an
+    artifact came from, and a different id would make everything already cached
+    from Central look foreign and be downloaded again.
+  - Only central is mirrored; other repositories (apache.snapshots, ow2, ...) are
+    untouched. HTTPS only.
+  - Checksums are still verified: strict-checksums in .mvn/maven.config applies
+    here too. Note the .sha1 comes from the mirror as well, so that protects
+    against a corrupt download, not against a hostile mirror.
+-->
+<settings xmlns="http://maven.apache.org/SETTINGS/1.2.0"
+          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+          xsi:schemaLocation="http://maven.apache.org/SETTINGS/1.2.0 https://maven.apache.org/xsd/settings-1.2.0.xsd">
+  <mirrors>
+    <mirror>
+      <id>central</id>
+      <name>Google Maven Central mirror</name>
+      <mirrorOf>central</mirrorOf>
+      <url>https://maven-central.storage-download.googleapis.com/maven2/</url>
+    </mirror>
+  </mirrors>
+</settings>

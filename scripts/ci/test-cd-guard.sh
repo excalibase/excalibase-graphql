@@ -1,0 +1,64 @@
+#!/usr/bin/env bash
+# Checks for the immutable trunk tag (EXC-745): the existence helper's three
+# outcomes, and that cd.yml wires the guard, the CI run's own commit and a
+# per-commit concurrency group.
+set -uo pipefail
+
+root=$(cd "$(dirname "$0")/../.." && pwd)
+helper="$root/scripts/ci/trunk-tag-exists.sh"
+cd_yml="$root/.github/workflows/cd.yml"
+failures=0
+
+check() {
+  local name=$1 expected=$2 actual=$3
+  if [[ $expected == "$actual" ]]; then echo "ok   $name"; else echo "FAIL $name: expected '$expected', got '$actual'"; failures=$((failures + 1)); fi
+}
+
+stub=$(mktemp -d)
+trap 'rm -rf "$stub"' EXIT
+printf '#!/usr/bin/env bash\necho "Name: $1"\n' >"$stub/found"
+printf '#!/usr/bin/env bash\necho "ERROR: $1: not found" >&2; exit 1\n' >"$stub/missing"
+printf '#!/usr/bin/env bash\necho "denied: requested access to the resource is denied" >&2; exit 1\n' >"$stub/broken"
+chmod +x "$stub"/*
+
+check "existing tag reports true" "true" "$(INSPECT_CMD="$stub/found" "$helper" img main-abc1234)"
+check "absent tag reports false" "false" "$(INSPECT_CMD="$stub/missing" "$helper" img main-abc1234)"
+INSPECT_CMD="$stub/broken" "$helper" img main-abc1234 >/dev/null 2>&1
+check "unknown failure is not treated as absent" "2" "$?"
+
+grep -q 'trunk-tag-exists.sh' "$cd_yml"; check "cd.yml calls the guard" "0" "$?"
+grep -q 'ref: ${{ github.event.workflow_run.head_sha' "$cd_yml"; check "cd.yml checks out the CI run's commit" "0" "$?"
+grep -q '^concurrency:' "$cd_yml"; check "cd.yml has a concurrency group" "0" "$?"
+grep -q 'type=sha' "$cd_yml"; check "cd.yml no longer derives tags from the branch head" "1" "$?"
+
+expected="github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' && github.event.workflow_run.head_repository.full_name == github.repository && github.event.workflow_run.head_branch == 'main'"
+for job in docker docker-native docker-slim; do
+  condition=$(awk -v job="  $job:" '$0 == job {f=1; next} f && /^    if:/ {sub(/^    if: */, ""); print; exit}' "$cd_yml" | tr -s ' ')
+  check "$job if: is exactly the push-to-own-main condition" "$expected" "$condition"
+done
+[[ $(grep -c 'labels: org.opencontainers.image.revision=${{ env.COMMIT_SHA }}' "$cd_yml") == 4 ]]; check "every metadata step sets the revision label to the tested commit" "0" "$?"
+# The slim images (EXC-799) add tags beside the existing ones; each is guarded like the trunk tag, and none is a release tag.
+grep -qF 'trunk-tag-exists.sh "$DOCKER_IMAGE" "main-${{ steps.commit.outputs.short }}-${{ matrix.engine }}"' "$cd_yml"; check "slim trunk tag is checked before it is pushed" "0" "$?"
+for tag in 'main-${{ matrix.engine }}' 'main-${{ steps.commit.outputs.short }}-${{ matrix.engine }}'; do
+  grep -qF "type=raw,value=$tag" "$cd_yml"; check "slim tag $tag is published" "0" "$?"
+done
+grep -q 'slim-native\|-native' <(awk '/^  docker-slim:/{f=1} f' "$cd_yml"); check "the per-push CD builds no slim native image" "1" "$?"
+
+# The slim native images are nightly and on request, never per push, so their failure cannot block CI or CD (EXC-799).
+slim_native="$root/.github/workflows/slim-native.yml"
+grep -qE '^  push:|^  pull_request:|workflow_run' "$slim_native"; check "slim-native.yml has no push, pull_request or workflow_run trigger" "1" "$?"
+grep -q '^  schedule:' "$slim_native"; check "slim-native.yml runs nightly" "0" "$?"
+grep -q '^  workflow_dispatch:' "$slim_native"; check "slim-native.yml runs on request" "0" "$?"
+grep -qF 'trunk-tag-exists.sh "$DOCKER_IMAGE" "main-${{ steps.commit.outputs.short }}-${{ matrix.engine }}-native"' "$slim_native"; check "slim native trunk tag is checked before it is pushed" "0" "$?"
+for tag in 'main-${{ matrix.engine }}-native' 'main-${{ steps.commit.outputs.short }}-${{ matrix.engine }}-native'; do
+  grep -qF "type=raw,value=$tag" "$slim_native"; check "slim native tag $tag is published" "0" "$?"
+done
+grep -qE 'type=raw,value=(latest|[0-9])' "$slim_native"; check "slim-native.yml publishes no latest or version tag" "1" "$?"
+grep -q 'build-native-slim' "$root/.github/workflows/ci.yml"; check "ci.yml builds no slim native image per push" "1" "$?"
+grep -qE 'type=raw,value=(latest|[0-9])' "$cd_yml"; check "cd.yml publishes no latest or version tag" "1" "$?"
+grep -q 'context: git' "$cd_yml"; check "metadata steps do not use the git context (fails on a detached checkout)" "1" "$?"
+
+grep -q 'github\.sha' "$cd_yml"; check "cd.yml never references the branch-tip sha" "1" "$?"
+grep -q "github.event_name == 'push'" "$cd_yml"; check "cd.yml has no push-only steps" "1" "$?"
+
+exit "$failures"

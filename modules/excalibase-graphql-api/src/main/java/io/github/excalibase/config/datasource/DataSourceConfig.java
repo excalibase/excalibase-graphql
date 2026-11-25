@@ -1,15 +1,17 @@
 package io.github.excalibase.config.datasource;
 
 import com.zaxxer.hikari.HikariDataSource;
+import com.zaxxer.hikari.metrics.micrometer.MicrometerMetricsTrackerFactory;
+import io.github.excalibase.config.EngineAvailabilityGuard;
 import io.github.excalibase.service.DatabaseEngine;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micronaut.context.annotation.Context;
+import io.micronaut.context.annotation.Factory;
+import io.micronaut.context.annotation.Value;
+import io.micronaut.core.annotation.Nullable;
+import jakarta.inject.Singleton;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.boot.autoconfigure.jdbc.DataSourceProperties;
-import org.springframework.boot.context.properties.EnableConfigurationProperties;
-import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Configuration;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.jdbc.support.JdbcTransactionManager;
@@ -18,53 +20,60 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 import javax.sql.DataSource;
 import java.time.Duration;
-import java.util.HashMap;
-import java.util.Map;
 
 /**
- * Replaces Spring Boot's auto-configured DataSource with an AbstractRoutingDataSource.
- * The app starts even if the configured database is unreachable — queries will fail
- * until it is reachable (or after a schema reload).
+ * A routing DataSource over the configured database and every project's own pool. The app starts even
+ * if the configured database is unreachable: queries fail until it is reachable (or after a schema reload).
+ * Spring's JdbcTemplate and TransactionTemplate are used as plain libraries, wired here.
  */
-@Configuration
-@EnableConfigurationProperties(DataSourceProperties.class)
+@Factory
 public class DataSourceConfig {
 
     private static final Logger log = LoggerFactory.getLogger(DataSourceConfig.class);
 
-    @Bean
-    public DataSource dataSource(DataSourceProperties properties,
-                                 @Value("${app.security.multi-tenant.provisioning-url:}") String tenantProvisioningUrl,
-                                 @Autowired(required = false) DynamicDataSourceManager dataSourceManager) {
+    /** {@code spring.datasource.*}: the property names are the engine's long-standing configuration. */
+    public record DataSourceSettings(String url, String username, String password, String driverClassName) {}
+
+    @Singleton
+    DataSourceSettings dataSourceSettings(@Value("${spring.datasource.url:}") String url,
+                                          @Value("${spring.datasource.username:}") String username,
+                                          @Value("${spring.datasource.password:}") String password,
+                                          @Value("${spring.datasource.driver-class-name:}") String driverClassName) {
+        return new DataSourceSettings(url, username, password, driverClassName);
+    }
+
+    @Context
+    DataSource dataSource(DataSourceSettings properties,
+                          @Value("${app.security.multi-tenant.provisioning-url:}") String tenantProvisioningUrl,
+                          @Nullable DynamicDataSourceManager dataSourceManager, MeterRegistry meters,
+                          EngineAvailabilityGuard engineGuard) {
+        engineGuard.check();
         boolean multiTenant = tenantProvisioningUrl != null && !tenantProvisioningUrl.isBlank();
-        Map<Object, Object> targets = new HashMap<>();
-        boolean hasDefault = registersDefault(properties.getUrl(), properties.getUsername(),
-                properties.getPassword(), multiTenant);
-        if (hasDefault) {
-            HikariDataSource hikari = singleDatabasePool(properties, ConnectionBounds.DEFAULT_READ_TIMEOUT);
-            targets.put(DynamicRoutingDataSource.DEFAULT_KEY, hikari);
-            log.info("DataSource registered: {}", properties.getUrl());
+        DataSource configured = null;
+        if (registersDefault(properties.url(), properties.username(), properties.password(), multiTenant)) {
+            HikariDataSource pool = singleDatabasePool(properties, ConnectionBounds.DEFAULT_READ_TIMEOUT);
+            pool.setMetricsTrackerFactory(new MicrometerMetricsTrackerFactory(meters));
+            configured = pool;
+            log.info("DataSource registered: {}", properties.url());
         } else {
             log.info("Multi-tenant mode: no default datasource, every project is served from its own database");
         }
-
-        DynamicRoutingDataSource routing = new DynamicRoutingDataSource(dataSourceManager, hasDefault);
-        routing.setTargetDataSources(targets);
-        if (hasDefault) {
-            routing.setDefaultTargetDataSource(targets.get(DynamicRoutingDataSource.DEFAULT_KEY));
-        }
-        routing.setLenientFallback(true);
-        routing.afterPropertiesSet();
-        return routing;
+        return new DynamicRoutingDataSource(dataSourceManager, configured);
     }
 
     /** The configured database's pool, bounded like a project's so a server that stops answering fails the request. */
-    static HikariDataSource singleDatabasePool(DataSourceProperties properties, Duration readTimeout) {
-        HikariDataSource hikari = properties.initializeDataSourceBuilder()
-                .type(HikariDataSource.class)
-                .build();
+    static HikariDataSource singleDatabasePool(DataSourceSettings properties, Duration readTimeout) {
+        HikariDataSource hikari = new HikariDataSource();
+        hikari.setJdbcUrl(properties.url());
+        if (DatabaseEngine.ofJdbcUrl(properties.url()) != DatabaseEngine.SQLITE) {
+            hikari.setUsername(properties.username());
+            hikari.setPassword(properties.password());
+        }
+        if (properties.driverClassName() != null && !properties.driverClassName().isBlank()) {
+            hikari.setDriverClassName(properties.driverClassName());
+        }
         hikari.setInitializationFailTimeout(-1);
-        ConnectionBounds.apply(hikari, DatabaseEngine.ofJdbcUrl(properties.getUrl()), readTimeout);
+        ConnectionBounds.apply(hikari, DatabaseEngine.ofJdbcUrl(properties.url()), readTimeout);
         return hikari;
     }
 
@@ -87,6 +96,9 @@ public class DataSourceConfig {
             throw new IllegalStateException("Single-database mode requires spring.datasource.url "
                     + "(SPRING_DATASOURCE_URL) with its username and password; there is no built-in default");
         }
+        if (DatabaseEngine.ofJdbcUrl(url) == DatabaseEngine.SQLITE) {
+            return true; // a file has no login
+        }
         if (username == null || username.isBlank()) {
             throw new IllegalStateException("Single-database mode requires spring.datasource.username "
                     + "(SPRING_DATASOURCE_USERNAME)");
@@ -98,23 +110,23 @@ public class DataSourceConfig {
         return true;
     }
 
-    @Bean
-    public JdbcTemplate jdbcTemplate(DataSource dataSource) {
-        return new JdbcTemplate(dataSource);
+    @Singleton
+    JdbcTemplate jdbcTemplate(DataSource dataSource) {
+        return new CutResultAwareJdbcTemplate(dataSource);
     }
 
-    @Bean
-    public NamedParameterJdbcTemplate namedParameterJdbcTemplate(JdbcTemplate jdbcTemplate) {
+    @Singleton
+    NamedParameterJdbcTemplate namedParameterJdbcTemplate(JdbcTemplate jdbcTemplate) {
         return new NamedParameterJdbcTemplate(jdbcTemplate);
     }
 
-    @Bean
-    public PlatformTransactionManager transactionManager(DataSource dataSource) {
+    @Singleton
+    PlatformTransactionManager transactionManager(DataSource dataSource) {
         return new JdbcTransactionManager(dataSource);
     }
 
-    @Bean
-    public TransactionTemplate transactionTemplate(PlatformTransactionManager transactionManager) {
+    @Singleton
+    TransactionTemplate transactionTemplate(PlatformTransactionManager transactionManager) {
         return new TransactionTemplate(transactionManager);
     }
 }

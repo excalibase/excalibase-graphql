@@ -5,9 +5,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.http.MediaType;
-import org.springframework.test.web.servlet.MockMvc;
+import io.github.excalibase.support.EngineIntegrationTest;
+import io.github.excalibase.support.HttpAnswer;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -15,20 +14,15 @@ import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
  * List arguments as a client sends them: orderBy given whole or in part through variables orders the rows,
  * an orderBy list orders by each element in turn, an empty {@code in} matches nothing (and {@code notIn} everything),
  * and a negative limit, offset, first or last is refused as a request error, never an internal one.
  */
-abstract class QueryArgumentsContract {
+abstract class QueryArgumentsContract extends EngineIntegrationTest {
 
     private static final ObjectMapper MAPPER = new ObjectMapper();
-
-    @Autowired
-    MockMvc mockMvc;
 
     /** The products list field. */
     abstract String field();
@@ -114,9 +108,8 @@ abstract class QueryArgumentsContract {
         Map<String, Object> body = new HashMap<>();
         body.put("query", query);
         body.put("variables", variables);
-        return mockMvc.perform(post("/test-proj/graphql").contentType(MediaType.APPLICATION_JSON)
-                        .content(MAPPER.writeValueAsString(body)))
-                .andExpect(status().isOk())
-                .andReturn().getResponse().getContentAsString();
+        HttpAnswer answer = http.postJson("/test-proj/graphql", body);
+        assertThat(answer.status()).as(answer.body()).isEqualTo(200);
+        return answer.body();
     }
 }

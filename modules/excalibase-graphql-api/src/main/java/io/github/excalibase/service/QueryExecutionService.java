@@ -3,13 +3,22 @@ package io.github.excalibase.service;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.excalibase.compiler.SqlCompiler;
+import io.github.excalibase.compiler.WriteRetry;
+import io.github.excalibase.errors.DataError;
+import io.github.excalibase.errors.DataErrorException;
+import io.github.excalibase.errors.DataErrors;
+import io.github.excalibase.errors.ResultTooLarge;
+import io.github.excalibase.config.datasource.CutResultAwareJdbcTemplate;
 import io.github.excalibase.spi.MutationExecutor;
 import io.github.excalibase.utils.SqlUtils;
-import org.springframework.http.ResponseEntity;
+import io.github.excalibase.http.Reply;
+import io.micronaut.http.HttpResponse;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.jdbc.datasource.SingleConnectionDataSource;
-import org.springframework.stereotype.Service;
+import jakarta.inject.Singleton;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import javax.sql.DataSource;
 import java.sql.Connection;
@@ -27,8 +36,10 @@ import java.util.Map;
  *   <li>{@link #executeQuery} — a single read for a request without a caller. No transaction.</li>
  * </ul>
  */
-@Service
+@Singleton
 public class QueryExecutionService {
+
+    private static final Logger log = LoggerFactory.getLogger(QueryExecutionService.class);
 
     private final NamedParameterJdbcTemplate namedJdbc;
     private final DataSource dataSource;
@@ -42,7 +53,7 @@ public class QueryExecutionService {
         this.objectMapper = objectMapper;
     }
 
-    public ResponseEntity<Object> executeQuery(SqlCompiler.CompiledQuery compiled,
+    public HttpResponse<Object> executeQuery(SqlCompiler.CompiledQuery compiled,
                                                MapSqlParameterSource params) throws JsonProcessingException {
         String json = namedJdbc.queryForObject(compiled.sql(), params, String.class);
         return wrapResult(json);
@@ -52,21 +63,39 @@ public class QueryExecutionService {
      * Runs a compiled query inside one connection + manual transaction so the
      * two-phase mutation / plain branches share atomicity.
      */
-    public ResponseEntity<Object> executeInContext(SqlCompiler.CompiledQuery compiled,
+    public HttpResponse<Object> executeInContext(SqlCompiler.CompiledQuery compiled,
                                                    MapSqlParameterSource params,
                                                    MutationExecutor mutationExecutor) throws SQLException, JsonProcessingException {
+        return executeInContext(compiled, params, mutationExecutor, new WriteRetry.Run());
+    }
+
+    private HttpResponse<Object> executeInContext(SqlCompiler.CompiledQuery compiled, MapSqlParameterSource params,
+                                                    MutationExecutor mutationExecutor, WriteRetry.Run run)
+            throws SQLException, JsonProcessingException {
+        try {
+            return executeOnce(compiled, params, mutationExecutor);
+        } catch (SQLException | JsonProcessingException | RuntimeException e) {
+            if (!run.retry(e)) throw e;
+        }
+        return executeInContext(compiled, params, mutationExecutor, run);
+    }
+
+    /** One transaction; a database that lost a lock to a concurrent request rolled it back, so it can run again. */
+    private HttpResponse<Object> executeOnce(SqlCompiler.CompiledQuery compiled, MapSqlParameterSource params,
+                                             MutationExecutor mutationExecutor)
+            throws SQLException, JsonProcessingException {
         try (Connection conn = dataSource.getConnection()) {
             boolean autoCommit = conn.getAutoCommit();
             try {
                 conn.setAutoCommit(false);
-                ResponseEntity<Object> result = dispatchInsideTx(conn, compiled, params, mutationExecutor);
-                conn.commit();
+                HttpResponse<Object> result = dispatchInsideTx(conn, compiled, params, mutationExecutor);
+                commit(conn);
                 return result;
             } catch (SQLException | JsonProcessingException | RuntimeException e) {
-                conn.rollback();
+                rollbackQuietly(conn, e);
                 throw e;
             } finally {
-                conn.setAutoCommit(autoCommit);
+                restoreAutoCommit(conn, autoCommit);
             }
         }
     }
@@ -75,25 +104,56 @@ public class QueryExecutionService {
      * Runs a mutation of ordered statements (a nested insert) in one connection and transaction, whatever
      * the request's path: a failure anywhere rolls back every statement.
      */
-    public ResponseEntity<Object> executeSequence(SqlCompiler.CompiledQuery compiled)
+    public HttpResponse<Object> executeSequence(SqlCompiler.CompiledQuery compiled)
             throws SQLException, JsonProcessingException {
         try (Connection conn = dataSource.getConnection()) {
             boolean autoCommit = conn.getAutoCommit();
             try {
                 conn.setAutoCommit(false);
                 String json = new MutationSequenceRunner(conn, compiled.params()).run(compiled.sequence());
-                conn.commit();
+                commit(conn);
                 return wrapResult(json);
             } catch (SQLException | JsonProcessingException | RuntimeException e) {
-                conn.rollback();
+                rollbackQuietly(conn, e);
                 throw e;
             } finally {
-                conn.setAutoCommit(autoCommit);
+                restoreAutoCommit(conn, autoCommit);
             }
         }
     }
 
-    private ResponseEntity<Object> dispatchInsideTx(Connection conn,
+    /** A connection lost at commit leaves the write's outcome unknown, which the client must be told apart from a refusal. */
+    private static void commit(Connection conn) throws SQLException {
+        try {
+            conn.commit();
+        } catch (SQLException e) {
+            if (DataErrors.describe(e, null).filter(error -> DataError.PROJECT_UNAVAILABLE.equals(error.code())
+                    || DataError.COMMIT_UNKNOWN.equals(error.code())).isPresent()) {
+                throw new DataErrorException(DataError.commitUnknown(), e);
+            }
+            throw e;
+        }
+    }
+
+    /** On a connection that was lost this fails too, and must not replace the failure that lost it. */
+    private static void restoreAutoCommit(Connection conn, boolean autoCommit) {
+        try {
+            conn.setAutoCommit(autoCommit);
+        } catch (SQLException e) {
+            log.debug("autocommit not restored: {}", e.getMessage());
+        }
+    }
+
+    /** The rollback of a dead connection must not hide the failure that made it necessary. */
+    private static void rollbackQuietly(Connection conn, Exception failure) {
+        try {
+            conn.rollback();
+        } catch (SQLException e) {
+            failure.addSuppressed(e);
+        }
+    }
+
+    private HttpResponse<Object> dispatchInsideTx(Connection conn,
                                                     SqlCompiler.CompiledQuery compiled,
                                                     MapSqlParameterSource params,
                                                     MutationExecutor mutationExecutor) throws SQLException, JsonProcessingException {
@@ -107,7 +167,7 @@ public class QueryExecutionService {
     // Per-branch implementations against a shared Connection.
     // ------------------------------------------------------------------------
 
-    private ResponseEntity<Object> executePlainOn(Connection conn,
+    private HttpResponse<Object> executePlainOn(Connection conn,
                                                   SqlCompiler.CompiledQuery compiled) throws SQLException, JsonProcessingException {
         SqlUtils.ResolvedSql resolvedSql = SqlUtils.resolveNamedParams(compiled.sql(), compiled.params());
         String json;
@@ -117,19 +177,20 @@ public class QueryExecutionService {
             }
             try (var rs = pstmt.executeQuery()) {
                 json = rs.next() ? rs.getString(1) : null;
+                ResultTooLarge.refuseIfCut(pstmt.getWarnings(), json == null);
             }
         }
         return wrapResult(json);
     }
 
-    private ResponseEntity<Object> executeTwoPhaseOn(Connection conn,
+    private HttpResponse<Object> executeTwoPhaseOn(Connection conn,
                                                      SqlCompiler.CompiledQuery compiled,
                                                      MapSqlParameterSource params,
                                                      MutationExecutor mutationExecutor) throws JsonProcessingException {
         // Wrap the active connection so the existing MutationExecutor SPI works
         // inside our manual transaction. suppressClose=true keeps lifecycle ours.
         SingleConnectionDataSource scds = new SingleConnectionDataSource(conn, true);
-        NamedParameterJdbcTemplate connBoundJdbc = new NamedParameterJdbcTemplate(scds);
+        NamedParameterJdbcTemplate connBoundJdbc = new NamedParameterJdbcTemplate(new CutResultAwareJdbcTemplate(scds));
         String json = mutationExecutor.execute(compiled, params, connBoundJdbc);
         return wrapResult(json);
     }
@@ -138,10 +199,10 @@ public class QueryExecutionService {
      * The data is kept as a JSON tree so a null field survives serialization: a mutation whose
      * written row the role may not read answers {@code "field": null}, not a missing key.
      */
-    private ResponseEntity<Object> wrapResult(String json) throws JsonProcessingException {
+    private HttpResponse<Object> wrapResult(String json) throws JsonProcessingException {
         if (json != null) {
-            return ResponseEntity.ok(Map.of("data", objectMapper.readTree(json)));
+            return Reply.ok(Map.of("data", objectMapper.readTree(json)));
         }
-        return ResponseEntity.ok(Map.of("data", Map.of()));
+        return Reply.ok(Map.of("data", Map.of()));
     }
 }

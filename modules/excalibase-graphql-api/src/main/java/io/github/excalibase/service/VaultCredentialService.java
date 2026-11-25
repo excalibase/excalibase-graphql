@@ -1,9 +1,11 @@
 package io.github.excalibase.service;
 
+import io.github.excalibase.http.ControlPlaneHttpClient;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.excalibase.security.TokenFileSource;
 import io.github.excalibase.security.TokenUnavailableException;
+import io.github.excalibase.security.ProjectPausedException;
 import io.github.excalibase.security.ProjectWithoutDatabaseException;
 import io.github.excalibase.security.UnknownProjectException;
 import org.slf4j.Logger;
@@ -36,9 +38,7 @@ public class VaultCredentialService {
   public VaultCredentialService(String provisioningUrl, TokenFileSource tokenSource) {
     this.provisioningUrl = provisioningUrl;
     this.tokenSource = tokenSource;
-    this.httpClient = HttpClient.newBuilder()
-        .connectTimeout(TIMEOUT)
-        .build();
+    this.httpClient = ControlPlaneHttpClient.create(TIMEOUT);
   }
 
   /**
@@ -73,13 +73,18 @@ public class VaultCredentialService {
         // Provisioning's answer for a project created without a database.
         throw new ProjectWithoutDatabaseException(projectId);
       }
+      if (resp.statusCode() == 423) {
+        // Provisioning's answer for a paused project: its database is shut down until it is resumed.
+        throw new ProjectPausedException(projectId);
+      }
       if (resp.statusCode() != 200) {
         log.error("vault_credential_fetch_failed status={} tenant={}/{}", resp.statusCode(), orgSlug, projectId);
         throw new VaultCredentialException("Database not available for the requested project");
       }
 
       return parseRecord(mapper.readTree(resp.body()));
-    } catch (VaultCredentialException | UnknownProjectException | ProjectWithoutDatabaseException e) {
+    } catch (VaultCredentialException | UnknownProjectException | ProjectWithoutDatabaseException
+             | ProjectPausedException e) {
       throw e;
     } catch (InterruptedException e) {
       Thread.currentThread().interrupt();

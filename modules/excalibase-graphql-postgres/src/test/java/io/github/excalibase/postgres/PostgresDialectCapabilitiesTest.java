@@ -23,6 +23,13 @@ class PostgresDialectCapabilitiesTest {
     }
 
     @Test
+    void postgresRunsEveryOptionalFeature() {
+        for (io.github.excalibase.DialectFeature feature : io.github.excalibase.DialectFeature.values()) {
+            assertThat(dialect.supports(feature)).as(feature.name()).isTrue();
+        }
+    }
+
+    @Test
     void keySetPredicatesKeepTheirArrayForm() {
         assertThat(dialect.jsonKeysPredicateSql(JsonPredicate.HAS_ALL_KEYS, "t.\"m\"",
                 List.of(":k0", ":k1")))

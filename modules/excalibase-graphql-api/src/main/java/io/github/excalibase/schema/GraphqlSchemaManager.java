@@ -1,5 +1,6 @@
 package io.github.excalibase.schema;
 
+import io.github.excalibase.DialectFeature;
 import io.github.excalibase.SqlDialect;
 import io.github.excalibase.cache.TTLCache;
 import io.github.excalibase.cdc.NatsCDCService;
@@ -23,20 +24,25 @@ import io.github.excalibase.spi.SqlEngineFactory;
 import jakarta.annotation.PostConstruct;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
+import io.micronaut.context.annotation.Context;
+import io.micronaut.context.annotation.Value;
+import io.github.excalibase.config.JwtEnabledSetting;
+import jakarta.inject.Inject;
+import io.micronaut.core.annotation.Nullable;
 import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
-import org.springframework.stereotype.Component;
 
+import javax.sql.DataSource;
 import java.time.Duration;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import io.micronaut.core.propagation.MutablePropagatedContext;
+import io.micronaut.core.propagation.PropagatedContext;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
@@ -44,7 +50,7 @@ import java.util.concurrent.atomic.AtomicReference;
  * access plan (docs/features/permissions.md §7). This is the one place a plan is built: the compiler,
  * introspection, the request guards and realtime all take theirs from the {@link EngineState} made here.
  */
-@Component
+@Context
 public class GraphqlSchemaManager implements SchemaProvider, AccessPlans, ProjectCacheEvictor {
 
     private static final Logger log = LoggerFactory.getLogger(GraphqlSchemaManager.class);
@@ -53,9 +59,12 @@ public class GraphqlSchemaManager implements SchemaProvider, AccessPlans, Projec
     public static final int DEFAULT_MAX_QUERY_DEPTH = 15;
 
     private static final String MYSQL = "mysql";
+    private static final int FINGERPRINT_TIMEOUT_SECONDS = 5;
+    private static final int RELOAD_TIMEOUT_SECONDS = 60;
 
     private final JdbcTemplate jdbcTemplate;
     private final int maxRows;
+    private final boolean capNestedLists;
     private final String databaseType;
     private final int maxQueryDepth;
     private final ReservedSchemas reservedSchemas;
@@ -87,21 +96,59 @@ public class GraphqlSchemaManager implements SchemaProvider, AccessPlans, Projec
 
     private final AtomicReference<EngineState> engineState = new AtomicReference<>();
     private final AtomicReference<Reflection> defaultReflection = new AtomicReference<>();
+    /** The catalog fingerprint taken just before the default database was last reflected; null when unknown. */
+    private final AtomicReference<String> reflectedFingerprint = new AtomicReference<>();
+    /** Odd while the default reflection is being replaced, and higher after each replacement; see {@link #publish}. */
+    private final AtomicLong generation = new AtomicLong();
     private final TTLCache<String, Reflection> reflections;
     private final TTLCache<EngineKey, EngineState> tenantEngineStates;
-    private final ThreadLocal<RequestEngine> requestEngine = new ThreadLocal<>();
 
+    @Inject
     public GraphqlSchemaManager(
             JdbcTemplate jdbcTemplate,
             @Value("${app.max-rows:30}") int maxRows,
             @Value("${app.database-type:postgres}") String databaseType,
-            @Value("${app.max-query-depth:#{T(io.github.excalibase.schema.GraphqlSchemaManager).DEFAULT_MAX_QUERY_DEPTH}}") int maxQueryDepth,
+            @Value("${app.max-query-depth:15}") int maxQueryDepth,
             @Value("${app.cache.schema-ttl-minutes:30}") int schemaTtlMinutes,
             @Value("${app.reserved-schemas:}") String reservedSchemasConfig,
-            @Autowired(required = false) NatsCDCService natsCDCService,
-            @Autowired(required = false) DynamicDataSourceManager dataSourceManager,
-            @Autowired(required = false) PermissionProvider permissionProvider,
-            @Value("${app.security.jwt-enabled:true}") boolean jwtEnabled) {
+            @Nullable NatsCDCService natsCDCService,
+            @Nullable DynamicDataSourceManager dataSourceManager,
+            @Nullable PermissionProvider permissionProvider,
+            JwtEnabledSetting jwtEnabledSetting,
+            @Value("${app.cap-nested-lists:false}") boolean capNestedLists) {
+        this(jdbcTemplate, maxRows, databaseType, maxQueryDepth, schemaTtlMinutes, reservedSchemasConfig,
+                natsCDCService, dataSourceManager, permissionProvider, jwtEnabledSetting.enabled(), capNestedLists);
+    }
+
+    /** For code that already holds the parsed setting; the engine itself is built with {@link JwtEnabledSetting}. */
+    GraphqlSchemaManager(
+            JdbcTemplate jdbcTemplate,
+            int maxRows,
+            String databaseType,
+            int maxQueryDepth,
+            int schemaTtlMinutes,
+            String reservedSchemasConfig,
+            NatsCDCService natsCDCService,
+            DynamicDataSourceManager dataSourceManager,
+            PermissionProvider permissionProvider,
+            boolean jwtEnabled) {
+        this(jdbcTemplate, maxRows, databaseType, maxQueryDepth, schemaTtlMinutes, reservedSchemasConfig,
+                natsCDCService, dataSourceManager, permissionProvider, jwtEnabled, false);
+    }
+
+    GraphqlSchemaManager(
+            JdbcTemplate jdbcTemplate,
+            int maxRows,
+            String databaseType,
+            int maxQueryDepth,
+            int schemaTtlMinutes,
+            String reservedSchemasConfig,
+            NatsCDCService natsCDCService,
+            DynamicDataSourceManager dataSourceManager,
+            PermissionProvider permissionProvider,
+            boolean jwtEnabled,
+            boolean capNestedLists) {
+        this.capNestedLists = capNestedLists;
         this.jdbcTemplate = jdbcTemplate;
         this.maxRows = maxRows;
         this.databaseType = databaseType;
@@ -116,6 +163,20 @@ public class GraphqlSchemaManager implements SchemaProvider, AccessPlans, Projec
         if (natsCDCService != null) {
             natsCDCService.setSchemaReloadCallback(this::reload);
         }
+    }
+
+    /**
+     * The same pool with a bound on each query, so a stuck catalog lock cannot hang the caller for good. A
+     * template with no data source of its own is used as it is.
+     */
+    private JdbcTemplate bounded(int timeoutSeconds) {
+        DataSource dataSource = jdbcTemplate.getDataSource();
+        if (dataSource == null) {
+            return jdbcTemplate;
+        }
+        JdbcTemplate bounded = new JdbcTemplate(dataSource);
+        bounded.setQueryTimeout(timeoutSeconds);
+        return bounded;
     }
 
     /**
@@ -139,28 +200,61 @@ public class GraphqlSchemaManager implements SchemaProvider, AccessPlans, Projec
         }
     }
 
+    /** Reflects the configured database at start. One that cannot be read is served as an empty schema. */
     @PostConstruct
     public void init() {
         SqlEngine engine = SqlEngineFactory.create(databaseType);
-        List<String> schemaList = List.of();
-
-        SchemaInfo schemaInfo = new SchemaInfo();
+        // Taken before the load, so DDL that lands while it runs is seen by the next poll.
+        String fingerprintBeforeLoad = fingerprintOrNull(engine);
         try {
-            schemaList = discoverSchemas(jdbcTemplate, databaseType);
-            loadMultiSchema(schemaInfo, schemaList, engine.schemaLoader());
+            publish(loadDefault(engine), fingerprintBeforeLoad);
         } catch (Exception e) {
             log.warn("Failed to load database schema — starting with empty schema", e);
+            // No fingerprint, so the next poll tries again.
+            publish(new Reflection(new SchemaInfo(), "public", databaseType, engine,
+                    SqlEngineFactory.createMutationExecutor(databaseType), probesOn(jdbcTemplate)), null);
         }
-        String defaultSchema = resolveDefaultSchema(schemaList, schemaInfo);
-        Reflection reflection = new Reflection(schemaInfo, defaultSchema, databaseType, engine,
+    }
+
+    /** The configured database as it is now; throws when it cannot be read. */
+    Reflection loadDefault(SqlEngine engine) {
+        SchemaInfo schemaInfo = new SchemaInfo();
+        JdbcTemplate reading = bounded(RELOAD_TIMEOUT_SECONDS);
+        List<String> schemaList = discoverSchemas(reading, databaseType);
+        loadMultiSchema(schemaInfo, schemaList, engine.schemaLoader(), reading);
+        return new Reflection(schemaInfo, resolveDefaultSchema(schemaList, schemaInfo), databaseType, engine,
                 SqlEngineFactory.createMutationExecutor(databaseType), probesOn(jdbcTemplate));
+    }
+
+    /** A seam for tests: runs after the new reflection is set and before the caches are emptied. */
+    void betweenReflectionAndCacheClear() {
+        // nothing in production
+    }
+
+    /** A seam for tests: runs after the caches are emptied and before the generation is even again. */
+    void afterCacheClear() {
+        // nothing in production
+    }
+
+    /**
+     * Makes {@code reflection} the one served. Requests without a project get the configured database
+     * whole: there is no project to hold permissions for. Every project-scoped request is built per role.
+     * The generation is odd while this runs and moves on when it is done (a sequence lock), so a request that
+     * began before, or during, the publish can tell when it is done that what it cached may be stale. There is
+     * one writer at a time, which {@code synchronized} keeps true: the sequence lock needs it.
+     */
+    synchronized void publish(Reflection reflection, String fingerprint) {
+        EngineState state = assemble(reflection, AccessPlan.allAccess(
+                reflection.engine().dialect().permissionDialect(), reflection.schema()), NO_DOCUMENT);
+        generation.incrementAndGet();   // odd: a publish is under way
         defaultReflection.set(reflection);
-        // Requests without a project get the configured database whole: there is no project to hold
-        // permissions for. Every project-scoped request is built per role below.
-        engineState.set(assemble(reflection, AccessPlan.allAccess(engine.dialect().permissionDialect(), schemaInfo),
-                NO_DOCUMENT));
+        reflectedFingerprint.set(fingerprint);
+        engineState.set(state);
+        betweenReflectionAndCacheClear();
         reflections.clear();
         tenantEngineStates.clear();
+        afterCacheClear();
+        generation.incrementAndGet();   // even again: the caches hold nothing of the old reflection
     }
 
     /**
@@ -171,12 +265,12 @@ public class GraphqlSchemaManager implements SchemaProvider, AccessPlans, Projec
         SchemaInfo view = plan.view();
         SqlCompiler compiler = new SqlCompiler(view, reflection.defaultSchema(), maxRows,
                 reflection.engine().dialect(), reflection.engine().mutationCompiler(), maxQueryDepth, plan.access(),
-                plan.functions());
+                plan.functions(), capNestedLists);
         IntrospectionHandler handler = null;
         try {
             handler = new IntrospectionHandler(view, plan.access(), plan.functions(),
                     reflection.engine().mutationCompiler().supportsNestedInserts(),
-                    reflection.engine().dialect().filterCapabilities());
+                    reflection.engine().dialect().filterCapabilities(), reflection.engine().dialect().features());
         } catch (Exception e) {
             log.warn("IntrospectionHandler failed to build schema", e);
         }
@@ -195,32 +289,20 @@ public class GraphqlSchemaManager implements SchemaProvider, AccessPlans, Projec
     /**
      * Resolve EngineState for the current request. The project comes from {@link TenantContext} — the
      * URL path, already checked against the projects this deployment serves — and never from the
-     * token. The role is the one the request runs as, resolved once by the authentication filter.
+     * token. The role is the one the request runs as. The engine the authentication filter resolved for
+     * this request, if it is on the request's context, is the one served.
      */
     public EngineState resolveEngineState(Principal principal) {
         String projectId = TenantContext.getTenantId();
-        RequestEngine resolved = requestEngine.get();
-        if (resolved != null && resolved.principal() == principal && Objects.equals(resolved.projectId(), projectId)) {
-            return resolved.state();
+        Optional<ResolvedEngine> resolved = PropagatedContext.getOrEmpty().find(ResolvedEngine.class);
+        if (resolved.isPresent() && resolved.get().serves(principal, projectId)) {
+            return resolved.get().state();
         }
         String orgSlug = TenantContext.getOrgSlug();
         if (orgSlug == null && principal != null && principal.claims() != null) {
             orgSlug = principal.claims().orgSlug();
         }
-        EngineState state = resolveEngineState(orgSlug, projectId, principal);
-        if (principal != null) {
-            requestEngine.set(new RequestEngine(principal, projectId, state));
-        }
-        return state;
-    }
-
-    /**
-     * Ends the request's reuse of its resolved engine. The authentication filter resolves it first; the
-     * controllers then read that same engine rather than asking the permission source again.
-     */
-    @Override
-    public void requestFinished() {
-        requestEngine.remove();
+        return resolveEngineState(orgSlug, projectId, principal);
     }
 
     /**
@@ -233,6 +315,16 @@ public class GraphqlSchemaManager implements SchemaProvider, AccessPlans, Projec
         if (projectId == null) {
             return engineState.get();
         }
+        long seen = generation.get();
+        EngineState state = engineFor(orgSlug, projectId, principal);
+        if ((seen & 1) != 0 || generation.get() != seen) {
+            // The default reflection was replaced while, or just before, this request was building on the old one.
+            evict(projectId);
+        }
+        return state;
+    }
+
+    private EngineState engineFor(String orgSlug, String projectId, Principal principal) {
         String role = engineRole(principal);
         Reflection reflection = reflections.computeIfAbsent(projectId, key -> reflect(orgSlug, projectId));
         EngineKey key = new EngineKey(projectId, role);
@@ -269,8 +361,9 @@ public class GraphqlSchemaManager implements SchemaProvider, AccessPlans, Projec
      * source, every other role is served nothing — unless authentication is off, where the whole
      * schema is served — and no function is tracked.
      */
-    private EngineState build(Reflection reflection, String projectId, String role, PermissionSet permissions) {
+    private EngineState build(Reflection reflection, String projectId, String role, PermissionSet document) {
         PermissionDialect dialect = permissionDialect(reflection, projectId, role);
+        PermissionSet permissions = document == null ? null : document.excluding(reservedSchemas::isReservedObject);
         AccessPlan plan;
         if (Principal.SERVICE.equals(role)) {
             plan = AccessPlan.allAccess(dialect, reflection.schema(),
@@ -327,12 +420,12 @@ public class GraphqlSchemaManager implements SchemaProvider, AccessPlans, Projec
         return dataSourceManager != null ? reflectTenant(orgSlug, projectId) : defaultReflection.get();
     }
 
-    /** The engine one request resolved, reused for the rest of that request on this thread. */
-    private record RequestEngine(Principal principal, String projectId, EngineState state) {}
-
     @Override
-    public AccessPlan planFor(Principal principal) {
+    public AccessPlan planFor(Principal principal, MutablePropagatedContext request) {
         EngineState state = resolveEngineState(principal);
+        if (state != null && principal != null) {
+            request.add(new ResolvedEngine(principal, TenantContext.getTenantId(), state));
+        }
         return state == null ? null : state.plan();
     }
 
@@ -343,9 +436,14 @@ public class GraphqlSchemaManager implements SchemaProvider, AccessPlans, Projec
         if (state == null) {
             return Optional.empty();
         }
-        return tableFor(state, subscriptionKey).flatMap(table ->
+        SqlDialect dialect = state.compiler().dialect();
+        if (!dialect.supports(DialectFeature.SUBSCRIPTIONS)) {
+            throw new SubscriptionsUnsupportedException(dialect.databaseName() + " does not support subscriptions");
+        }
+        return tableFor(state, subscriptionKey).filter(table -> !reservedSchemas.isReservedObject(table)).flatMap(table ->
                 state.plan().changes(table, sessionVariables(principal, projectId))
-                        .map(filter -> new RealtimeAccess(table, filter, state.probes(), state.plan().view())));
+                        .map(filter -> new RealtimeAccess(table, filter, state.probes(), state.plan().view(),
+                                state.permissionsVersion())));
     }
 
     private static Map<String, String> sessionVariables(Principal principal, String projectId) {
@@ -375,6 +473,11 @@ public class GraphqlSchemaManager implements SchemaProvider, AccessPlans, Projec
         }
         reflections.remove(projectId);
         tenantEngineStates.removeIf(key -> projectId.equals(key.projectId()));
+    }
+
+    @Override
+    public boolean isReserved(String schema) {
+        return reservedSchemas.isReserved(schema);
     }
 
     @Override
@@ -417,15 +520,67 @@ public class GraphqlSchemaManager implements SchemaProvider, AccessPlans, Projec
         return requireEngineState(principal).defaultSchema();
     }
 
-    /** Reinitialize schema and compiler. Called on DDL events from NatsCDCService. */
-    public void reload() {
-        EngineState previous = engineState.get();
+    /**
+     * Reflects the configured database again when its catalogs differ from what was last reflected. One
+     * catalog query per call; the reload happens only on a change.
+     *
+     * @return whether the schema was reloaded
+     * @throws DataAccessException the database could not be asked; the served schema is left as it is
+     * @throws SchemaUnavailableException the change was seen but the database could not be reflected; the
+     *         served schema is left as it is and the next call tries again
+     */
+    public boolean reloadIfSchemaChanged() {
+        Reflection reflection = defaultReflection.get();
+        if (reflection == null) {
+            return false;
+        }
+        String current = fingerprint(reflection.engine());
+        if (current == null || current.equals(reflectedFingerprint.get())) {
+            return false;
+        }
+        log.info("schema_changed: reloading the schema of the configured database");
+        reloadOrThrow();
+        return true;
+    }
+
+    private String fingerprint(SqlEngine engine) {
+        if (jdbcTemplate == null) {
+            return null;
+        }
+        return engine.schemaLoader().fingerprint(bounded(FINGERPRINT_TIMEOUT_SECONDS));
+    }
+
+    private String fingerprintOrNull(SqlEngine engine) {
         try {
-            init();
+            return fingerprint(engine);
+        } catch (DataAccessException e) {
+            log.debug("schema_fingerprint_unavailable: {}", e.getMessage());
+            return null;
+        }
+    }
+
+    /**
+     * Reflects the configured database again. Called on DDL events from NatsCDCService. A database that
+     * cannot be read leaves what is served as it is.
+     */
+    public void reload() {
+        try {
+            reloadOrThrow();
+        } catch (SchemaUnavailableException e) {
+            log.error("Schema reload failed — retaining previous state", e);
+        }
+    }
+
+    private void reloadOrThrow() {
+        SqlEngine engine = SqlEngineFactory.create(databaseType);
+        String fingerprintBeforeLoad = fingerprintOrNull(engine);
+        try {
+            publish(loadDefault(engine), fingerprintBeforeLoad);
             log.info("Schema reloaded");
         } catch (Exception e) {
-            engineState.set(previous);
-            log.error("Schema reload failed — retaining previous state", e);
+            // No fingerprint, so the next poll tries again.
+            reflectedFingerprint.set(null);
+            throw new SchemaUnavailableException("The database could not be reflected", e);
         }
     }
 
@@ -456,6 +611,10 @@ public class GraphqlSchemaManager implements SchemaProvider, AccessPlans, Projec
     }
 
     private List<String> discoverSchemas(JdbcTemplate jdbc, String type) {
+        List<String> fixed = SqlEngineFactory.fixedSchemas(type);
+        if (!fixed.isEmpty()) {
+            return fixed; // a file has no catalogue to list: its plugin names the schemas
+        }
         String sql = MYSQL.equalsIgnoreCase(type)
                 ? "SELECT schema_name FROM information_schema.schemata " +
                   "WHERE schema_name NOT IN ('information_schema', 'performance_schema', 'mysql', 'sys') " +
@@ -465,23 +624,6 @@ public class GraphqlSchemaManager implements SchemaProvider, AccessPlans, Projec
                   "AND schema_name != 'information_schema' " +
                   "ORDER BY schema_name";
         return reservedSchemas.filter(jdbc.queryForList(sql, String.class));
-    }
-
-    private void loadMultiSchema(SchemaInfo schemaInfo, List<String> schemaList, SchemaLoader loader) {
-        loadMultiSchema(schemaInfo, schemaList, loader, jdbcTemplate);
-    }
-
-    private String findCompoundKey(SchemaInfo schemaInfo, String rawTable, List<String> allSchemas, String preferredSchema) {
-        if (preferredSchema != null) {
-            String candidate = preferredSchema + "." + rawTable;
-            if (schemaInfo.hasTable(candidate)) return candidate;
-        }
-        for (String schema : allSchemas) {
-            if (schema.equals(preferredSchema)) continue;
-            String candidate = schema + "." + rawTable;
-            if (schemaInfo.hasTable(candidate)) return candidate;
-        }
-        return null;
     }
 
     /**
@@ -522,59 +664,6 @@ public class GraphqlSchemaManager implements SchemaProvider, AccessPlans, Projec
 
     private void loadMultiSchema(SchemaInfo schemaInfo, List<String> schemaList,
                                  SchemaLoader loader, JdbcTemplate jdbc) {
-        Map<String, SchemaInfo> perSchema = new LinkedHashMap<>();
-        loader.loadAll(jdbc, schemaList, perSchema);
-
-        SchemaMerger merger = new SchemaMerger();
-        for (var schemaEntry : perSchema.entrySet()) {
-            String schema = schemaEntry.getKey();
-            SchemaInfo temp = schemaEntry.getValue();
-            merger.merge(schemaInfo, schema, temp);
-            mergeEnumsProcsAndComposites(schemaInfo, schema, temp);
-            // Extensions are global to the database, so every per-schema temp
-            // carries the same set. Copying once onto the target is enough —
-            // duplicates are harmless since addExtension uses a map put.
-            for (var ext : temp.getExtensions().entrySet()) {
-                schemaInfo.addExtension(ext.getKey(), ext.getValue());
-            }
-        }
-        mergeForeignKeys(schemaInfo, perSchema, schemaList);
-    }
-
-    private void mergeEnumsProcsAndComposites(SchemaInfo target, String schema, SchemaInfo source) {
-        for (var entry : source.getEnumTypes().entrySet()) {
-            for (String label : entry.getValue()) {
-                target.addEnumValue(schema + "." + entry.getKey(), label);
-            }
-        }
-        for (var entry : source.getFunctions().entrySet()) {
-            target.addFunction(schema + "." + entry.getKey(), entry.getValue());
-        }
-        for (var entry : source.getCompositeTypes().entrySet()) {
-            for (var field : entry.getValue()) {
-                target.addCompositeTypeField(schema + "." + entry.getKey(), field.name(), field.type());
-            }
-        }
-    }
-
-    private void mergeForeignKeys(SchemaInfo target, Map<String, SchemaInfo> perSchema, List<String> schemaList) {
-        for (var schemaEntry : perSchema.entrySet()) {
-            String schema = schemaEntry.getKey();
-            SchemaInfo temp = schemaEntry.getValue();
-            for (var entry : temp.getAllForwardFks().entrySet()) {
-                String fkKey = entry.getKey();
-                String fromTable = fkKey.substring(0, fkKey.lastIndexOf('.'));
-                SchemaInfo.FkInfo fk = entry.getValue();
-                String compoundFrom = schema + "." + fromTable;
-                String compoundTo = findCompoundKey(target, fk.refTable(), schemaList, schema);
-                if (compoundTo != null && target.hasTable(compoundFrom)) {
-                    if (fk.isComposite()) {
-                        target.addCompositeForeignKey(compoundFrom, fk.fkColumns(), compoundTo, fk.refColumns());
-                    } else {
-                        target.addForeignKey(compoundFrom, fk.fkColumn(), compoundTo, fk.refColumn());
-                    }
-                }
-            }
-        }
+        new MultiSchemaLoader(reservedSchemas).load(schemaInfo, schemaList, loader, jdbc);
     }
 }

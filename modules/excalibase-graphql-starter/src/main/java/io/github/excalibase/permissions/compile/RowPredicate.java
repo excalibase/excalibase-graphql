@@ -18,7 +18,6 @@ import java.util.Objects;
 import java.util.function.BinaryOperator;
 import java.util.function.Function;
 import java.util.function.IntPredicate;
-import java.util.regex.Pattern;
 
 /**
  * Decides a permission expression for one row in memory, as the database would decide the compiled
@@ -162,11 +161,11 @@ public final class RowPredicate {
 
         private Node like(ColumnCompare compare, String tableKey) {
             ColumnType type = FilterCompiler.likeColumn(dialect, schema, tableKey, compare.column());
-            Pattern pattern = LikePattern.compile((String) binding.value(compare.operand(), type));
+            PermissionLikePattern pattern = PermissionLikePattern.compile((String) binding.value(compare.operand(), type));
             if (!type.equatableInMemory()) {
                 return NEEDS_DATABASE;
             }
-            Node matches = onValue(compare.column(), type, value -> Truth.of(pattern.matcher((String) value).matches()));
+            Node matches = onValue(compare.column(), type, value -> Truth.of(pattern.matches((String) value)));
             return compare.operator() == ComparisonOperator.LIKE ? matches : negated(matches);
         }
 

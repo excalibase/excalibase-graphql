@@ -1,0 +1,23 @@
+# Adds the admin console to docker-compose.file.yml. The console is off unless you use this file.
+#   mkdir -p secrets && openssl rand -hex 32 > secrets/admin-secret
+#   docker compose -f docker-compose.file.yml -f docker-compose.console.yml up
+# Then open http://localhost:10001/console and paste the secret. The admin port is published on the
+# loopback address only; never publish it on a public address.
+services:
+  engine:
+    environment:
+      EXCALIBASE_CONSOLE_ENABLED: "true"
+      EXCALIBASE_ADMIN_PORT: 10001
+      EXCALIBASE_ADMIN_SECRET_FILE: /run/secrets/admin_secret
+    ports:
+      - "127.0.0.1:10001:10001"
+    secrets:
+      - admin_secret
+    # Saving writes a new file next to permissions.yaml, so the folder must be writable by the engine
+    # (uid 1000 in the image): chmod 777 ./metadata for a local trial, or chown it to 1000.
+    volumes:
+      - ./metadata:/etc/excalibase
+
+secrets:
+  admin_secret:
+    file: ./secrets/admin-secret

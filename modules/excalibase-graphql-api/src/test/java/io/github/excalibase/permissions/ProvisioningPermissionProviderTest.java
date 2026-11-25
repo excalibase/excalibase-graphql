@@ -389,6 +389,47 @@ class ProvisioningPermissionProviderTest {
         assertThat(hits.get()).isEqualTo(2);
     }
 
+    @Test
+    void onChange_reportsAnExpiredCopyRefreshedIntoADifferentDocument() {
+        ProvisioningPermissionProvider provider = provider(1_000);
+        List<String> told = new java.util.ArrayList<>();
+        provider.onChange((project, version) -> told.add(project + "@" + version));
+        PermissionSet first = provider.permissionsFor("proj1");
+
+        body = DOCUMENT.replaceFirst("\"version\": *[0-9]+", "\"version\": " + (first.version() + 1));
+        now[0] += 2_000;
+        provider.permissionsFor("proj1");
+
+        assertThat(told).containsExactly("proj1@" + (first.version() + 1));
+    }
+
+    @Test
+    void onChange_staysQuietWhenTheRefreshedDocumentIsTheSame() {
+        ProvisioningPermissionProvider provider = provider(1_000);
+        List<String> told = new java.util.ArrayList<>();
+        provider.onChange((project, version) -> told.add(project));
+        provider.permissionsFor("proj1");
+
+        now[0] += 2_000;
+        provider.permissionsFor("proj1");
+
+        assertThat(told).isEmpty();
+    }
+
+    @Test
+    void onChange_leavesAnEvictionToTheEvent() {
+        ProvisioningPermissionProvider provider = provider(60_000);
+        List<String> told = new java.util.ArrayList<>();
+        provider.onChange((project, version) -> told.add(project));
+        PermissionSet first = provider.permissionsFor("proj1");
+
+        provider.evict("proj1");
+        body = DOCUMENT.replaceFirst("\"version\": *[0-9]+", "\"version\": " + (first.version() + 1));
+        provider.permissionsFor("proj1");
+
+        assertThat(told).isEmpty();
+    }
+
     // ---- control-plane outage: the cached copy is served for at most max-stale from the first failure ----
 
     @Test

@@ -8,6 +8,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 
 import static io.github.excalibase.compiler.SqlKeywords.*;
 
@@ -27,7 +28,9 @@ final class RestFilterSql {
 
     String sql(FilterSpec filter, String paramName, Map<String, Object> params, String table) {
         requireSupported(filter);
-        String colRef = dialect.quoteIdentifier(filter.column());
+        String quoted = dialect.quoteIdentifier(filter.column());
+        String colRef = Objects.requireNonNullElse(
+                dialect.comparableColumn(quoted, values.columnType(table, filter.column())), quoted);
         String neg = filter.negated() ? NOT : "";
         String op = filter.operator();
 
@@ -88,7 +91,8 @@ final class RestFilterSql {
     private String patternSql(String op, FilterSpec filter, String paramName,
                                Map<String, Object> params, String colRef, String neg) {
         return switch (op) {
-            case "like" -> stringFilter(params, paramName, neg, colRef, LIKE, filter.value().replace('*', '%'));
+            case "like" -> stringFilter(params, paramName, neg, colRef, LIKE, filter.value().replace('*', '%'))
+                    + Objects.requireNonNullElse(dialect.userLikeEscape(), "");
             case "ilike" -> {
                 params.put(paramName, filter.value().replace('*', '%'));
                 yield neg + dialect.ilike(colRef, PARAM_PREFIX + paramName);
@@ -214,6 +218,10 @@ final class RestFilterSql {
     private String buildInSql(FilterSpec filter, String col, String neg, String pn, Map<String, Object> params, boolean not, String table) {
         String inner = filter.value();
         if (inner.startsWith("(") && inner.endsWith(")")) inner = inner.substring(1, inner.length() - 1);
+        if (inner.isBlank()) {
+            // Nothing is in an empty list; everything is outside it.
+            return neg + parens(not ? "1 = 1" : "1 = 0");
+        }
         String[] items = inner.split(",");
         if (items.length > MAX_IN_LIST) throw new IllegalArgumentException("IN list exceeds maximum of " + MAX_IN_LIST);
         List<String> ph = new ArrayList<>();

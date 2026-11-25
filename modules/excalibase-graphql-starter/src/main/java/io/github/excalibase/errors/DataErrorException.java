@@ -12,6 +12,12 @@ public class DataErrorException extends RuntimeException {
         this.error = error;
     }
 
+    /** As above, with the failure that made the engine refuse, kept for the log. */
+    public DataErrorException(DataError error, Throwable cause) {
+        super(Objects.requireNonNull(error, "error").message(), cause);
+        this.error = error;
+    }
+
     public DataError error() {
         return error;
     }

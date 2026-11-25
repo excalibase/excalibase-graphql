@@ -310,6 +310,78 @@ class RestQueryCompilerTest {
       assertTrue(result.sql().contains("DO NOTHING") || result.sql().contains("DO UPDATE"));
     }
 
+    @Test @DisplayName("compileBulkUpsert merges every row in one multi-row INSERT … ON CONFLICT DO UPDATE, values bound")
+    void bulkUpsertMerge() {
+      var rows = List.of(
+          Map.<String, Object>of("id", 1, "name", "Hostile'); DROP TABLE products;--"),
+          Map.<String, Object>of("id", 2, "name", "B"));
+      var result = compiler.compileBulkUpsert("public.products", rows, List.of("id"), RestQueryCompiler.Conflict.MERGE);
+      String sql = result.sql();
+      assertTrue(sql.contains("ON CONFLICT (\"id\") DO UPDATE SET \"name\" = EXCLUDED.\"name\""), sql);
+      assertEquals(2, sql.split("\\), \\(", -1).length, "two value tuples: " + sql);
+      assertFalse(sql.contains("Hostile"), "values are parameters: " + sql);
+      assertTrue(result.params().containsValue("Hostile'); DROP TABLE products;--"));
+    }
+
+    @Test @DisplayName("compileBulkUpsert with ignore-duplicates is ON CONFLICT DO NOTHING, targeted only when columns are named")
+    void bulkUpsertIgnore() {
+      var rows = List.of(Map.<String, Object>of("id", 1, "name", "A"), Map.<String, Object>of("id", 2, "name", "B"));
+      String named = compiler.compileBulkUpsert("public.products", rows, List.of("id"), RestQueryCompiler.Conflict.IGNORE).sql();
+      assertTrue(named.contains("ON CONFLICT (\"id\") DO NOTHING"), named);
+      String any = compiler.compileBulkUpsert("public.products", rows, List.of(), RestQueryCompiler.Conflict.IGNORE).sql();
+      assertTrue(any.contains("ON CONFLICT DO NOTHING"), any);
+      assertFalse(any.contains("DO UPDATE"), any);
+    }
+
+    @Test @DisplayName("compileBulkUpsert refuses to merge on no columns, and an empty or oversized array")
+    void bulkUpsertRefusals() {
+      var rows = List.of(Map.<String, Object>of("id", 1, "name", "A"));
+      List<String> noColumns = List.of();
+      List<Map<String, Object>> noRows = List.of();
+      var noKey = assertThrows(IllegalArgumentException.class,
+          () -> compiler.compileBulkUpsert("public.products", rows, noColumns, RestQueryCompiler.Conflict.MERGE));
+      assertTrue(noKey.getMessage().contains("on_conflict"), noKey.getMessage());
+      List<String> key = List.of("id");
+      assertThrows(IllegalArgumentException.class,
+          () -> compiler.compileBulkUpsert("public.products", noRows, key, RestQueryCompiler.Conflict.MERGE));
+    }
+
+    @Test @DisplayName("an array whose objects have different keys is refused, for inserts and upserts alike")
+    void bulkRowsMustShareKeys() {
+      List<Map<String, Object>> rows = List.of(Map.of("id", 1, "name", "A"), Map.of("id", 2, "price", 5.0));
+      List<String> key = List.of("id");
+      var upsert = assertThrows(IllegalArgumentException.class,
+          () -> compiler.compileBulkUpsert("public.products", rows, key, RestQueryCompiler.Conflict.MERGE));
+      assertEquals("All object keys must match", upsert.getMessage());
+      assertThrows(IllegalArgumentException.class, () -> compiler.compileBulkInsert("public.products", rows));
+    }
+
+    @Test @DisplayName("compileBulkUpsert gates DO UPDATE with the RLS UPDATE predicate, as the single-row upsert does")
+    void bulkUpsertHasRlsUsing() {
+      RlsContext.set(new RlsWhereContributor() {
+        @Override public RlsWhereContributor.Contribution contribute(String table, RlsOp op) {
+          return new RlsWhereContributor.Contribution("owner_id = 'me'", Map.of());
+        }
+        @Override public RlsWhereContributor.Contribution contribute(String table, String alias, RlsOp op) {
+          return op == RlsOp.UPDATE ? new RlsWhereContributor.Contribution("owner_id = 'me'", Map.of()) : null;
+        }
+      });
+      try {
+        var rows = List.of(Map.<String, Object>of("id", 1, "name", "A"), Map.<String, Object>of("id", 2, "name", "B"));
+        String sql = compiler.compileBulkUpsert("public.products", rows, List.of("id"), RestQueryCompiler.Conflict.MERGE).sql();
+        assertTrue(sql.contains("DO UPDATE") && sql.contains("owner_id = 'me'"), sql);
+      } finally {
+        RlsContext.clear();
+      }
+    }
+
+    @Test @DisplayName("compileUpsert with ignore-duplicates on a single row is DO NOTHING, not a plain insert")
+    void singleIgnore() {
+      var result = compiler.compileUpsert("public.products", Map.of("id", 1, "name", "A"), List.of("id"),
+          RestQueryCompiler.Conflict.IGNORE);
+      assertTrue(result.sql().contains("ON CONFLICT (\"id\") DO NOTHING"), result.sql());
+    }
+
     @Test @DisplayName("compileUpsert gates DO UPDATE with the RLS UPDATE predicate (audit H6)")
     void upsertDoUpdate_hasRlsUsing() {
       // Without the USING, an upsert on a known PK overwrites another owner's row.
@@ -606,6 +678,44 @@ class RestQueryCompilerTest {
     }
 
     @Test
+    @DisplayName("an empty in.() list matches no rows instead of IN ('')")
+    void emptyInListMatchesNothing() {
+      var result = compiler.compileSelect(new RestQueryCompiler.SelectQuery(
+          "public.products", List.of(), List.of(new RestQueryCompiler.FilterSpec("id", "in", "()", false)), null,
+          List.of(), null, 10, 0, false));
+      assertTrue(result.sql().contains("1 = 0"), result.sql());
+      assertFalse(result.sql().contains(" IN "), result.sql());
+    }
+
+    @Test
+    @DisplayName("two filters on one column are both applied")
+    void twoFiltersOnOneColumnAreBothApplied() {
+      var result = compiler.compileSelect(new RestQueryCompiler.SelectQuery(
+          "public.products", List.of(), List.of(new RestQueryCompiler.FilterSpec("price", "gte", "10", false),
+              new RestQueryCompiler.FilterSpec("price", "lt", "20", false)), null, List.of(), null, 10, 0, false));
+      assertTrue(result.sql().contains(" >= ") && result.sql().contains(" < "), result.sql());
+    }
+
+    @Test
+    @DisplayName("a reverse embed is not cut by default")
+    void reverseEmbedIsNotCappedByDefault() {
+      var embed = new RestQueryCompiler.EmbedSpec("orders", List.of("*"));
+      var result = compiler.compileSelect(new RestQueryCompiler.SelectQuery(
+          "public.products", List.of(), List.of(), null, List.of(embed), null, 10, 0, false));
+      assertFalse(result.sql().contains("LIMIT 30"), result.sql());
+    }
+
+    @Test
+    @DisplayName("with nested lists capped, a reverse embed is cut at the engine's row limit")
+    void reverseEmbedIsCappedWhenConfigured() {
+      var capped = new RestQueryCompiler(schema, dialect, "public", 30, TableAccess.UNRESTRICTED, true);
+      var embed = new RestQueryCompiler.EmbedSpec("orders", List.of("*"));
+      var result = capped.compileSelect(new RestQueryCompiler.SelectQuery(
+          "public.products", List.of(), List.of(), null, List.of(embed), null, 10, 0, false));
+      assertTrue(result.sql().contains("LIMIT 30"), "embedded list must be capped: " + result.sql());
+    }
+
+    @Test
     @DisplayName("deep embed SQL uses parent alias (r1) for child FK join, not top-level alias (c)")
     void deepEmbedUsesCorrectParentAlias() {
       var embed = new RestQueryCompiler.EmbedSpec(
@@ -682,6 +792,56 @@ class RestQueryCompilerTest {
       assertTrue(sql.contains("SELECT c.\"id\", c.\"name\" FROM"), sql);
       assertFalse(sql.contains("description") || sql.contains("price"), sql);
       assertTrue(sql.contains("LIMIT 5"), sql);
+    }
+
+    @Test
+    @DisplayName("a nested embed's unknown column is refused, not written into the SQL")
+    void nestedEmbedUnknownColumn_refused() {
+      var orders = new RestQueryCompiler.EmbedSpec("orders", List.of("id", "x\\"), null,
+          List.of(new RestQueryCompiler.EmbedSpec("products", List.of("id"))));
+      TableAccess access = TableAccess.enforcing(Map.of(
+          "public.products", new TableAccess.Rights(Set.of(RlsOp.SELECT), Set.of("id", "name"), Set.of(), 5, false),
+          "public.orders", new TableAccess.Rights(Set.of(RlsOp.SELECT), Set.of("id", "product_id"), Set.of(), 5, false)));
+      RestQueryCompiler role = new RestQueryCompiler(schema, dialect, "public", 30, access);
+
+      var query = new RestQueryCompiler.SelectQuery(
+          "public.products", List.of("id"), List.of(), List.of(), List.of(orders), null, 10, 0, false);
+
+      var failure = assertThrows(IllegalArgumentException.class, () -> role.compileSelect(query));
+      assertTrue(failure.getMessage().contains("Unknown column"), failure.getMessage());
+    }
+
+    @Test
+    @DisplayName("an unrestricted nested embed naming only unknown columns is refused, not widened to the whole table")
+    void nestedEmbedOnlyUnknownColumns_refused() {
+      var orders = new RestQueryCompiler.EmbedSpec("orders", List.of("nope"), null,
+          List.of(new RestQueryCompiler.EmbedSpec("products", List.of("id"))));
+      var query = new RestQueryCompiler.SelectQuery("public.products", List.of("id"), List.of(), List.of(),
+          List.of(orders), null, 10, 0, false);
+
+      var failure = assertThrows(IllegalArgumentException.class, () -> compiler.compileSelect(query));
+      assertTrue(failure.getMessage().contains("Unknown column 'nope'"), failure.getMessage());
+    }
+
+    @Test
+    @DisplayName("an unrestricted leaf embed naming only unknown columns is refused the same way")
+    void leafEmbedOnlyUnknownColumns_refused() {
+      var query = new RestQueryCompiler.SelectQuery("public.products", List.of("id"), List.of(), List.of(),
+          List.of(new RestQueryCompiler.EmbedSpec("orders", List.of("nope"))), null, 10, 0, false);
+
+      assertThrows(IllegalArgumentException.class, () -> compiler.compileSelect(query));
+    }
+
+    @Test
+    @DisplayName("an unenforced nested embed leaves an unknown column out of the SQL (Postgres control)")
+    void nestedEmbedUnknownColumn_ignoredWhenUnrestricted() {
+      var orders = new RestQueryCompiler.EmbedSpec("orders", List.of("id", "x'\\"), null,
+          List.of(new RestQueryCompiler.EmbedSpec("products", List.of("id"))));
+
+      String sql = compiler.compileSelect(new RestQueryCompiler.SelectQuery("public.products", List.of("id"),
+          List.of(), List.of(), List.of(orders), null, 10, 0, false)).sql();
+
+      assertFalse(sql.contains("x'"), sql);
     }
 
     @Test

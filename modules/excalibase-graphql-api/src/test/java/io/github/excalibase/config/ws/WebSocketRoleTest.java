@@ -9,6 +9,13 @@ import com.nimbusds.jose.crypto.ECDSASigner;
 import com.nimbusds.jwt.JWTClaimsSet;
 import com.nimbusds.jwt.SignedJWT;
 import io.github.excalibase.cdc.SubscriptionService;
+import io.github.excalibase.config.ws.WsSession.CloseStatus;
+import io.github.excalibase.config.ws.WsSession.TextMessage;
+import io.micronaut.http.HttpRequest;
+import io.micronaut.http.HttpResponse;
+import io.micronaut.http.MutableHttpRequest;
+import io.github.excalibase.cors.ProjectCorsConfigurationSource;
+import java.lang.reflect.Field;
 import io.github.excalibase.observability.requests.RequestMetrics;
 import io.github.excalibase.schema.AccessPlans;
 import io.github.excalibase.security.JwtService;
@@ -17,17 +24,6 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.ObjectProvider;
-import org.springframework.http.server.ServletServerHttpRequest;
-import org.springframework.http.server.ServletServerHttpResponse;
-import org.springframework.mock.web.MockHttpServletRequest;
-import org.springframework.mock.web.MockHttpServletResponse;
-import org.springframework.test.util.ReflectionTestUtils;
-import org.springframework.web.socket.CloseStatus;
-import org.springframework.web.socket.TextMessage;
-import org.springframework.web.socket.WebSocketHandler;
-import org.springframework.web.socket.WebSocketSession;
-import org.springframework.web.socket.handler.TextWebSocketHandler;
 
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
@@ -89,21 +85,29 @@ class WebSocketRoleTest {
     @Nested
     class Handshake {
 
-        private final Map<String, Object> attributes = new HashMap<>();
-        private final MockHttpServletResponse servletResponse = new MockHttpServletResponse();
+        private final WsHandshakeFilter filter = new WsHandshakeFilter(
+                new ProjectCorsConfigurationSource(null, ProjectCorsConfigurationSource.configFor(List.of("*"))),
+                jwtService);
+        private Map<String, Object> attributes = new HashMap<>();
+        private HttpResponse<?> refusal;
 
         private boolean handshake(String bearer, String requestedRole, Map<String, String> extraHeaders) {
-            MockHttpServletRequest request = new MockHttpServletRequest("GET", "/" + PROJECT + "/graphql");
-            request.setRequestURI("/" + PROJECT + "/graphql");
+            MutableHttpRequest<?> request = HttpRequest.GET("/" + PROJECT + "/graphql").header("Upgrade", "websocket");
             if (bearer != null) {
-                request.addHeader("Authorization", "Bearer " + bearer);
+                request.header("Authorization", "Bearer " + bearer);
             }
             if (requestedRole != null) {
-                request.addHeader("X-Excalibase-Role", requestedRole);
+                request.header("X-Excalibase-Role", requestedRole);
             }
-            extraHeaders.forEach(request::addHeader);
-            return new JwtHandshakeInterceptor(jwtService).beforeHandshake(new ServletServerHttpRequest(request),
-                    new ServletServerHttpResponse(servletResponse), mock(WebSocketHandler.class), attributes);
+            extraHeaders.forEach(request::header);
+            refusal = filter.filter(request);
+            attributes = established(request);
+            return refusal == null;
+        }
+
+        @SuppressWarnings("unchecked")
+        private Map<String, Object> established(HttpRequest<?> request) {
+            return (Map<String, Object>) request.getAttribute(WsHandshakeFilter.ATTRIBUTES).orElseThrow();
         }
 
         @Test
@@ -115,8 +119,8 @@ class WebSocketRoleTest {
         @Test
         void noToken_nonAnonRole_isRefusedWith403() {
             assertThat(handshake(null, "user", Map.of())).isFalse();
-            assertThat(servletResponse.getStatus()).isEqualTo(403);
-            assertThat(servletResponse.getHeader("X-Auth-Reason")).contains("role_not_allowed");
+            assertThat(refusal.code()).isEqualTo(403);
+            assertThat(refusal.header("X-Auth-Reason")).contains("role_not_allowed");
         }
 
         @Test
@@ -130,14 +134,14 @@ class WebSocketRoleTest {
         @Test
         void userToken_roleNotAllowed_isRefusedWith403() throws Exception {
             assertThat(handshake(token(Map.of("role", "user")), "editor", Map.of())).isFalse();
-            assertThat(servletResponse.getStatus()).isEqualTo(403);
+            assertThat(refusal.code()).isEqualTo(403);
         }
 
         @Test
         void tokenWithoutRole_isRefusedWith401() throws Exception {
             assertThat(handshake(token(Map.of()), null, Map.of())).isFalse();
-            assertThat(servletResponse.getStatus()).isEqualTo(401);
-            assertThat(servletResponse.getHeader("X-Auth-Reason")).contains("invalid_role_claim");
+            assertThat(refusal.code()).isEqualTo(401);
+            assertThat(refusal.header("X-Auth-Reason")).contains("invalid_role_claim");
         }
 
         @Test
@@ -163,11 +167,11 @@ class WebSocketRoleTest {
 
         private final ObjectMapper mapper = new ObjectMapper();
         private final List<String> sent = new ArrayList<>();
-        private WebSocketSession session;
+        private WsSession session;
 
         @BeforeEach
         void session() throws Exception {
-            session = mock(WebSocketSession.class);
+            session = mock(WsSession.class);
             when(session.getId()).thenReturn("ws-" + System.nanoTime());
             when(session.isOpen()).thenReturn(true);
             Map<String, Object> attributes = new ConcurrentHashMap<>();
@@ -179,34 +183,30 @@ class WebSocketRoleTest {
             }).when(session).sendMessage(any(TextMessage.class));
         }
 
-        private <T> ObjectProvider<T> provider(T value) {
-            return new ObjectProvider<>() {
-                @Override public T getObject() { return value; }
-                @Override public T getObject(Object... args) { return value; }
-                @Override public T getIfAvailable() { return value; }
-                @Override public T getIfUnique() { return value; }
-            };
-        }
-
-        private TextWebSocketHandler graphqlHandler() {
+        private TextWsHandler graphqlHandler() throws Exception {
             GraphQLWebSocketHandler handler = new GraphQLWebSocketHandler(new SubscriptionService(), mapper,
-                    provider(jwtService), new WebSocketHeartbeat(0), provider((AccessPlans) null),
-                    provider((RequestMetrics) null), new ParsedQueries(1_000_000, Parser::parse));
-            ReflectionTestUtils.setField(handler, "jwtEnabled", true);
+                    jwtService, new WebSocketHeartbeat(0), (AccessPlans) null,
+                    (RequestMetrics) null, new ParsedQueries(1_000_000, Parser::parse));
+            enableJwt(handler);
             return handler;
         }
 
-        private TextWebSocketHandler realtimeHandler() {
+        private TextWsHandler realtimeHandler() throws Exception {
             RealtimeWebSocketHandler handler = new RealtimeWebSocketHandler(new SubscriptionService(), mapper,
-                    provider(jwtService), new WebSocketHeartbeat(0), provider((AccessPlans) null),
-                    provider((RequestMetrics) null));
-            ReflectionTestUtils.setField(handler, "jwtEnabled", true);
+                    jwtService, new WebSocketHeartbeat(0), (AccessPlans) null, (RequestMetrics) null);
+            enableJwt(handler);
             return handler;
         }
 
-        private void init(TextWebSocketHandler handler, Map<String, Object> payload) throws Exception {
-            handler.handleMessage(session, new TextMessage(mapper.writeValueAsString(
-                    Map.of("type", "connection_init", "payload", payload))));
+        private void enableJwt(TextWsHandler handler) throws Exception {
+            Field jwtEnabled = handler.getClass().getDeclaredField("jwtEnabled");
+            jwtEnabled.setAccessible(true);
+            jwtEnabled.setBoolean(handler, true);
+        }
+
+        private void init(TextWsHandler handler, Map<String, Object> payload) throws Exception {
+            handler.onMessage(session, mapper.writeValueAsString(
+                    Map.of("type", "connection_init", "payload", payload)));
         }
 
         private Principal principal() {
@@ -264,15 +264,15 @@ class WebSocketRoleTest {
         }
 
         @Test
+        @SuppressWarnings("unchecked")
         void graphql_afterHandshakeToken_payloadRoleIsResolvedAgainstThoseClaims() throws Exception {
-            Map<String, Object> handshakeAttributes = new HashMap<>();
-            MockHttpServletRequest upgrade = new MockHttpServletRequest("GET", "/" + PROJECT + "/graphql");
-            upgrade.setRequestURI("/" + PROJECT + "/graphql");
-            upgrade.addHeader("Authorization", "Bearer "
-                    + token(Map.of("role", "user", "allowed_roles", List.of("user", "editor"))));
-            new JwtHandshakeInterceptor(jwtService).beforeHandshake(new ServletServerHttpRequest(upgrade),
-                    new ServletServerHttpResponse(new MockHttpServletResponse()), mock(WebSocketHandler.class),
-                    handshakeAttributes);
+            MutableHttpRequest<?> upgrade = HttpRequest.GET("/" + PROJECT + "/graphql").header("Upgrade", "websocket")
+                    .header("Authorization", "Bearer "
+                            + token(Map.of("role", "user", "allowed_roles", List.of("user", "editor"))));
+            new WsHandshakeFilter(new ProjectCorsConfigurationSource(null,
+                    ProjectCorsConfigurationSource.configFor(List.of("*"))), jwtService).filter(upgrade);
+            Map<String, Object> handshakeAttributes = new HashMap<>(
+                    (Map<String, Object>) upgrade.getAttribute(WsHandshakeFilter.ATTRIBUTES).orElseThrow());
             session.getAttributes().putAll(handshakeAttributes);
 
             init(graphqlHandler(), Map.of("role", "editor"));

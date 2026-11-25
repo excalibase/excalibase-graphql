@@ -233,9 +233,10 @@ const MYSQL_CUSTOMER_SUBSCRIPTION = `
   }
 `;
 
-// MySQL schema generator does not yet generate subscription types.
-// These tests are ready for when that feature is added.
-// To enable: remove the .skip and ensure docker-compose.mysql.yml has NATS + watcher.
+// MySQL does not declare subscriptions yet: its schema has none and a subscription is refused ("MySQL does not
+// support subscriptions"). These tests are ready for the watcher's binlog stream.
+// To enable: remove the .skip, ensure docker-compose.mysql.yml has NATS + the watcher, and add SUBSCRIPTIONS to
+// MysqlDialect.features().
 describe.skip('MySQL CDC subscriptions', () => {
   let myClient;
   let sub;

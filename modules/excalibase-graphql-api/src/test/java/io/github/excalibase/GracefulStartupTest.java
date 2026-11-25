@@ -1,107 +1,85 @@
 package io.github.excalibase;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.context.ApplicationContext;
-import org.springframework.http.MediaType;
-import org.springframework.security.authentication.AuthenticationManager;
-import org.springframework.security.core.userdetails.UserDetailsService;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
-import org.springframework.test.web.servlet.MockMvc;
-
-import java.util.Map;
-
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
+import io.github.excalibase.support.EngineIntegrationTest;
+import io.github.excalibase.support.HttpAnswer;
+import java.util.Map;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
 
 /**
- * Verifies the application starts gracefully when:
- * 1. The database is unreachable (bad URL)
- * 2. GraphQL requests return meaningful errors instead of 500s
- * 3. Introspection returns a valid (empty) schema
+ * The application starts gracefully when the database is unreachable (bad URL): GraphQL requests answer with
+ * meaningful errors instead of 500s, and introspection returns a valid (empty) schema.
  */
-@SpringBootTest
-@AutoConfigureMockMvc
-class GracefulStartupTest {
+class GracefulStartupTest extends EngineIntegrationTest {
 
-    @DynamicPropertySource
-    static void configureProperties(DynamicPropertyRegistry registry) {
-        // Point to a non-existent database — app must still start
-        registry.add("spring.datasource.url", () -> "jdbc:postgresql://localhost:59999/nonexistent");
-        registry.add("spring.datasource.username", () -> "fake");
-        registry.add("spring.datasource.password", () -> "fake");
-        registry.add("app.project-id", () -> "test-proj");
-        registry.add("app.security.jwt-enabled", () -> "false");
-        registry.add("app.security.insecure-dev-mode", () -> "true");
-
-        registry.add("app.database-type", () -> "postgres");
+    @Override
+    public Map<String, String> getProperties() {
+        return Map.of(
+                "spring.datasource.url", "jdbc:postgresql://localhost:59999/nonexistent",
+                "spring.datasource.username", "fake",
+                "spring.datasource.password", "fake",
+                "app.project-id", "test-proj",
+                "app.security.jwt-enabled", "false",
+                "app.security.insecure-dev-mode", "true",
+                "app.database-type", "postgres",
+                "app.nats.enabled", "false");
     }
 
-    @Autowired
-    private MockMvc mockMvc;
-
-    @Autowired
-    private ApplicationContext context;
-
-    private static final ObjectMapper mapper = new ObjectMapper();
-
-    private String graphql(String query) throws Exception {
-        return mapper.writeValueAsString(Map.of("query", query));
+    private HttpAnswer graphql(String query) {
+        return http.postJson("/test-proj/graphql", Map.of("query", query));
     }
 
-    // Authentication is the JWT filter alone: Spring Security's built-in user (user + a password printed
-    // at startup) must not exist, so there is no second way in.
+    // Authentication is the JWT filter alone: no framework security module with a built-in user may be present,
+    // so there is no second way in.
     @Test
+    @DisplayName("no default user is created: there is no security module besides the JWT filter")
     void noDefaultUserIsCreated() {
-        assertThat(context.getBeanNamesForType(UserDetailsService.class))
-                .isEmpty();
-        assertThat(context.getBeanNamesForType(AuthenticationManager.class))
-                .isEmpty();
+        assertThatThrownBy(() -> Class.forName("io.micronaut.security.authentication.Authenticator"))
+                .isInstanceOf(ClassNotFoundException.class);
+        assertThatThrownBy(() -> Class.forName("org.springframework.security.core.userdetails.UserDetailsService"))
+                .isInstanceOf(ClassNotFoundException.class);
     }
 
     @Test
+    @DisplayName("the application starts without a database")
     void appStartsWithoutDatabase() {
-        // If we get here, @SpringBootTest context loaded successfully — app started
-        assertThat(mockMvc).isNotNull();
+        assertThat(server.isRunning()).isTrue();
     }
 
     @Test
-    void graphqlEndpoint_returnsError_notServerCrash() throws Exception {
-        mockMvc.perform(post("/test-proj/graphql")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(graphql("{ users { id } }")))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.errors").exists());
+    @DisplayName("a GraphQL request with no database answers with errors, not a server crash")
+    void graphqlEndpoint_returnsError_notServerCrash() {
+        HttpAnswer answer = graphql("{ users { id } }");
+
+        assertThat(answer.status()).isEqualTo(200);
+        assertThat(answer.json().has("errors")).isTrue();
     }
 
     @Test
-    void introspection_returnsValidSchema_whenNoDatabase() throws Exception {
-        mockMvc.perform(post("/test-proj/graphql")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(graphql("{ __schema { queryType { name } } }")))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.__schema.queryType.name").value("Query"));
+    @DisplayName("introspection returns a valid schema when there is no database")
+    void introspection_returnsValidSchema_whenNoDatabase() {
+        HttpAnswer answer = graphql("{ __schema { queryType { name } } }");
+
+        assertThat(answer.status()).isEqualTo(200);
+        assertThat(answer.json().at("/data/__schema/queryType/name").asText()).isEqualTo("Query");
     }
 
     @Test
-    void introspection_noMutationType_whenNoTables() throws Exception {
-        mockMvc.perform(post("/test-proj/graphql")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(graphql("{ __schema { mutationType } }")))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.__schema.mutationType").doesNotExist());
+    @DisplayName("there is no mutation type when there are no tables")
+    void introspection_noMutationType_whenNoTables() {
+        HttpAnswer answer = graphql("{ __schema { mutationType } }");
+
+        assertThat(answer.status()).isEqualTo(200);
+        assertThat(answer.json().at("/data/__schema/mutationType").isMissingNode()
+                || answer.json().at("/data/__schema/mutationType").isNull()).isTrue();
     }
 
     @Test
-    void missingQuery_returnsBadRequest() throws Exception {
-        mockMvc.perform(post("/test-proj/graphql")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(mapper.writeValueAsString(Map.of("query", ""))))
-                .andExpect(status().isBadRequest());
+    @DisplayName("an empty query is a bad request")
+    void missingQuery_returnsBadRequest() {
+        assertThat(graphql("").status()).isEqualTo(400);
     }
 }

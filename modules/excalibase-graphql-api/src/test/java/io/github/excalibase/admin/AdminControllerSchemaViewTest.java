@@ -1,0 +1,198 @@
+package io.github.excalibase.admin;
+
+import io.github.excalibase.schema.ReservedSchemas;
+import io.github.excalibase.schema.SchemaInfo;
+import org.junit.jupiter.api.Test;
+
+import java.util.List;
+import java.util.Map;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+class AdminControllerSchemaViewTest {
+
+    private static SchemaInfo reflected() {
+        SchemaInfo info = new SchemaInfo();
+        table(info, "public.orders", "public", "id", "int4", "total", "numeric");
+        table(info, "public.t", "public", "id", "int4");
+        table(info, "excalibase_meta.t", "excalibase_meta", "id", "int4", "secret", "text");
+        table(info, "auth.users", "auth", "id", "int4", "password_hash", "text");
+        table(info, "excalibase.jobs", "excalibase", "id", "int4");
+        table(info, "internal.audit", "internal", "id", "int4");
+        info.addPrimaryKey("public.orders", "id");
+        info.addView("public.t");
+        info.addFunction("public.plain_items", function("public", "plain_items", "public.orders"));
+        info.addFunction("public.leak_meta", function("public", "leak_meta", "excalibase_meta.t"));
+        info.addFunction("public.meta_label", new SchemaInfo.FunctionInfo("public", "meta_label",
+                SchemaInfo.RoutineKind.FUNCTION, SchemaInfo.Volatility.STABLE, false, false, null,
+                List.of(new SchemaInfo.FunctionArg("row_", "excalibase_meta.t", "i", false)), 1));
+        info.addFunction("auth.helper", function("auth", "helper", "public.orders"));
+        info.addFunction("auth.read_users", function("auth", "read_users", "auth.users"));
+        info.addFunction("excalibase_meta.read_t", function("excalibase_meta", "read_t", "excalibase_meta.t"));
+        return info;
+    }
+
+    private static void table(SchemaInfo info, String key, String schema, String... columnsAndTypes) {
+        info.setTableSchema(key, schema);
+        for (int i = 0; i < columnsAndTypes.length; i += 2) {
+            info.addColumn(key, columnsAndTypes[i], columnsAndTypes[i + 1]);
+        }
+    }
+
+    private static SchemaInfo.FunctionInfo function(String schema, String name, String returnTable) {
+        return new SchemaInfo.FunctionInfo(schema, name, SchemaInfo.RoutineKind.FUNCTION, SchemaInfo.Volatility.STABLE,
+                false, true, returnTable, List.of(new SchemaInfo.FunctionArg("limit_", "int4", "i", false)), 1);
+    }
+
+    @SuppressWarnings("unchecked")
+    private static List<Map<String, Object>> list(Map<String, Object> view, String key) {
+        return (List<Map<String, Object>>) view.get(key);
+    }
+
+    @Test
+    void listsTheTablesWithTheirColumnsAndKeys() {
+        Map<String, Object> view = AdminController.schemaView(reflected(), ReservedSchemas.fromConfig(null));
+
+        Map<String, Object> orders = list(view, "tables").stream()
+                .filter(table -> "orders".equals(table.get("name"))).findFirst().orElseThrow();
+        assertThat(orders).containsEntry("schema", "public").containsEntry("kind", "table");
+        assertThat(list(orders, "columns")).extracting(column -> column.get("name")).containsExactly("id", "total");
+        assertThat(list(orders, "columns").getFirst()).containsEntry("type", "int4").containsEntry("primaryKey", true);
+        assertThat(list(orders, "columns").get(1)).containsEntry("primaryKey", false);
+    }
+
+    @Test
+    void marksViews() {
+        Map<String, Object> view = AdminController.schemaView(reflected(), ReservedSchemas.fromConfig(null));
+
+        assertThat(list(view, "tables")).anySatisfy(table -> assertThat(table)
+                .containsEntry("name", "t").containsEntry("kind", "view"));
+    }
+
+    @Test
+    void neverListsATableOfAReservedSchemaEvenIfReflectionHandedItOver() {
+        Map<String, Object> view = AdminController.schemaView(reflected(), ReservedSchemas.fromConfig(null));
+
+        assertThat(list(view, "tables")).extracting(table -> table.get("schema"))
+                .doesNotContain("excalibase_meta", "auth", "excalibase");
+        assertThat(view.toString()).doesNotContain("password_hash").doesNotContain("secret");
+    }
+
+    @Test
+    void neverListsAFunctionOfAReservedSchemaOrOneReturningOrTakingARowOfAReservedTable() {
+        Map<String, Object> view = AdminController.schemaView(reflected(), ReservedSchemas.fromConfig(null));
+
+        assertThat(list(view, "functions")).extracting(function -> function.get("name")).containsExactly("plain_items");
+    }
+
+    @Test
+    void aSchemaTheDeploymentReservesIsHiddenToo() {
+        Map<String, Object> view = AdminController.schemaView(reflected(), ReservedSchemas.fromConfig("internal"));
+
+        assertThat(list(view, "tables")).extracting(table -> table.get("schema")).doesNotContain("internal");
+    }
+
+    @Test
+    void anEmptySchemaIsAnEmptyView() {
+        Map<String, Object> view = AdminController.schemaView(new SchemaInfo(), ReservedSchemas.fromConfig(null));
+
+        assertThat(list(view, "tables")).isEmpty();
+        assertThat(list(view, "functions")).isEmpty();
+    }
+
+    @Test
+    void namesTheKeysAtBothEndsOfARelationship() {
+        SchemaInfo info = reflected();
+        table(info, "public.order_items", "public", "id", "int4", "order_id", "int4");
+        info.addForeignKey("public.order_items", "order_id", "public.orders", "id");
+
+        Map<String, Object> view = AdminController.schemaView(info, ReservedSchemas.fromConfig(null));
+
+        Map<String, Object> items = tableNamed(view, "order_items");
+        assertThat(list(items, "referencedBy")).isEmpty();
+        assertThat(list(items, "references")).singleElement().satisfies(link -> assertThat(link)
+                .containsEntry("schema", "public").containsEntry("table", "orders")
+                .containsEntry("columns", List.of("order_id")).containsEntry("referencedColumns", List.of("id")));
+        Map<String, Object> orders = tableNamed(view, "orders");
+        assertThat(list(orders, "referencedBy")).singleElement().satisfies(link -> assertThat(link)
+                .containsEntry("table", "order_items").containsEntry("columns", List.of("order_id"))
+                .containsEntry("referencedColumns", List.of("id")));
+        assertThat(list(orders, "references")).isEmpty();
+    }
+
+    @Test
+    void neverNamesATableOfAReservedSchemaThroughAKey() {
+        SchemaInfo info = reflected();
+        table(info, "public.sessions", "public", "id", "int4", "user_id", "int4");
+        info.addForeignKey("public.sessions", "user_id", "auth.users", "id");
+
+        Map<String, Object> view = AdminController.schemaView(info, ReservedSchemas.fromConfig(null));
+
+        assertThat(list(tableNamed(view, "sessions"), "references")).isEmpty();
+        assertThat(view.toString()).doesNotContain("auth.users");
+    }
+
+    @Test
+    void neverNamesATableOfAReservedSchemaThatPointsAtThisOne() {
+        SchemaInfo info = reflected();
+        table(info, "auth.sessions", "auth", "id", "int4", "order_id", "int4");
+        info.addForeignKey("auth.sessions", "order_id", "public.orders", "id");
+
+        Map<String, Object> view = AdminController.schemaView(info, ReservedSchemas.fromConfig(null));
+
+        assertThat(list(tableNamed(view, "orders"), "referencedBy")).isEmpty();
+        assertThat(view.toString()).doesNotContain("sessions");
+    }
+
+    @Test
+    void listsKeysBySchemaThenTableWhateverOrderTheyWereAdded() {
+        SchemaInfo info = reflected();
+        table(info, "public.order_items", "public", "id", "int4", "order_id", "int4");
+        table(info, "public.a_log", "public", "id", "int4", "order_id", "int4", "account_id", "int4");
+        table(info, "public.accounts", "public", "id", "int4");
+        table(info, "public.customers", "public", "id", "int4");
+        table(info, "billing.zebra", "billing", "id", "int4", "order_id", "int4");
+        info.addForeignKey("public.order_items", "order_id", "public.orders", "id");
+        info.addForeignKey("public.a_log", "order_id", "public.orders", "id");
+        info.addForeignKey("billing.zebra", "order_id", "public.orders", "id");
+        info.addForeignKey("public.orders", "total", "public.customers", "id");
+        info.addForeignKey("public.orders", "id", "public.accounts", "id");
+
+        Map<String, Object> view = AdminController.schemaView(info, ReservedSchemas.fromConfig(null));
+
+        Map<String, Object> orders = tableNamed(view, "orders");
+        assertThat(list(orders, "referencedBy")).extracting(link -> link.get("table")).containsExactly("zebra", "a_log", "order_items");
+        assertThat(list(orders, "references")).extracting(link -> link.get("table")).containsExactly("accounts", "customers");
+        assertThat(list(tableNamed(view, "customers"), "referencedBy")).extracting(link -> link.get("table")).containsExactly("orders");
+        assertThat(list(tableNamed(view, "customers"), "references")).isEmpty();
+    }
+
+    @Test
+    void readsATargetThatCarriesItsSchemaSeparately() {
+        SchemaInfo info = new SchemaInfo();
+        table(info, "shop.orders", "shop", "id", "int4", "customer_id", "int4");
+        table(info, "shop.customers", "shop", "id", "int4");
+        info.addForeignKey("shop.orders", "customer_id", "shop", "customers", "id");
+
+        Map<String, Object> view = AdminController.schemaView(info, ReservedSchemas.fromConfig(null));
+
+        assertThat(list(tableNamed(view, "orders"), "references")).singleElement().satisfies(link -> assertThat(link)
+                .containsEntry("schema", "shop").containsEntry("table", "customers"));
+    }
+
+    @Test
+    void neverNamesAReservedSchemaThatTheKeyCarriesSeparately() {
+        SchemaInfo info = reflected();
+        table(info, "public.sessions", "public", "id", "int4", "user_id", "int4");
+        info.addForeignKey("public.sessions", "user_id", "auth", "users", "id");
+
+        Map<String, Object> view = AdminController.schemaView(info, ReservedSchemas.fromConfig(null));
+
+        assertThat(list(tableNamed(view, "sessions"), "references")).isEmpty();
+        assertThat(view.toString()).doesNotContain("users");
+    }
+
+    private static Map<String, Object> tableNamed(Map<String, Object> view, String name) {
+        return list(view, "tables").stream().filter(table -> name.equals(table.get("name"))).findFirst().orElseThrow();
+    }
+}

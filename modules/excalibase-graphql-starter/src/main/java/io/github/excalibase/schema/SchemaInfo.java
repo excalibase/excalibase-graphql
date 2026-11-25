@@ -32,6 +32,7 @@ public class SchemaInfo {
     private final Map<String, ReverseFkInfo> reverseFks = new HashMap<>();
     // table.childFieldName → every key of that child table pointing at the table, which together decide the names
     private final Map<String, List<ReverseFkInfo>> reverseFkGroups = new HashMap<>();
+    private final Map<String, List<FkInfo>> compositeForwardGroups = new HashMap<>();
     // a role's relationships a nested insert may go through, keyed like the FKs above; unset = every FK
     private Map<String, ReverseFkInfo> arrayInsertRelationships;
     private Map<String, FkInfo> objectInsertRelationships;
@@ -46,6 +47,8 @@ public class SchemaInfo {
     private final Map<String, String> columnEnumType = new HashMap<>();
     // "table.column" of text columns the database can search by full text in place (a MySQL FULLTEXT index on it alone)
     private final Set<String> fullTextColumns = new HashSet<>();
+    // "table" → unique key name → its columns in key order (a MySQL unique index; the primary key is not listed)
+    private final Map<String, Map<String, List<String>>> uniqueKeys = new HashMap<>();
     // "table.column" of columns the database fills from a counter when an insert leaves them out (MySQL AUTO_INCREMENT)
     private final Set<String> autoIncrementColumns = new HashSet<>();
     // table → column → the database's own declaration, where the reported type loses detail (MySQL)
@@ -116,12 +119,14 @@ public class SchemaInfo {
         forwardFks.clear();
         reverseFks.clear();
         reverseFkGroups.clear();
+        compositeForwardGroups.clear();
         aliasSource = null;
         arrayInsertRelationships = null;
         objectInsertRelationships = null;
         enumTypes.clear();
         columnEnumType.clear();
         fullTextColumns.clear();
+        uniqueKeys.clear();
         autoIncrementColumns.clear();
         computedFields.clear();
         viewNames.clear();
@@ -185,25 +190,73 @@ public class SchemaInfo {
         autoIncrementColumns.add(table + "." + column);
     }
 
+    /** A unique key other than the primary key, by the name the database gives it; {@code columns} in key order. */
+    public void addUniqueKey(String table, String name, List<String> columns) {
+        uniqueKeys.computeIfAbsent(table, k -> new LinkedHashMap<>()).put(name, List.copyOf(columns));
+    }
+
+    /** The columns of {@code table}'s unique key {@code name}, or null when it has none by that name. */
+    public List<String> getUniqueKey(String table, String name) {
+        return uniqueKeys.getOrDefault(table, Map.of()).get(name);
+    }
+
+    /** {@code table}'s unique keys other than its primary key, by name. */
+    public Map<String, List<String>> getUniqueKeys(String table) {
+        return Collections.unmodifiableMap(uniqueKeys.getOrDefault(table, Map.of()));
+    }
+
     public void addFullTextColumn(String table, String column) {
         fullTextColumns.add(table + "." + column);
     }
 
     public void addForeignKey(String fromTable, String fromCol, String toTable, String toCol) {
+        addForeignKey(fromTable, fromCol, null, toTable, toCol);
+    }
+
+    /** As above, for a key whose target {@code toTable} is known to live in {@code toSchema}. */
+    public void addForeignKey(String fromTable, String fromCol, String toSchema, String toTable, String toCol) {
         relationshipAliases.set(null);
         String fwdFieldName = fkColumnFieldName(fromTable, fromCol);
         forwardFks.put(fromTable + "." + fwdFieldName,
-                new FkInfo(List.of(fromCol), toTable, List.of(toCol)));
+                new FkInfo(List.of(fromCol), toTable, List.of(toCol), toSchema));
         addReverseFk(toTable, new ReverseFkInfo(fromTable, List.of(fromCol), List.of(toCol)));
     }
 
     public void addCompositeForeignKey(String fromTable, List<String> fromCols,
                                  String toTable, List<String> toCols) {
+        addCompositeForeignKey(fromTable, fromCols, null, toTable, toCols);
+    }
+
+    /** As above, for a key whose target {@code toTable} is known to live in {@code toSchema}. */
+    public void addCompositeForeignKey(String fromTable, List<String> fromCols,
+                                 String toSchema, String toTable, List<String> toCols) {
         relationshipAliases.set(null);
-        String fwdFieldName = fkFieldName(toTable);
-        forwardFks.put(fromTable + "." + fwdFieldName,
-                new FkInfo(fromCols, toTable, toCols));
+        addCompositeForward(fromTable + "." + fkFieldName(toTable), new FkInfo(fromCols, toTable, toCols, toSchema));
         addReverseFk(toTable, new ReverseFkInfo(fromTable, fromCols, toCols));
+    }
+
+    /**
+     * A composite key is named after its target table; when several composite keys of one table point at the same
+     * table, every one of them is also named after its key columns, so none replaces another. The names depend only
+     * on which keys exist, never on the order they are added in.
+     */
+    private void addCompositeForward(String baseKey, FkInfo key) {
+        List<FkInfo> group = compositeForwardGroups.computeIfAbsent(baseKey, k -> new ArrayList<>());
+        if (group.contains(key)) {
+            return;
+        }
+        group.forEach(member -> forwardFks.remove(compositeForwardKey(baseKey, member, group.size() > 1)));
+        group.add(key);
+        group.forEach(member -> forwardFks.put(compositeForwardKey(baseKey, member, group.size() > 1), member));
+    }
+
+    private static String compositeForwardKey(String baseKey, FkInfo key, boolean shared) {
+        if (!shared) {
+            return baseKey;
+        }
+        StringBuilder named = new StringBuilder(baseKey);
+        key.fkColumns().forEach(column -> named.append(NamingUtils.capitalize(NamingUtils.toLowerCamelCase(column))));
+        return named.toString();
     }
 
     /**
@@ -436,7 +489,15 @@ public class SchemaInfo {
     /** Read-only snapshot of all installed extensions (extname → extversion). */
     public Map<String, String> getExtensions() { return Collections.unmodifiableMap(extensions); }
 
-    public record FkInfo(List<String> fkColumns, String refTable, List<String> refColumns) {
+    /**
+     * A key's target. {@code refSchema} is set only by a loader that reads a whole database at once, where
+     * the key may name a schema other than its own; it is null once the schemas are merged and
+     * {@code refTable} is the qualified name.
+     */
+    public record FkInfo(List<String> fkColumns, String refTable, List<String> refColumns, String refSchema) {
+        public FkInfo(List<String> fkColumns, String refTable, List<String> refColumns) {
+            this(fkColumns, refTable, refColumns, null);
+        }
         /** Convenience for single-column FK */
         public String fkColumn() { return fkColumns.get(0); }
         public String refColumn() { return refColumns.get(0); }

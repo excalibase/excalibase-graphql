@@ -1,5 +1,7 @@
 package io.github.excalibase.security;
 
+import io.github.excalibase.admin.AdminGuard;
+
 import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.Map;
@@ -15,6 +17,8 @@ public final class RoleResolver {
     public static final String ROLE_HEADER = "X-Excalibase-Role";
 
     private static final String ROLE_HEADER_KEY = ROLE_HEADER.toLowerCase(Locale.ROOT);
+    /** The admin secret is for the admin port only; on any other it must not even travel on as a session variable. */
+    private static final String ADMIN_SECRET_HEADER_KEY = AdminGuard.SECRET_HEADER.toLowerCase(Locale.ROOT);
 
     private RoleResolver() {
     }
@@ -74,7 +78,7 @@ public final class RoleResolver {
             headers.forEach((name, value) -> {
                 String lowerName = name.toLowerCase(Locale.ROOT);
                 if (lowerName.startsWith(Principal.SESSION_VARIABLE_PREFIX) && !lowerName.equals(ROLE_HEADER_KEY)
-                        && value != null) {
+                        && !lowerName.equals(ADMIN_SECRET_HEADER_KEY) && value != null) {
                     sessionHeaders.put(lowerName, value);
                 }
             });

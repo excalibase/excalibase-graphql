@@ -55,6 +55,21 @@ curl -X POST "https://api.example.com/api/v1/products?on_conflict=sku" \
   -d '{"sku": "E-5", "name": "Cola Zero"}'
 ```
 
+**Ignore duplicates** — `Prefer: resolution=ignore-duplicates` inserts the rows whose key is new and leaves the
+rest as they are (`ON CONFLICT DO NOTHING`). With `return=representation` only the rows actually inserted come back.
+It targets the primary key, or the columns named by `on_conflict`, so a clash on any other unique key is still a
+`409`. A table with no primary key needs `on_conflict` on MySQL (`400` otherwise).
+
+**Bulk resolution** — both preferences work on an array. `merge-duplicates` updates the rows that exist and inserts
+the rest in one transaction, answering every row written; a row that fails rolls the whole request back.
+`Preference-Applied` lists the resolution that was honoured. Sending both resolutions, merging on a table with no
+primary key and no `on_conflict`, or naming the same key twice in one merge is a `400`.
+
+**All objects in an array must have the same keys.** An array whose objects differ gets `400 All object keys must
+match` (as PostgREST does). Earlier versions filled a missing key with `NULL`, which on a merge would have wiped the
+existing value, so this is a breaking change for clients that sent ragged arrays: send every key in every object. An
+array of anything but objects is also a `400`. The PostgREST `columns=` parameter is not supported.
+
 **Dry run** — `Prefer: tx=rollback` executes the statement and returns the
 result but rolls back the transaction. Useful for testing write paths:
 
@@ -170,6 +185,9 @@ See [Functions](../features/functions.md).
 | `403` | `permission_check_failed` | A written row does not pass the role's permission `check` |
 | `404` | — | Missing `Accept-Profile` / `Content-Profile` header in multi-schema mode, or unknown table |
 | `409` | `unique_violation` | Primary key or unique constraint violation without `Prefer: resolution=merge-duplicates` (`constraint` names it) |
+| `500` | `commit_unknown` | The connection was lost while committing: the write may or may not have been applied. Do not retry blindly; read the data first |
+| `503` | `project_unavailable` | The project's database cannot be reached (down, restarting, or a pause not yet reported). Nothing was written: retry later |
+| `503` | `project_paused` | The project is paused. Retry later, after it is resumed |
 | `500` | `internal_error` | A fault on the server's side; the body says nothing more and the cause is logged |
 
 Errors return a JSON body with a stable `code`, a `message`, the same text in

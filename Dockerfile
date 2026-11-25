@@ -1,12 +1,10 @@
-# The jar is unpacked once at build time: the JVM then reads plain jar files from disk instead of
-# searching a jar nested inside a jar on every start, which is slow on a small CPU allowance.
-FROM eclipse-temurin:25-jre-alpine AS extract
-WORKDIR /build
-COPY modules/excalibase-graphql-api/target/*.jar ./
-# target/ can also hold the -javadoc and -sources jars; extract the application jar only.
-RUN rm -f *-javadoc.jar *-sources.jar && mv *.jar app.jar && java -Djarmode=tools -jar app.jar extract --destination /app
+# ENGINE picks the image: "all" (default) carries every database plugin, "postgres", "mysql" or "sqlite" carries one (EXC-799).
+#   docker build .                          the all-in-one image
+#   docker build --build-arg ENGINE=mysql . the MySQL-only image (sqlite: the SQLite-only image)
+# The slim jars come from `mvn -Pslim-<engine> package`; the all-in-one jar from a plain `mvn package`.
+ARG ENGINE=all
 
-FROM eclipse-temurin:25-jre-alpine
+FROM eclipse-temurin:25-jre-alpine AS runtime
 
 # Non-root runtime user so the pod can run under runAsNonRoot (SEC-H4). The
 # app listens on a non-privileged port and only writes to /tmp.
@@ -15,15 +13,39 @@ RUN apk upgrade --no-cache && apk add --no-cache curl \
 
 VOLUME /tmp
 
-COPY --from=extract /app/ /app/
+FROM runtime AS engine-all
+ADD /modules/excalibase-graphql-api/target/excalibase-graphql-api-0.0.1-SNAPSHOT.jar /app.jar
+
+# A slim image names its own database, so it needs no APP_DATABASE_TYPE or driver setting.
+FROM runtime AS engine-postgres
+ADD /modules/excalibase-graphql-api/target/excalibase-graphql-api-0.0.1-SNAPSHOT-postgres.jar /app.jar
+ENV APP_DATABASE_TYPE=postgres \
+    SPRING_DATASOURCE_DRIVER_CLASS_NAME=org.postgresql.Driver
+
+FROM runtime AS engine-mysql
+ADD /modules/excalibase-graphql-api/target/excalibase-graphql-api-0.0.1-SNAPSHOT-mysql.jar /app.jar
+ENV APP_DATABASE_TYPE=mysql \
+    SPRING_DATASOURCE_DRIVER_CLASS_NAME=com.mysql.cj.jdbc.Driver
+
+# A SQLite database is a file: mount a volume at /data and point SPRING_DATASOURCE_URL at jdbc:sqlite:/data/<file>.
+FROM runtime AS engine-sqlite
+ADD /modules/excalibase-graphql-api/target/excalibase-graphql-api-0.0.1-SNAPSHOT-sqlite.jar /app.jar
+RUN mkdir /data && chown app:app /data
+VOLUME /data
+ENV APP_DATABASE_TYPE=sqlite \
+    SPRING_DATASOURCE_DRIVER_CLASS_NAME=org.sqlite.JDBC
+
+FROM engine-${ENGINE}
 
 USER app
 
-ENV JAVA_OPTS="-XX:+UseG1GC \
+# --enable-native-access: the SQLite driver loads a native library (JAVA_TOOL_OPTIONS would print a line to stderr).
+ENV JAVA_OPTS="--enable-native-access=ALL-UNNAMED \
+               -XX:+UseG1GC \
                -XX:InitialRAMPercentage=25.0 \
                -XX:MaxRAMPercentage=60.0 \
                -XX:MinRAMPercentage=25.0 \
                -XX:MaxMetaspaceSize=256m \
                -XX:+UseContainerSupport"
 
-ENTRYPOINT ["sh", "-c", "java $JAVA_OPTS -jar /app/app.jar"]
+ENTRYPOINT ["sh", "-c", "java $JAVA_OPTS -jar /app.jar"]

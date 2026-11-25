@@ -1,5 +1,8 @@
 package io.github.excalibase;
 
+import io.github.excalibase.support.EngineIntegrationTest;
+import io.github.excalibase.support.EngineProperties;
+import io.github.excalibase.support.HttpAnswer;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.nimbusds.jose.JWSAlgorithm;
 import com.nimbusds.jose.JWSHeader;
@@ -9,20 +12,9 @@ import com.nimbusds.jwt.SignedJWT;
 import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
-import org.springframework.test.web.servlet.MockMvc;
-import org.springframework.test.web.servlet.ResultActions;
-import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 import org.testcontainers.containers.MySQLContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
@@ -42,31 +34,26 @@ import static org.hamcrest.Matchers.contains;
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.nullValue;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import static io.github.excalibase.support.Expect.jsonPath;
+import static io.github.excalibase.support.Expect.status;
 
 /**
  * A MySQL project with permissions on (EXC-618): the engine starts with a permission source and every
  * read and write is guarded as on Postgres. Writes on MySQL have no RETURNING, so the rows a mutation
  * writes are locked and keyed first; checks, presets and the select filter then apply to exactly those.
  */
-@SpringBootTest
-@AutoConfigureMockMvc
-@Testcontainers
-class MysqlPermissionsIntegrationTest {
+class MysqlPermissionsIntegrationTest extends EngineIntegrationTest {
 
     private static final String ALICE = "11111111-1111-1111-1111-111111111111";
     private static final String BOB = "22222222-2222-2222-2222-222222222222";
     private static final String PROJECT = "proj-mysql";
     private static final String ROLE = "app_authenticated";
     private static final String NOT_LOCKED = "{\"status\":{\"_neq\":\"locked\"}}";
+    /** The update check is stricter than the insert check: a row may be inserted frozen, never updated into it. */
+    private static final String NOT_LOCKED_OR_FROZEN =
+            "{\"_and\":[{\"status\":{\"_neq\":\"locked\"}},{\"status\":{\"_neq\":\"frozen\"}}]}";
 
-    @Container
-    static MySQLContainer<?> mysql = new MySQLContainer<>("mysql:8.4").withInitScript("init-mysql-permissions.sql");
+    static final MySQLContainer<?> mysql = new MySQLContainer<>("mysql:8.4").withInitScript("init-mysql-permissions.sql");
 
     private static final ECPrivateKey PRIVATE_KEY;
     private static final HttpServer CONTROL_PLANE;
@@ -98,23 +85,25 @@ class MysqlPermissionsIntegrationTest {
         CONTROL_PLANE.stop(0);
     }
 
-    @DynamicPropertySource
-    static void properties(DynamicPropertyRegistry registry) {
-        registry.add("spring.datasource.url", mysql::getJdbcUrl);
-        registry.add("spring.datasource.username", mysql::getUsername);
-        registry.add("spring.datasource.password", mysql::getPassword);
-        registry.add("spring.datasource.driver-class-name", () -> "com.mysql.cj.jdbc.Driver");
-        registry.add("app.database-type", () -> "mysql");
-        registry.add("app.max-rows", () -> 30);
-        registry.add("app.project-id", () -> PROJECT);
-        registry.add("app.security.jwt-enabled", () -> "true");
-        registry.add("app.security.auth.jwks-url",
-                () -> "http://localhost:" + CONTROL_PLANE.getAddress().getPort() + "/.well-known/jwks.json");
-        registry.add("app.security.rls.policy-url",
-                () -> "http://localhost:" + CONTROL_PLANE.getAddress().getPort() + "/api");
-        registry.add("app.security.rls.policy-pat", () -> "test-pat");
-        registry.add("app.security.rls.policy-ttl-ms", () -> 0);
+    @Override
+    public Map<String, String> getProperties() {
+        mysql.start();
+        Map<String, String> properties = EngineProperties.isolated();
+        properties.put("spring.datasource.url", mysql.getJdbcUrl());
+        properties.put("spring.datasource.username", mysql.getUsername());
+        properties.put("spring.datasource.password", mysql.getPassword());
+        properties.put("spring.datasource.driver-class-name", "com.mysql.cj.jdbc.Driver");
+        properties.put("app.database-type", "mysql");
+        properties.put("app.max-rows", String.valueOf(30));
+        properties.put("app.project-id", String.valueOf(PROJECT));
+        properties.put("app.security.jwt-enabled", "true");
+        properties.put("app.security.auth.jwks-url", String.valueOf("http://localhost:" + CONTROL_PLANE.getAddress().getPort() + "/.well-known/jwks.json"));
+        properties.put("app.security.rls.policy-url", String.valueOf("http://localhost:" + CONTROL_PLANE.getAddress().getPort() + "/api"));
+        properties.put("app.security.rls.policy-pat", "test-pat");
+        properties.put("app.security.rls.policy-ttl-ms", String.valueOf(0));
+        return properties;
     }
+
 
     /** Studio and the MySQL loader name a table {@code <database>.<table>}: the database is its schema. */
     private static String table(String name) {
@@ -140,7 +129,7 @@ class MysqlPermissionsIntegrationTest {
                 PermissionDocs.entry(table("notes"), ROLE, PermissionDocs.select(readable, "\"*\""),
                         PermissionDocs.insert(NOT_LOCKED, "[\"id\",\"title\",\"status\",\"pinned\"]",
                                 "{\"owner_id\":\"X-Excalibase-User-Id\"}"),
-                        PermissionDocs.update(OWNED, NOT_LOCKED, "[\"id\",\"title\",\"status\"]", "{}"),
+                        PermissionDocs.update(OWNED, NOT_LOCKED_OR_FROZEN, "[\"id\",\"title\",\"status\"]", "{}"),
                         PermissionDocs.delete(OWNED)),
                 PermissionDocs.entry(table("tags"), ROLE, PermissionDocs.everything()),
                 PermissionDocs.entry(table("stamps"), ROLE, PermissionDocs.everything()),
@@ -163,9 +152,6 @@ class MysqlPermissionsIntegrationTest {
                         PermissionDocs.delete("{\"X-Excalibase-Aal\":{\"_in\":[\"aal2\"]}}")));
     }
 
-    @Autowired
-    private MockMvc mockMvc;
-
     private final ObjectMapper mapper = new ObjectMapper();
 
     private JdbcTemplate database() {
@@ -173,41 +159,38 @@ class MysqlPermissionsIntegrationTest {
                 mysql.getPassword()));
     }
 
-    private ResultActions as(String userId, String operation) throws Exception {
-        return mockMvc.perform(post("/" + PROJECT + "/graphql")
-                .header("Authorization", "Bearer " + jwt(userId))
-                .contentType(MediaType.APPLICATION_JSON)
-                .content(mapper.writeValueAsString(Map.of("query", operation))));
+    private HttpAnswer as(String userId, String operation) throws Exception {
+        return http.post("/" + PROJECT + "/graphql", mapper.writeValueAsString(Map.of("query", operation)), "Authorization", "Bearer " + jwt(userId), "Content-Type", "application/json");
     }
 
     @Test
     void select_readsOnlyTheRowsTheFilterKeeps() throws Exception {
         as(ALICE, "{ testNotes(where: { id: { in: [1, 2, 3] } }) { id title } }")
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.testNotes[*].title", contains("alice-1")));
+                .expect(status().isOk())
+                .expect(jsonPath("$.data.testNotes[*].title", contains("alice-1")));
     }
 
     @Test
     void insert_presetsTheOwner_andAnswersTheWrittenRow() throws Exception {
         as(ALICE, "mutation { createTestNotes(input: { title: \"preset\", pinned: true }) { title owner_id pinned } }")
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.createTestNotes.title").value("preset"))
-                .andExpect(jsonPath("$.data.createTestNotes.owner_id").value(ALICE));
+                .expect(status().isOk())
+                .expect(jsonPath("$.data.createTestNotes.title").value("preset"))
+                .expect(jsonPath("$.data.createTestNotes.owner_id").value(ALICE));
     }
 
     @Test
     void insert_failingItsCheck_isRefused_andWritesNothing() throws Exception {
         as(ALICE, "mutation { createTestNotes(input: { title: \"locked-insert\", status: \"locked\" }) { id } }")
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.errors[0].extensions.code").value("permission_check_failed"));
+                .expect(status().isOk())
+                .expect(jsonPath("$.errors[0].extensions.code").value("permission_check_failed"));
         assertThat(count("title = 'locked-insert'")).isZero();
     }
 
     @Test
     void insert_ofARowTheRoleCannotRead_answersNull_butIsWritten() throws Exception {
         as(ALICE, "mutation { createTestNotes(input: { title: \"hidden-insert\", status: \"hidden\" }) { id } }")
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.createTestNotes").value(nullValue()));
+                .expect(status().isOk())
+                .expect(jsonPath("$.data.createTestNotes").value(nullValue()));
         assertThat(count("title = 'hidden-insert'")).isOne();
     }
 
@@ -215,7 +198,7 @@ class MysqlPermissionsIntegrationTest {
     void createMany_withOneRowFailingItsCheck_writesNoRow() throws Exception {
         as(ALICE, "mutation { createManyTestNotes(inputs: [{ title: \"many-1\" },"
                 + " { title: \"many-2\", status: \"locked\" }]) { id } }")
-                .andExpect(jsonPath("$.errors[0].extensions.code").value("permission_check_failed"));
+                .expect(jsonPath("$.errors[0].extensions.code").value("permission_check_failed"));
         assertThat(count("title IN ('many-1', 'many-2')")).isZero();
     }
 
@@ -223,17 +206,17 @@ class MysqlPermissionsIntegrationTest {
     void createMany_answersOnlyTheRowsTheRoleCanRead() throws Exception {
         as(ALICE, "mutation { createManyTestNotes(inputs: [{ title: \"read-1\" },"
                 + " { title: \"read-2\", status: \"hidden\" }]) { title owner_id } }")
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.createManyTestNotes[*].title", contains("read-1")))
-                .andExpect(jsonPath("$.data.createManyTestNotes[0].owner_id").value(ALICE));
+                .expect(status().isOk())
+                .expect(jsonPath("$.data.createManyTestNotes[*].title", contains("read-1")))
+                .expect(jsonPath("$.data.createManyTestNotes[0].owner_id").value(ALICE));
         assertThat(count("title IN ('read-1', 'read-2') AND owner_id = '" + ALICE + "'")).isEqualTo(2);
     }
 
     @Test
     void update_ofAnotherOwnersRow_changesNothing() throws Exception {
         as(ALICE, "mutation { updateTestNotes(where: { id: { eq: 2 } }, input: { title: \"hacked\" }) { id } }")
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.updateTestNotes", hasSize(0)));
+                .expect(status().isOk())
+                .expect(jsonPath("$.data.updateTestNotes", hasSize(0)));
         assertThat(count("id = 2 AND title = 'bob-1'")).isOne();
     }
 
@@ -242,7 +225,7 @@ class MysqlPermissionsIntegrationTest {
         insertNote(50, ALICE, "check-me", "open");
 
         as(ALICE, "mutation { updateTestNotes(where: { id: { eq: 50 } }, input: { status: \"locked\" }) { id } }")
-                .andExpect(jsonPath("$.errors[0].extensions.code").value("permission_check_failed"));
+                .expect(jsonPath("$.errors[0].extensions.code").value("permission_check_failed"));
         assertThat(count("id = 50 AND status = 'open'")).isOne();
     }
 
@@ -252,11 +235,11 @@ class MysqlPermissionsIntegrationTest {
         insertNote(61, ALICE, "to-rename", "open");
 
         as(ALICE, "mutation { updateTestNotes(where: { id: { in: [60, 61] } }, input: { status: \"hidden\" }) { id } }")
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.updateTestNotes", hasSize(0)));
+                .expect(status().isOk())
+                .expect(jsonPath("$.data.updateTestNotes", hasSize(0)));
         assertThat(count("id IN (60, 61) AND status = 'hidden'")).isEqualTo(2);
         as(ALICE, "mutation { updateTestNotes(where: { id: { eq: 61 } }, input: { status: \"open\" }) { id } }")
-                .andExpect(jsonPath("$.data.updateTestNotes", hasSize(0)));
+                .expect(jsonPath("$.data.updateTestNotes", hasSize(0)));
         assertThat(count("id = 61 AND status = 'hidden'")).isOne();
     }
 
@@ -265,8 +248,8 @@ class MysqlPermissionsIntegrationTest {
         insertNote(65, ALICE, "keyed", "open");
 
         as(ALICE, "mutation { updateTestNotes(where: { id: { eq: 65 } }, input: { id: 66 }) { id title } }")
-                .andExpect(jsonPath("$.data.updateTestNotes[0].id").value(66))
-                .andExpect(jsonPath("$.data.updateTestNotes[0].title").value("keyed"));
+                .expect(jsonPath("$.data.updateTestNotes[0].id").value(66))
+                .expect(jsonPath("$.data.updateTestNotes[0].title").value("keyed"));
         assertThat(count("id = 65")).isZero();
     }
 
@@ -276,43 +259,96 @@ class MysqlPermissionsIntegrationTest {
         insertNote(71, BOB, "theirs", "open");
 
         as(ALICE, "mutation { deleteTestNotes(where: { id: { in: [70, 71] } }) { id title } }")
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.deleteTestNotes[*].title", contains("mine")));
+                .expect(status().isOk())
+                .expect(jsonPath("$.data.deleteTestNotes[*].title", contains("mine")));
         assertThat(count("id = 70")).isZero();
         assertThat(count("id = 71")).isOne();
     }
 
     @Test
-    void onConflict_isRefusedLoudly_neverIgnored() throws Exception {
+    void onConflict_insertsThenOverwritesTheNamedColumns() throws Exception {
         as(ALICE, "mutation { createTestTags(input: { code: \"dup\", label: \"a\" },"
+                + " onConflict: { constraint: \"PRIMARY\", update_columns: [label] }) { code label } }")
+                .expect(jsonPath("$.data.createTestTags.label").value("a"));
+        as(ALICE, "mutation { createTestTags(input: { code: \"dup\", label: \"b\" },"
+                + " onConflict: { constraint: \"PRIMARY\", update_columns: [label] }) { code label } }")
+                .expect(jsonPath("$.data.createTestTags.label").value("b"));
+        assertThat(database().queryForObject("SELECT count(*) FROM tags WHERE code = 'dup'", Integer.class)).isOne();
+        assertThat(database().queryForObject("SELECT label FROM tags WHERE code = 'dup'", String.class)).isEqualTo("b");
+    }
+
+    @Test
+    void onConflict_neverOverwritesARowTheUpdateFilterHides() throws Exception {
+        insertNote(185, BOB, "bobs", "open");
+        insertNote(186, ALICE, "alices", "open");
+
+        as(ALICE, "mutation { createTestNotes(input: { id: 185, title: \"hijacked\" },"
+                + " onConflict: { constraint: \"PRIMARY\", update_columns: [title] }) { id } }")
+                .expect(status().isOk());
+        as(ALICE, "mutation { createTestNotes(input: { id: 186, title: \"renamed\" },"
+                + " onConflict: { constraint: \"PRIMARY\", update_columns: [title] }) { id title } }")
+                .expect(jsonPath("$.data.createTestNotes.title").value("renamed"));
+        assertThat(count("id = 185 AND title = 'bobs' AND owner_id = '" + BOB + "'")).isOne();
+        assertThat(count("id = 186 AND title = 'renamed'")).isOne();
+    }
+
+    @Test
+    void onConflict_onANamedUniqueIndex_updatesTheRowHoldingIt_andRefusesAnUnknownConstraint() throws Exception {
+        database().update("INSERT INTO profiles (id, owner_id, org_id, slot, title) VALUES (500, ?, 7, 'main', 'orig')",
+                ALICE);
+        as(ALICE, "mutation { createTestProfiles(input: { id: 999, org_id: 7, slot: \"main\", title: \"merged\" },"
+                + " onConflict: { constraint: \"profiles_org_slot\", update_columns: [title] }) { id title } }")
+                .expect(status().isOk());
+        assertThat(database().queryForObject("SELECT title FROM profiles WHERE id = 500", String.class)).isEqualTo("merged");
+        assertThat(database().queryForObject("SELECT count(*) FROM profiles WHERE id = 999", Integer.class)).isZero();
+
+        as(ALICE, "mutation { createTestProfiles(input: { id: 998, org_id: 7, slot: \"main\", title: \"x\" },"
+                + " onConflict: { constraint: \"profiles_pkey\", update_columns: [title] }) { id } }")
+                .expect(jsonPath("$.errors[0].message", containsString("Unknown constraint 'profiles_pkey'")));
+    }
+
+    @Test
+    void onConflict_namingAColumnNotInTheInput_isRefused() throws Exception {
+        as(ALICE, "mutation { createTestTags(input: { code: \"nc\" },"
                 + " onConflict: { constraint: \"PRIMARY\", update_columns: [label] }) { code } }")
-                .andExpect(jsonPath("$.errors[0].message", containsString("onConflict")));
-        assertThat(database().queryForObject("SELECT count(*) FROM tags WHERE code = 'dup'", Integer.class)).isZero();
+                .expect(jsonPath("$.errors[0].message", containsString("'label' is not in the input")));
+        assertThat(database().queryForObject("SELECT count(*) FROM tags WHERE code = 'nc'", Integer.class)).isZero();
+    }
+
+    @Test
+    void aUserFilterNeverWidensThePermissionFilter() throws Exception {
+        insertNote(190, ALICE, "mine-regex", "open");
+        insertNote(191, BOB, "theirs-regex", "open");
+
+        as(ALICE, "{ testNotes(where: { title: { regex: \"regex$\" } }) { id } }")
+                .expect(jsonPath("$.data.testNotes[*].id", contains(190)));
+        as(ALICE, "{ testNotes(where: { title: { iregex: \"^THEIRS\" } }) { id } }")
+                .expect(jsonPath("$.data.testNotes", hasSize(0)));
     }
 
     @Test
     void everyMutationFieldRuns_inOrder() throws Exception {
         as(ALICE, "mutation { first: createTestTags(input: { code: \"t1\", label: \"one\" }) { code }"
                 + " second: createTestTags(input: { code: \"t2\", label: \"two\" }) { code label } }")
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.first.code").value("t1"))
-                .andExpect(jsonPath("$.data.second.label").value("two"));
+                .expect(status().isOk())
+                .expect(jsonPath("$.data.first.code").value("t1"))
+                .expect(jsonPath("$.data.second.label").value("two"));
     }
 
     @Test
     void insert_whoseKeyIsNeitherSuppliedNorGenerated_failsLoudly() throws Exception {
         as(ALICE, "mutation { createTestStamps(input: { label: \"s\" }) { id } }")
-                .andExpect(jsonPath("$.errors", hasSize(1)));
+                .expect(jsonPath("$.errors", hasSize(1)));
         assertThat(database().queryForObject("SELECT count(*) FROM stamps", Integer.class)).isZero();
     }
 
     @Test
     void insertOnly_answersTheCount_andStillChecksEveryRow() throws Exception {
         as(ALICE, "mutation { createManyTestFeedback(inputs: [{ body: \"nice\" }, { body: \"fine\" }]) { affected_rows } }")
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data.createManyTestFeedback.affected_rows").value(2));
+                .expect(status().isOk())
+                .expect(jsonPath("$.data.createManyTestFeedback.affected_rows").value(2));
         as(ALICE, "mutation { createTestFeedback(input: { body: \"spam\" }) { affected_rows } }")
-                .andExpect(jsonPath("$.errors[0].extensions.code").value("permission_check_failed"));
+                .expect(jsonPath("$.errors[0].extensions.code").value("permission_check_failed"));
         assertThat(database().queryForObject("SELECT count(*) FROM feedback WHERE body = 'spam'", Integer.class)).isZero();
     }
 
@@ -325,7 +361,7 @@ class MysqlPermissionsIntegrationTest {
     @Test
     void aKeyMysqlStoresDifferently_neverSkipsTheCheck() throws Exception {
         as(ALICE, "mutation { createTestNotes(input: { id: 0, title: \"zero\", status: \"locked\" }) { id } }")
-                .andExpect(jsonPath("$.errors", hasSize(1)));
+                .expect(jsonPath("$.errors", hasSize(1)));
         assertThat(count("title = 'zero'")).isZero();
     }
 
@@ -333,30 +369,38 @@ class MysqlPermissionsIntegrationTest {
     void eachFieldsCheck_runsOverItsOwnRows() throws Exception {
         as(ALICE, "mutation { a: createTestCounters(input: {}) { id }"
                 + " b: createTestNotes(input: { id: 500, title: \"collide\", status: \"locked\" }) { id } }")
-                .andExpect(jsonPath("$.errors[0].extensions.code").value("permission_check_failed"));
+                .expect(jsonPath("$.errors[0].extensions.code").value("permission_check_failed"));
         assertThat(count("id = 500")).isZero();
     }
 
     @Test
     void aGeneratedValueThatIsNotTheKey_isRefused() throws Exception {
         as(ALICE, "mutation { createTestSequenced(input: { label: \"s\" }) { code } }")
-                .andExpect(jsonPath("$.errors[0].message", containsString("AUTO_INCREMENT")));
+                .expect(jsonPath("$.errors[0].message", containsString("AUTO_INCREMENT")));
         assertThat(database().queryForObject("SELECT count(*) FROM sequenced", Integer.class)).isZero();
     }
 
-    private ResultActions rest(String userId, MockHttpServletRequestBuilder request, String body) throws Exception {
-        return mockMvc.perform(request.header("Authorization", "Bearer " + jwt(userId))
-                .header("Prefer", "return=representation").contentType(MediaType.APPLICATION_JSON).content(body));
+    private HttpAnswer rest(String userId, String method, String path, String body) throws Exception {
+        return send(userId, method, path, "return=representation", body);
+    }
+
+    private HttpAnswer upsert(String userId, String path, String body) throws Exception {
+        return send(userId, "POST", path, "return=representation, resolution=merge-duplicates", body);
+    }
+
+    private HttpAnswer send(String userId, String method, String path, String prefer, String body) throws Exception {
+        return http.send(method, path, body, "Authorization", "Bearer " + jwt(userId),
+                "Prefer", prefer, "Content-Type", "application/json");
     }
 
     @Test
     void restInsert_presetsTheOwner_andFailsItsCheckLoudly() throws Exception {
-        rest(ALICE, post("/" + PROJECT + "/api/v1/notes"), "{\"title\":\"rest-ok\"}")
-                .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.data.owner_id").value(ALICE));
-        rest(ALICE, post("/" + PROJECT + "/api/v1/notes"), "{\"title\":\"rest-locked\",\"status\":\"locked\"}")
-                .andExpect(status().isForbidden())
-                .andExpect(jsonPath("$.code").value("permission_check_failed"));
+        rest(ALICE, "POST", "/" + PROJECT + "/api/v1/notes", "{\"title\":\"rest-ok\"}")
+                .expect(status().isCreated())
+                .expect(jsonPath("$.data.owner_id").value(ALICE));
+        rest(ALICE, "POST", "/" + PROJECT + "/api/v1/notes", "{\"title\":\"rest-locked\",\"status\":\"locked\"}")
+                .expect(status().isForbidden())
+                .expect(jsonPath("$.code").value("permission_check_failed"));
         assertThat(count("title = 'rest-locked'")).isZero();
     }
 
@@ -364,8 +408,8 @@ class MysqlPermissionsIntegrationTest {
     void restUpdate_failingItsCheck_rollsBack() throws Exception {
         insertNote(80, ALICE, "rest-check", "open");
 
-        rest(ALICE, patch("/" + PROJECT + "/api/v1/notes?id=eq.80"), "{\"status\":\"locked\"}")
-                .andExpect(status().isForbidden());
+        rest(ALICE, "PATCH", "/" + PROJECT + "/api/v1/notes?id=eq.80", "{\"status\":\"locked\"}")
+                .expect(status().isForbidden());
         assertThat(count("id = 80 AND status = 'open'")).isOne();
     }
 
@@ -374,9 +418,9 @@ class MysqlPermissionsIntegrationTest {
         insertNote(90, ALICE, "rest-mine", "open");
         insertNote(91, BOB, "rest-theirs", "open");
 
-        rest(ALICE, delete("/" + PROJECT + "/api/v1/notes?id=in.(90,91)"), "")
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data[*].title", contains("rest-mine")));
+        rest(ALICE, "DELETE", "/" + PROJECT + "/api/v1/notes?id=in.(90,91)", "")
+                .expect(status().isOk())
+                .expect(jsonPath("$.data[*].title", contains("rest-mine")));
         assertThat(count("id = 90")).isZero();
         assertThat(count("id = 91")).isOne();
     }
@@ -386,59 +430,99 @@ class MysqlPermissionsIntegrationTest {
         insertNote(85, BOB, "bobs", "open");
         insertNote(86, ALICE, "alices", "open");
 
-        rest(ALICE, post("/" + PROJECT + "/api/v1/notes").header("Prefer", "resolution=merge-duplicates"),
+        upsert(ALICE, "/" + PROJECT + "/api/v1/notes",
                 "{\"id\":85,\"title\":\"hijacked\"}")
-                .andExpect(status().is2xxSuccessful());
-        rest(ALICE, post("/" + PROJECT + "/api/v1/notes").header("Prefer", "resolution=merge-duplicates"),
+                .expect(status().is2xxSuccessful());
+        upsert(ALICE, "/" + PROJECT + "/api/v1/notes",
                 "{\"id\":86,\"title\":\"renamed\"}")
-                .andExpect(status().is2xxSuccessful());
+                .expect(status().is2xxSuccessful());
         assertThat(count("id = 85 AND title = 'bobs' AND owner_id = '" + BOB + "'")).isOne();
         assertThat(count("id = 86 AND title = 'renamed'")).isOne();
     }
 
     @Test
+    void restBulkMerge_neverOverwritesARowTheUpdateFilterHides_andRollsBackWhenACheckFails() throws Exception {
+        insertNote(95, BOB, "bobs", "open");
+        insertNote(96, ALICE, "alices", "open");
+
+        upsert(ALICE, "/" + PROJECT + "/api/v1/notes",
+                "[{\"id\":95,\"title\":\"hijacked\"},{\"id\":96,\"title\":\"renamed\"}]")
+                .expect(status().is2xxSuccessful())
+                .expect(jsonPath("$.data.length()").value(1));
+        assertThat(count("id = 95 AND title = 'bobs' AND owner_id = '" + BOB + "'")).isOne();
+        assertThat(count("id = 96 AND title = 'renamed'")).isOne();
+
+        upsert(ALICE, "/" + PROJECT + "/api/v1/notes",
+                "[{\"id\":96,\"title\":\"again\",\"status\":\"open\"},{\"id\":97,\"title\":\"locked\",\"status\":\"locked\"}]")
+                .expect(status().isForbidden());
+        assertThat(count("id = 96 AND title = 'renamed'")).isOne();
+        assertThat(count("id = 97")).isZero();
+    }
+
+    @Test
+    void restMerge_whoseResultFailsTheUpdateCheckButPassesTheInsertCheck_isRefused() throws Exception {
+        insertNote(98, ALICE, "mine", "open");
+
+        upsert(ALICE, "/" + PROJECT + "/api/v1/notes", "{\"id\":98,\"title\":\"x\",\"status\":\"frozen\"}")
+                .expect(status().isForbidden());
+        upsert(ALICE, "/" + PROJECT + "/api/v1/notes", "[{\"id\":98,\"title\":\"x\",\"status\":\"frozen\"}]")
+                .expect(status().isForbidden());
+        assertThat(count("id = 98 AND status = 'open'")).isOne();
+        rest(ALICE, "POST", "/" + PROJECT + "/api/v1/notes", "{\"id\":99,\"title\":\"new\",\"status\":\"frozen\"}")
+                .expect(status().isCreated());
+    }
+
+    @Test
+    void restMerge_theSameKeyTwiceInOneArray_isRefused() throws Exception {
+        upsert(ALICE, "/" + PROJECT + "/api/v1/notes",
+                "[{\"id\":100,\"title\":\"a\"},{\"id\":100,\"title\":\"b\"}]")
+                .expect(status().isBadRequest());
+        assertThat(count("id = 100")).isZero();
+    }
+
+    @Test
     void aFilterReadingTheTableItWrites_worksOnBothSurfaces() throws Exception {
-        rest(ALICE, patch("/" + PROJECT + "/api/v1/boards?id=eq.1"), "{\"name\":\"alice-was-here\"}")
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data", hasSize(0)));
+        rest(ALICE, "PATCH", "/" + PROJECT + "/api/v1/boards?id=eq.1", "{\"name\":\"alice-was-here\"}")
+                .expect(status().isOk())
+                .expect(jsonPath("$.data", hasSize(0)));
         as(ALICE, "mutation { deleteTestBoards(where: { id: { eq: 1 } }) { id } }")
-                .andExpect(jsonPath("$.data.deleteTestBoards", hasSize(0)));
+                .expect(jsonPath("$.data.deleteTestBoards", hasSize(0)));
         as(BOB, "mutation { updateTestBoards(where: { id: { eq: 1 } }, input: { name: \"bobs-board\" }) { name } }")
-                .andExpect(jsonPath("$.data.updateTestBoards[0].name").value("bobs-board"));
-        rest(BOB, patch("/" + PROJECT + "/api/v1/boards?id=eq.1"), "{\"name\":\"rest-renamed\"}")
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.data[0].name").value("rest-renamed"));
+                .expect(jsonPath("$.data.updateTestBoards[0].name").value("bobs-board"));
+        rest(BOB, "PATCH", "/" + PROJECT + "/api/v1/boards?id=eq.1", "{\"name\":\"rest-renamed\"}")
+                .expect(status().isOk())
+                .expect(jsonPath("$.data[0].name").value("rest-renamed"));
     }
 
     @Test
     void aCheckReadingTheTableItWrites_isRefused_neverJudgedAfterTheWrite() throws Exception {
         as(ALICE, "mutation { createTestDrafts(input: { title: \"gate\" }) { id } }")
-                .andExpect(jsonPath("$.errors[0].message", containsString("cannot be enforced on MySQL")));
-        rest(ALICE, post("/" + PROJECT + "/api/v1/drafts"), "{\"title\":\"gate\"}")
-                .andExpect(status().isBadRequest());
+                .expect(jsonPath("$.errors[0].message", containsString("cannot be enforced on MySQL")));
+        rest(ALICE, "POST", "/" + PROJECT + "/api/v1/drafts", "{\"title\":\"gate\"}")
+                .expect(status().isBadRequest());
         assertThat(database().queryForObject("SELECT count(*) FROM drafts", Integer.class)).isZero();
 
         database().update("INSERT INTO drafts (id, owner_id, title) VALUES (1, ?, 'draft')", ALICE);
         as(ALICE, "mutation { updateTestDrafts(where: { id: { eq: 1 } }, input: { title: \"gate\" }) { id } }")
-                .andExpect(jsonPath("$.errors[0].message", containsString("cannot be enforced on MySQL")));
+                .expect(jsonPath("$.errors[0].message", containsString("cannot be enforced on MySQL")));
         assertThat(database().queryForObject("SELECT title FROM drafts WHERE id = 1", String.class)).isEqualTo("draft");
     }
 
     @Test
     void aCheckReadingATableAnEarlierFieldWrites_isRefused() throws Exception {
         as(ALICE, "mutation { createTestLedger(input: { title: \"alone\" }) { title } }")
-                .andExpect(jsonPath("$.data.createTestLedger.title").value("alone"));
+                .expect(jsonPath("$.data.createTestLedger.title").value("alone"));
         as(ALICE, "mutation { a: createTestCounters(input: {}) { id } b: createTestLedger(input: { title: \"after\" }) { id } }")
-                .andExpect(jsonPath("$.errors[0].message", containsString("cannot be enforced on MySQL")));
+                .expect(jsonPath("$.errors[0].message", containsString("cannot be enforced on MySQL")));
         assertThat(database().queryForObject("SELECT count(*) FROM ledger WHERE title = 'after'", Integer.class)).isZero();
     }
 
     @Test
     void restUpsert_collidingOnAUniqueKeyItDidNotSend_isAConflict_neverAnOverwrite() throws Exception {
-        rest(ALICE, post("/" + PROJECT + "/api/v1/profiles").header("Prefer", "resolution=merge-duplicates"),
+        upsert(ALICE, "/" + PROJECT + "/api/v1/profiles",
                 "{\"id\":999,\"org_id\":1,\"title\":\"pwned\"}")
-                .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.code").value("unique_violation"));
+                .expect(status().isConflict())
+                .expect(jsonPath("$.code").value("unique_violation"));
         assertThat(database().queryForObject("SELECT title FROM profiles WHERE id = 1", String.class)).isEqualTo("bob");
         assertThat(database().queryForObject("SELECT count(*) FROM profiles WHERE id = 999", Integer.class)).isZero();
     }
@@ -473,24 +557,17 @@ class MysqlPermissionsIntegrationTest {
     @Test
     void aFixedAal2Check_decidesTheRequestOnBothSurfaces() throws Exception {
         for (Object[] expected : new Object[][] {{"aal2", 2}, {"aal1", 0}}) {
-            mockMvc.perform(post("/" + PROJECT + "/graphql")
-                            .header("Authorization", "Bearer " + jwt(ALICE, (String) expected[0]))
-                            .contentType(MediaType.APPLICATION_JSON)
-                            .content(mapper.writeValueAsString(Map.of("query", "{ testVault { id } }"))))
-                    .andExpect(status().isOk())
-                    .andExpect(jsonPath("$.data.testVault", hasSize((Integer) expected[1])));
-            mockMvc.perform(get("/" + PROJECT + "/api/v1/vault")
-                            .header("Authorization", "Bearer " + jwt(ALICE, (String) expected[0])))
-                    .andExpect(status().isOk())
-                    .andExpect(jsonPath("$.data", hasSize((Integer) expected[1])));
+            http.post("/" + PROJECT + "/graphql", mapper.writeValueAsString(Map.of("query", "{ testVault { id } }")), "Authorization", "Bearer " + jwt(ALICE, (String) expected[0]), "Content-Type", "application/json")
+                    .expect(status().isOk())
+                    .expect(jsonPath("$.data.testVault", hasSize((Integer) expected[1])));
+            http.get("/" + PROJECT + "/api/v1/vault", "Authorization", "Bearer " + jwt(ALICE, (String) expected[0]))
+                    .expect(status().isOk())
+                    .expect(jsonPath("$.data", hasSize((Integer) expected[1])));
         }
-        mockMvc.perform(post("/" + PROJECT + "/graphql")
-                        .header("Authorization", "Bearer " + jwt(ALICE))
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(mapper.writeValueAsString(Map.of("query", "{ testVault { id } }"))))
-                .andExpect(jsonPath("$.errors[0].extensions.code").value("missing_session_variable"));
-        rest(ALICE, delete("/" + PROJECT + "/api/v1/vault?id=eq.1"), "")
-                .andExpect(status().is4xxClientError());
+        http.post("/" + PROJECT + "/graphql", mapper.writeValueAsString(Map.of("query", "{ testVault { id } }")), "Authorization", "Bearer " + jwt(ALICE), "Content-Type", "application/json")
+                .expect(jsonPath("$.errors[0].extensions.code").value("missing_session_variable"));
+        rest(ALICE, "DELETE", "/" + PROJECT + "/api/v1/vault?id=eq.1", "")
+                .expect(status().is4xxClientError());
         assertThat(database().queryForObject("SELECT count(*) FROM vault", Integer.class)).isEqualTo(2);
     }
 

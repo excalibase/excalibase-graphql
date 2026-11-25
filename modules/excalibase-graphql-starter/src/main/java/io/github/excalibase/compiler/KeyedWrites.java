@@ -26,7 +26,6 @@ public final class KeyedWrites {
 
     private static final String KEY_PARAM = "rk_";
     private static final String CONFLICT_PARAM = "cf_";
-    private static final String FOR_UPDATE = " FOR UPDATE";
 
     /** How a written row reads: its JSON object over {@code alias}, and the select filter it must pass. */
     public record ReadBack(String objectSql, String readable, Map<String, Object> params, boolean aggregate) {
@@ -73,8 +72,28 @@ public final class KeyedWrites {
         this.check = check;
     }
 
+    /** {@code write}, after the dialect's own preparation of a write (see {@link SqlDialect#beforeWrite}). */
+    private KeyedWrite locked(KeyedWrite write) {
+        return (jdbc, represent) -> {
+            dialect.beforeWrite(jdbc.getJdbcOperations(), quotedTable);
+            return write.run(jdbc, represent);
+        };
+    }
+
+    /** Several writes run in order, their rows answered as one array; a write that answers none adds none. */
+    public static KeyedWrite all(List<KeyedWrite> writes) {
+        return (jdbc, represent) -> {
+            List<String> rows = new ArrayList<>();
+            for (KeyedWrite write : writes) {
+                String row = write.run(jdbc, represent);
+                if (row != null) rows.add(row);
+            }
+            return represent ? array(rows) : null;
+        };
+    }
+
     public KeyedWrite insert(List<Insert> inserts, boolean many) {
-        return insert(inserts, many, false);
+        return locked(insert(inserts, many, false));
     }
 
     /** @param upsert an upsert's row counts twice when it updates: it is checked by its key alone */
@@ -105,14 +124,20 @@ public final class KeyedWrites {
      * An upsert of a row whose key is sent: an INSERT when no row holds the key, else an UPDATE of that row
      * alone, so a collision on any other unique key, however its columns were filled, fails as the database's
      * own duplicate error rather than updating a row the caller never addressed. The key is locked first
-     * ({@code FOR UPDATE}); under READ COMMITTED, which takes no gap lock, a concurrent insert of the same key
-     * makes the INSERT fail as a duplicate, never write twice.
+     * ({@code FOR UPDATE}). Under REPEATABLE READ that locks the gap a missing key falls in, so two requests
+     * upserting the same new key can deadlock: one is aborted with error 1213, and the transaction's owner runs it
+     * again, a bounded number of times after a random pause ({@link WriteRetry}). Under READ COMMITTED a concurrent insert of the same key would instead make
+     * the INSERT fail as a duplicate. Either way the key is never written twice.
      *
      * @param set       the UPDATE's assignments, null for DO NOTHING
      * @param updatable which existing rows the update may overwrite, its condition empty when every row: an
      *                  existing row outside it is kept as it is and returns none
      */
     public KeyedWrite upsert(Insert insert, Condition set, Condition updatable) {
+        return locked(upsertOnKey(insert, set, updatable));
+    }
+
+    private KeyedWrite upsertOnKey(Insert insert, Condition set, Condition updatable) {
         KeyedWrite write = insert(List.of(insert), false, true);
         List<Object> key = keys.stream().map(insert.values()::get).toList();
         return (jdbc, represent) -> {
@@ -130,6 +155,10 @@ public final class KeyedWrites {
      * means the columns are not a unique key, and the write is refused.
      */
     public KeyedWrite upsertOn(List<String> conflict, Insert insert, Condition set, Condition updatable) {
+        return locked(upsertOnUnique(conflict, insert, set, updatable));
+    }
+
+    private KeyedWrite upsertOnUnique(List<String> conflict, Insert insert, Condition set, Condition updatable) {
         KeyedWrite write = insert(List.of(insert), false, true);
         return (jdbc, represent) -> {
             requireKeys();
@@ -166,11 +195,15 @@ public final class KeyedWrites {
     }
 
     private String updateSql(String assignments, List<Object> key, Map<String, Object> params) {
-        return UPDATE + quotedTable + SPACE + alias + SET + assignments + WHERE + keyPredicate(List.of(key), params);
+        return UPDATE + quotedTable + dialect.updateAliasKeyword() + alias + SET + assignments + WHERE + keyPredicate(List.of(key), params);
     }
 
     /** {@code where} selects the rows {@code dml} updates; {@code set} is what it writes, by column. */
     public KeyedWrite update(String dml, String where, Map<String, Object> params, Map<String, Object> set) {
+        return locked(updateRows(dml, where, params, set));
+    }
+
+    private KeyedWrite updateRows(String dml, String where, Map<String, Object> params, Map<String, Object> set) {
         return (jdbc, represent) -> {
             if (!represent && check == null) {
                 jdbc.update(dml, params);
@@ -202,6 +235,10 @@ public final class KeyedWrites {
 
     /** {@code where} selects the rows {@code dml} deletes; they are read, locked, before it runs. */
     public KeyedWrite delete(String dml, String where, Map<String, Object> params) {
+        return locked(deleteRows(dml, where, params));
+    }
+
+    private KeyedWrite deleteRows(String dml, String where, Map<String, Object> params) {
         return (jdbc, represent) -> {
             String rows = null;
             if (represent) {
@@ -277,17 +314,17 @@ public final class KeyedWrites {
     /** The row keyed {@code key}, locked, when it also meets {@code condition} (when set). */
     private String existsSql(List<Object> key, Map<String, Object> params, String condition) {
         return SELECT + "1" + FROM + quotedTable + SPACE + alias + WHERE + keyPredicate(List.of(key), params)
-                + (condition == null ? "" : AND + parens(condition)) + FOR_UPDATE;
+                + (condition == null ? "" : AND + parens(condition)) + dialect.lockRows();
     }
 
     private String lockedKeysSql(String where) {
         return SELECT + joinCols(keys.stream().map(this::column).toList()) + FROM + quotedTable + SPACE + alias
-                + WHERE + parens(where) + FOR_UPDATE;
+                + WHERE + parens(where) + dialect.lockRows();
     }
 
     private String lockedRowsSql(String where) {
         return SELECT + readBack.objectSql() + FROM + quotedTable + SPACE + alias + WHERE + parens(where) + readable()
-                + FOR_UPDATE;
+                + dialect.lockRows();
     }
 
     private String aggregate(NamedParameterJdbcTemplate jdbc, List<List<Object>> written) {
@@ -319,7 +356,7 @@ public final class KeyedWrites {
         }
         String columns = keys.size() == 1 ? column(keys.getFirst())
                 : parens(String.join(COMMA_SEP, keys.stream().map(this::column).toList()));
-        return columns + IN + parens(String.join(COMMA_SEP, tuples));
+        return columns + IN + (keys.size() == 1 ? parens(String.join(COMMA_SEP, tuples)) : dialect.rowValueList(tuples));
     }
 
     private String readable() {

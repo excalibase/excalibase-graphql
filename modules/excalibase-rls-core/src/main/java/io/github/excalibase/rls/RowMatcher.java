@@ -198,8 +198,8 @@ public class RowMatcher {
             case IN -> inCollection(rowVal, resolver.resolveList(rule.value(), rule.fieldType()), rule.fieldType());
             case NOT_IN -> inCollection(rowVal, resolver.resolveList(rule.value(), rule.fieldType()), rule.fieldType()).not();
             case GT, GTE, LT, LTE -> compare(rowVal, rule, resolver);
-            case LIKE -> matchesLike(rowVal, (String) resolver.resolve(rule.value(), FieldType.STRING));
-            case NOT_LIKE -> matchesLike(rowVal, (String) resolver.resolve(rule.value(), FieldType.STRING)).not();
+            case LIKE -> matchesLike(rowVal, resolver.resolve(rule.value(), FieldType.STRING));
+            case NOT_LIKE -> matchesLike(rowVal, resolver.resolve(rule.value(), FieldType.STRING)).not();
         };
     }
 
@@ -258,16 +258,14 @@ public class RowMatcher {
         });
     }
 
-    private static Truth matchesLike(Object rowVal, String pattern) {
-        if (rowVal == null || pattern == null) return Truth.UNKNOWN;
-        // Simple SQL-LIKE: % → .*, _ → . — sufficient for v1; document escape semantics later.
-        String regex = "^" + pattern
-            .replace("\\", "\\\\")
-            .replace(".", "\\.")
-            .replace("%", ".*")
-            .replace("_", ".")
-            + "$";
-        return Truth.of(rowVal.toString().matches(regex));
+    // A pattern that is not text (a numeric JSON claim, a collection) cannot be a LIKE pattern: UNKNOWN keeps
+    // no row, and JdbcEvaluator refuses it, so both paths fail closed the same way.
+    private static Truth matchesLike(Object rowVal, Object pattern) {
+        if (rowVal == null || !(pattern instanceof String text)) return Truth.UNKNOWN;
+        LikePattern like = LikePattern.compile(text);
+        // A trailing escape is an error in Postgres, so no row may pass.
+        if (like == null) return Truth.UNKNOWN;
+        return Truth.of(like.matches(rowVal.toString()));
     }
 
     private static Object coerce(Object value, FieldType fieldType) {

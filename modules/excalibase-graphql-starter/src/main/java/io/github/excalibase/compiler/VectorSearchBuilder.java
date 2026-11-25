@@ -148,7 +148,7 @@ public class VectorSearchBuilder {
         }
         lit.append(']');
 
-        String paramName = "p_vector_" + column;
+        String paramName = "p_vector_" + SqlKeywords.paramSafe(column);
         int suffix = 0;
         while (params.containsKey(paramName + (suffix == 0 ? "" : "_" + suffix))) suffix++;
         String finalParam = paramName + (suffix == 0 ? "" : "_" + suffix);

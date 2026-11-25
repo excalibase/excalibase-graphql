@@ -1,5 +1,6 @@
 package io.github.excalibase.cors;
 
+import io.github.excalibase.http.ControlPlaneHttpClient;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.excalibase.security.TokenFileSource;
@@ -64,7 +65,7 @@ public final class ProvisioningProjectCorsProvider implements ProjectCorsProvide
         this.tokenSource = Objects.requireNonNull(tokenSource, "tokenSource");
         this.ttlMillis = ttlMillis;
         this.clock = Objects.requireNonNull(clock, "clock");
-        this.http = HttpClient.newBuilder().connectTimeout(TIMEOUT).build();
+        this.http = ControlPlaneHttpClient.create(TIMEOUT);
     }
 
     @Override

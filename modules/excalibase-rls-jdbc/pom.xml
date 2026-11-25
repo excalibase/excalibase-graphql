@@ -18,6 +18,11 @@
     <dependencies>
         <dependency>
             <groupId>io.github.excalibase</groupId>
+            <artifactId>excalibase-test-support</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>io.github.excalibase</groupId>
             <artifactId>excalibase-rls-core</artifactId>
         </dependency>
         <dependency>
@@ -67,5 +72,25 @@
             <artifactId>junit-jupiter</artifactId>
             <scope>test</scope>
         </dependency>
+            <!-- commons-compress (managed by the Micronaut platform) needs it when Testcontainers copies files -->
+        <dependency>
+            <groupId>commons-codec</groupId>
+            <artifactId>commons-codec</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.slf4j</groupId>
+            <artifactId>jcl-over-slf4j</artifactId>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-enforcer-plugin</artifactId>
+            </plugin>
+        </plugins>
+    </build>
 </project>

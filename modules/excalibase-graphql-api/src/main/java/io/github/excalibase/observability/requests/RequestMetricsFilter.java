@@ -1,82 +1,68 @@
 package io.github.excalibase.observability.requests;
 
+import io.github.excalibase.http.WebSocketUpgrade;
 import io.github.excalibase.security.KnownProjectFilter;
-import jakarta.servlet.FilterChain;
-import jakarta.servlet.ServletException;
-import jakarta.servlet.http.HttpServletRequest;
-import jakarta.servlet.http.HttpServletResponse;
-import org.springframework.web.filter.OncePerRequestFilter;
+import io.micronaut.context.annotation.Requires;
+import io.micronaut.core.annotation.Nullable;
+import io.micronaut.core.order.Ordered;
+import io.micronaut.http.HttpRequest;
+import io.micronaut.http.HttpResponse;
+import io.micronaut.http.annotation.Filter;
+import io.micronaut.http.annotation.RequestFilter;
+import io.micronaut.http.annotation.ResponseFilter;
+import io.micronaut.http.annotation.ServerFilter;
 
-import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.Optional;
 
-/**
- * On the internal metrics port: answers {@code GET /metrics} with the scrape and
- * refuses everything else before it reaches the application. On every other port:
- * times project-scoped GraphQL and REST requests of known projects.
- */
-public class RequestMetricsFilter extends OncePerRequestFilter {
+/** Times project-scoped GraphQL and REST requests of known projects. */
+@ServerFilter(Filter.MATCH_ALL_PATTERN)
+@Requires(property = "app.request-metrics.enabled", value = "true")
+public class RequestMetricsFilter implements Ordered {
 
-    static final String METRICS_PATH = "/metrics";
-    private static final String SCRAPE_CONTENT_TYPE = "text/plain; version=0.0.4; charset=utf-8";
+    private static final String STARTED = "excalibase.requestMetrics.started";
 
     private final RequestMetrics metrics;
-    private final int metricsPort;
 
-    public RequestMetricsFilter(RequestMetrics metrics, int metricsPort) {
+    public RequestMetricsFilter(RequestMetrics metrics) {
         this.metrics = metrics;
-        this.metricsPort = metricsPort;
     }
 
     @Override
-    protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response,
-                                    FilterChain chain) throws ServletException, IOException {
-        if (request.getLocalPort() == metricsPort) {
-            serveInternal(request, response);
-            return;
-        }
-        Optional<RequestFamily> family = RequestFamily.of(request.getRequestURI());
-        if (family.isEmpty() || isWebSocketUpgrade(request)) {
-            chain.doFilter(request, response);
-            return;
-        }
-        long started = System.nanoTime();
-        boolean failed = true;
-        try {
-            chain.doFilter(request, response);
-            failed = false;
-        } finally {
-            recordRequest(request, response, family.get(), Duration.ofNanos(System.nanoTime() - started), failed);
-        }
+    public int getOrder() {
+        return -2000;
     }
 
-    private void serveInternal(HttpServletRequest request, HttpServletResponse response) throws IOException {
-        if (!"GET".equals(request.getMethod()) || !METRICS_PATH.equals(request.getRequestURI())) {
-            response.setStatus(HttpServletResponse.SC_NOT_FOUND);
-            return;
+    @RequestFilter
+    @Nullable
+    public HttpResponse<?> filter(HttpRequest<?> request) {
+        Optional<RequestFamily> family = RequestFamily.of(request.getPath());
+        if (family.isPresent() && !isWebSocketUpgrade(request)) {
+            request.getAttributes().put(STARTED, System.nanoTime());
         }
-        byte[] body = metrics.scrape().getBytes(StandardCharsets.UTF_8);
-        response.setStatus(HttpServletResponse.SC_OK);
-        response.setContentType(SCRAPE_CONTENT_TYPE);
-        response.setContentLength(body.length);
-        response.getOutputStream().write(body);
+        return null;
     }
 
-    private void recordRequest(HttpServletRequest request, HttpServletResponse response, RequestFamily family,
-                               Duration duration, boolean failed) {
+    @ResponseFilter
+    public void record(HttpRequest<?> request, HttpResponse<?> response, @Nullable Throwable thrown) {
+        Object started = request.getAttribute(STARTED).orElse(null);
         // Set only after the project passed the known-project check, so random paths create no series.
-        if (!(request.getAttribute(KnownProjectFilter.KNOWN_PROJECT_ATTR) instanceof String projectId)) {
+        if (!(started instanceof Long startNanos)
+                || !(request.getAttribute(KnownProjectFilter.KNOWN_PROJECT_ATTR).orElse(null) instanceof String projectId)) {
             return;
         }
+        RequestFamily family = RequestFamily.of(request.getPath()).orElse(null);
+        if (family == null) {
+            return;
+        }
+        boolean failed = thrown != null;
         RequestOutcome outcome = failed ? RequestOutcome.SERVER_ERROR
-                : RequestOutcome.of(response.getStatus(),
-                        Boolean.TRUE.equals(request.getAttribute(RequestMetrics.GRAPHQL_ERRORS_ATTR)));
-        metrics.recordRequest(projectId, family, outcome, duration);
+                : RequestOutcome.of(response.code(),
+                        Boolean.TRUE.equals(request.getAttribute(RequestMetrics.GRAPHQL_ERRORS_ATTR).orElse(null)));
+        metrics.recordRequest(projectId, family, outcome, Duration.ofNanos(System.nanoTime() - startNanos));
     }
 
-    private static boolean isWebSocketUpgrade(HttpServletRequest request) {
-        return "websocket".equalsIgnoreCase(request.getHeader("Upgrade"));
+    private static boolean isWebSocketUpgrade(HttpRequest<?> request) {
+        return WebSocketUpgrade.isRequested(request);
     }
 }

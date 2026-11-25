@@ -1,0 +1,11 @@
+{
+  "request": {
+    "method": "GET",
+    "url": "/api/projects/shopify/info"
+  },
+  "response": {
+    "status": 200,
+    "headers": { "Content-Type": "application/json" },
+    "jsonBody": { "projectId": "shopify", "allowNewUsers": true, "requireEmailVerification": false, "projectName": "shopify", "orgSlug": "study-cases" }
+  }
+}

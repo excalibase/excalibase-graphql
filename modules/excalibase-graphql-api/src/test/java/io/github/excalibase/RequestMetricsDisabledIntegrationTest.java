@@ -1,95 +1,67 @@
 package io.github.excalibase;
 
-import io.github.excalibase.observability.requests.RequestMetrics;
-import io.github.excalibase.observability.requests.RequestMetricsFilter;
-import io.micrometer.core.instrument.MeterRegistry;
-import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.web.server.LocalManagementPort;
-import org.springframework.boot.test.web.server.LocalServerPort;
-import org.springframework.boot.web.servlet.FilterRegistrationBean;
-import org.springframework.test.context.DynamicPropertyRegistry;
-import org.springframework.test.context.DynamicPropertySource;
-import org.springframework.web.context.WebApplicationContext;
-import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import io.github.excalibase.observability.requests.RequestMetrics;
+import io.github.excalibase.support.EngineClient;
+import io.github.excalibase.support.EngineIntegrationTest;
+import io.github.excalibase.support.EngineProperties;
+import io.github.excalibase.support.FreePort;
+import io.github.excalibase.support.HttpAnswer;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micronaut.context.ApplicationContext;
+import jakarta.inject.Inject;
 import java.net.ConnectException;
 import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
-
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import java.util.HashMap;
+import java.util.Map;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import org.testcontainers.containers.PostgreSQLContainer;
 
 /** Off by default: no recorder, no internal port, and project traffic is served as before. */
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
-@Testcontainers
-class RequestMetricsDisabledIntegrationTest {
+class RequestMetricsDisabledIntegrationTest extends EngineIntegrationTest {
 
-    private static final int METRICS_PORT = RequestMetricsIntegrationTest.freePort();
+    private static final int METRICS_PORT = FreePort.find();
+    private static final int MANAGEMENT_PORT = FreePort.find();
 
-    @Container
-    static PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16-alpine")
+    static final PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16-alpine")
             .withInitScript("init-rest-test.sql");
 
-    @DynamicPropertySource
-    static void configureProperties(DynamicPropertyRegistry registry) {
-        registry.add("spring.datasource.url", postgres::getJdbcUrl);
-        registry.add("spring.datasource.username", postgres::getUsername);
-        registry.add("spring.datasource.password", postgres::getPassword);
-        registry.add("app.project-id", () -> "test-proj");
-        registry.add("app.security.jwt-enabled", () -> "false");
-        registry.add("app.security.insecure-dev-mode", () -> "true");
-        registry.add("app.database-type", () -> "postgres");
-        registry.add("app.nats.enabled", () -> false);
-        registry.add("app.request-metrics.port", () -> METRICS_PORT);
+    @Inject
+    ApplicationContext context;
+
+    @Inject
+    MeterRegistry globalRegistry;
+
+    @Override
+    public Map<String, String> getProperties() {
+        Map<String, String> properties = new HashMap<>(EngineProperties.postgres(postgres, "test-proj"));
+        properties.put("app.nats.enabled", "false");
+        properties.put("app.request-metrics.port", Integer.toString(METRICS_PORT));
+        properties.put("endpoints.all.port", Integer.toString(MANAGEMENT_PORT));
+        return properties;
     }
-
-    @LocalServerPort
-    private int port;
-
-    @LocalManagementPort
-    private int managementPort;
-
-    @Autowired
-    private WebApplicationContext context;
-
-    @Autowired
-    private MeterRegistry globalRegistry;
 
     @Test
     @DisplayName("no recorder, no filter, no internal port, and no per-project series anywhere")
-    void nothingWhenOff() throws Exception {
-        HttpResponse<String> response = get(port, "/test-proj/api/v1/products");
-        assertThat(response.statusCode()).isEqualTo(200);
+    void nothingWhenOff() {
+        assertThat(http.get("/test-proj/api/v1/products").status()).isEqualTo(200);
 
-        assertThat(context.getBeanProvider(RequestMetrics.class).getIfAvailable()).isNull();
-        assertThat(context.getServletContext().getFilterRegistration("requestMetricsFilter")).isNull();
-        assertThat(context.getBeansOfType(FilterRegistrationBean.class).values())
-                .noneMatch(registration -> registration.getFilter() instanceof RequestMetricsFilter);
+        assertThat(context.containsBean(RequestMetrics.class)).isFalse();
         assertThatThrownBy(() -> {
             try (Socket socket = new Socket()) {
                 socket.connect(new InetSocketAddress("localhost", METRICS_PORT), 2000);
             }
         }).isInstanceOf(ConnectException.class);
         assertThat(globalRegistry.find("excalibase.requests").meters()).isEmpty();
-        assertThat(get(port, "/metrics").body()).doesNotContain("excalibase_");
-        assertThat(get(port, "/actuator/metrics").statusCode()).isEqualTo(404);
-        HttpResponse<String> actuatorMetrics = get(managementPort, "/actuator/metrics");
-        assertThat(actuatorMetrics.statusCode()).isEqualTo(200);
+        assertThat(http.get("/metrics").body()).doesNotContain("excalibase_");
+        assertThat(http.get("/actuator/metrics").status()).isEqualTo(404);
+        HttpAnswer actuatorMetrics = new EngineClient(URI.create("http://localhost:" + MANAGEMENT_PORT + "/")).get("/actuator/metrics");
+        assertThat(actuatorMetrics.status()).isEqualTo(200);
         assertThat(actuatorMetrics.body()).contains("jvm.memory.used").doesNotContain("excalibase.requests");
-    }
-
-    private static HttpResponse<String> get(int targetPort, String path) throws Exception {
-        return HttpClient.newHttpClient().send(
-                HttpRequest.newBuilder(URI.create("http://localhost:" + targetPort + path)).GET().build(),
-                HttpResponse.BodyHandlers.ofString());
     }
 }

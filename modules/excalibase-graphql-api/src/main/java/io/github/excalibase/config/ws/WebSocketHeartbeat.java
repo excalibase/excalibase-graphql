@@ -4,10 +4,8 @@ import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.stereotype.Component;
-import org.springframework.web.socket.PingMessage;
-import org.springframework.web.socket.WebSocketSession;
+import io.micronaut.context.annotation.Value;
+import jakarta.inject.Singleton;
 
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -25,17 +23,17 @@ import java.util.concurrent.TimeUnit;
  *
  * <p>Sends are serialised per session (see {@link #ping}) because a session may
  * already be written to from several CDC fan-out threads, and a raw
- * {@link WebSocketSession} is not safe for concurrent sends.
+ * {@link WsSession} is not safe for concurrent sends.
  *
  * <p>Disabled by setting {@code app.websocket.heartbeat-seconds} to 0.
  */
-@Component
+@Singleton
 public class WebSocketHeartbeat {
 
     private static final Logger log = LoggerFactory.getLogger(WebSocketHeartbeat.class);
-    private static final PingMessage PING = new PingMessage();
+    
 
-    private final Set<WebSocketSession> sessions = ConcurrentHashMap.newKeySet();
+    private final Set<WsSession> sessions = ConcurrentHashMap.newKeySet();
     private final long intervalSeconds;
     private ScheduledExecutorService scheduler;
 
@@ -59,18 +57,18 @@ public class WebSocketHeartbeat {
     }
 
     /** Registers a session to receive heartbeats. Idempotent. */
-    public void register(WebSocketSession session) {
+    public void register(WsSession session) {
         sessions.add(session);
     }
 
     /** Stops heartbeating a session (call on close). */
-    public void unregister(WebSocketSession session) {
+    public void unregister(WsSession session) {
         sessions.remove(session);
     }
 
     /** Visible for testing — exercised by the scheduler in production. */
     void pingAll() {
-        for (WebSocketSession session : sessions) {
+        for (WsSession session : sessions) {
             if (!session.isOpen()) {
                 sessions.remove(session);
                 continue;
@@ -80,15 +78,15 @@ public class WebSocketHeartbeat {
     }
 
     /**
-     * Sends one PING, serialising on the session monitor so it never races a
-     * concurrent data send. Handlers that write to the session must synchronise
-     * on the same monitor for this to hold.
+     * Sends one PING, serialising on the session send lock so it never races a
+     * concurrent data send. Handlers that write to the session must hold
+     * the same {@link WsSession#sendLock()} for this to hold.
      */
-    private void ping(WebSocketSession session) {
+    private void ping(WsSession session) {
         try {
-            synchronized (session) {
+            synchronized (WsSession.lockOf(session)) {
                 if (session.isOpen()) {
-                    session.sendMessage(PING);
+                    session.sendPing();
                 }
             }
         } catch (Exception e) {

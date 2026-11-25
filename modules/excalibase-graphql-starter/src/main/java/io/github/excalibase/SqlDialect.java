@@ -4,13 +4,34 @@ import io.github.excalibase.errors.DataError;
 import io.github.excalibase.errors.DataErrors;
 import io.github.excalibase.permissions.compile.PermissionDialect;
 
+import org.springframework.jdbc.core.JdbcOperations;
+
 import java.sql.SQLException;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 /**
  * Abstraction for database-specific SQL syntax.
- * Implementations: PostgresDialect, MysqlDialect (future).
+ * Implementations: PostgresDialect, MysqlDialect.
+ *
+ * <h2>Declaring what a database can do</h2>
+ * A plugin states its abilities; the engine builds the schema from them and refuses everything else, so a
+ * request is never answered with part of it silently left out.
+ * <ul>
+ *   <li><b>Filter operators</b>: override {@link #filterCapabilities()} with
+ *       {@code FilterCapabilities.of(operatorsByColumnKind, restOperators)}. Start from
+ *       {@link FilterCapabilities#PORTABLE} (comparisons, lists, LIKE, null checks) and add what the database
+ *       runs, e.g. regex. For each operator added, implement its SQL here ({@link #regexSql},
+ *       {@link #fullTextSearchSql}, {@link #jsonPredicateSql}); a method left at its default returns empty and
+ *       the compiler refuses the operator. The where-input types list exactly the declared operators.</li>
+ *   <li><b>Features</b>: override {@link #features()} with the {@link DialectFeature}s the database runs
+ *       (aggregates, upsert, distinct-on, subscriptions). The default is none.</li>
+ *   <li><b>Mutations</b>: {@code MutationCompiler#arguments} names the arguments a create/update/delete
+ *       takes, and {@code MutationCompiler#supportsNestedInserts} the relationship inserts.</li>
+ *   <li><b>Other switches</b>: {@link #supportsFunctions()}, {@link #supportsReturning()},
+ *       {@link #supportsRowToJson()}.</li>
+ * </ul>
  */
 public interface SqlDialect {
     /** Build a JSON object from key-value pairs. PG: jsonb_build_object(k1, v1, ...) */
@@ -24,6 +45,11 @@ public interface SqlDialect {
 
     default String rowToJson(String alias) {
         return "row_to_json(" + alias + ")";
+    }
+
+    /** A SQL string literal for {@code value}; the default doubles quotes. */
+    default String stringLiteral(String value) {
+        return "'" + value.replace("'", "''") + "'";
     }
 
     /** Whether {@link #rowToJson} exists; without it a row's JSON names every column. MySQL: false */
@@ -64,6 +90,11 @@ public interface SqlDialect {
 
     /** Encode a value as a cursor. PG: encode(convert_to(expr::text, 'utf-8'), 'base64') */
     String encodeCursor(String expr);
+
+    /** The bytes a cursor {@link #encodeCursor} wrote stand for; IllegalArgumentException when it is no cursor. */
+    default byte[] decodeCursor(String cursor) {
+        return java.util.Base64.getDecoder().decode(cursor);
+    }
 
     /** A JSON array of the given SQL expressions. */
     default String jsonArray(List<String> exprs) {
@@ -127,6 +158,55 @@ public interface SqlDialect {
      */
     default FilterCapabilities filterCapabilities() {
         return FilterCapabilities.PORTABLE;
+    }
+
+    /** The optional features this database runs; the schema offers only these. A new database declares its own. */
+    default Set<DialectFeature> features() {
+        return Set.of();
+    }
+
+    /** Whether this database runs {@code feature}. */
+    default boolean supports(DialectFeature feature) {
+        return features().contains(feature);
+    }
+
+    /** Appended to a SELECT whose rows a write then changes, so no other writer slips between them. */
+    default String lockRows() {
+        return " FOR UPDATE";
+    }
+
+    /**
+     * What follows the user's own {@code LIKE} pattern: Postgres and MySQL read a backslash there as the escape, a
+     * database with no default escape names it. A pattern the engine builds escapes with its own character instead.
+     */
+    default String userLikeEscape() {
+        return "";
+    }
+
+    /**
+     * A column as a filter compares it. A database that stores one type in more than one text form normalises the
+     * column here, so a bound value compares the same as a row the database wrote itself; the default is the column.
+     */
+    default String comparableColumn(String colRef, String dataType) {
+        return colRef;
+    }
+
+    /**
+     * Runs first in every keyed write, inside its transaction, before any statement reads {@code quotedTable}. A
+     * database whose writers must queue for one lock takes it here, so no write starts as a read it cannot upgrade.
+     */
+    default void beforeWrite(JdbcOperations jdbc, String quotedTable) {
+        // a server database locks the rows a write touches, as it reads them
+    }
+
+    /** The row values {@code (a, b) IN <list>} compares against, one parenthesised tuple per entry. */
+    default String rowValueList(List<String> tuples) {
+        return "(" + String.join(", ", tuples) + ")";
+    }
+
+    /** What stands between a table and its alias in an UPDATE target. */
+    default String updateAliasKeyword() {
+        return " ";
     }
 
     /** Parameter cast suffix for non-standard types. PG: ::uuid, ::jsonb, etc. Empty string if no cast needed. */

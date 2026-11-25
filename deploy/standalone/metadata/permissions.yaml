@@ -1,0 +1,34 @@
+# yaml-language-server: $schema=https://excalibase.io/schemas/metadata-v1.json
+#
+# Who may read and write which table. A table with no rule here is not reachable by anyone except the
+# `service` role. Check an edit before you deploy it (export JWT_SECRET first: validate resolves the secret):
+#   java -jar excalibase-graphql-api.jar validate metadata/permissions.yaml
+format: 1
+projectId: my-app            # must equal APP_PROJECT_ID of the engine
+
+# How tokens are checked. HS256 with a shared secret read from the JWT_SECRET environment variable; for Auth0,
+# Cognito, Keycloak or any OIDC issuer use `issuer:` instead (see the folder README).
+jwt:
+  secret: env:JWT_SECRET
+  algorithms: [HS256]
+  audience: my-app-api
+  claims:
+    role: role
+    userId: sub
+
+tables:
+  - table: public.todos
+    role: user
+    select:
+      filter: {"owner_id": {"_eq": "X-Excalibase-User-Id"}}   # a user sees only their own rows
+      columns: "*"
+    insert:
+      check: {}
+      columns: ["title", "done"]
+      set: {"owner_id": "X-Excalibase-User-Id"}               # the owner is always the caller
+    update:
+      filter: {"owner_id": {"_eq": "X-Excalibase-User-Id"}}
+      check: {}
+      columns: ["title", "done"]
+    delete:
+      filter: {"owner_id": {"_eq": "X-Excalibase-User-Id"}}
