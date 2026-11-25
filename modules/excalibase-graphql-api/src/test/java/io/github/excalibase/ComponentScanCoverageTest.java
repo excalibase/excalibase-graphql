@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import io.micronaut.context.ApplicationContext;
 import io.micronaut.context.annotation.Context;
 import io.micronaut.context.annotation.Factory;
+import io.micronaut.context.annotation.Requirements;
 import io.micronaut.context.annotation.Requires;
 import io.micronaut.http.annotation.Controller;
 import io.micronaut.http.annotation.ServerFilter;
@@ -57,7 +58,7 @@ class ComponentScanCoverageTest {
                     .map(path -> root.relativize(path).toString().replace('/', '.').replaceAll("\\.class$", ""))
                     .map(ComponentScanCoverageTest::load)
                     .filter(type -> type != null && isComponent(type) && !type.isInterface()
-                            && !type.isAnnotationPresent(Requires.class))
+                            && !isConditional(type))
                     .toList();
         }
     }
@@ -68,6 +69,11 @@ class ComponentScanCoverageTest {
         } catch (ReflectiveOperationException | LinkageError unavailable) {
             return null;
         }
+    }
+
+    /** Two or more {@code @Requires} on a class are held in the repeatable container, so both forms count as conditional. */
+    private static boolean isConditional(Class<?> type) {
+        return type.isAnnotationPresent(Requires.class) || type.isAnnotationPresent(Requirements.class);
     }
 
     private static boolean isComponent(Class<?> type) {
