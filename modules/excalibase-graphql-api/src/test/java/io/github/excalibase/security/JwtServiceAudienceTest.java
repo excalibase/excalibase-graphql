@@ -57,7 +57,7 @@ class JwtServiceAudienceTest {
 
     private JWTClaimsSet.Builder baseClaims() {
         return new JWTClaimsSet.Builder()
-                .subject(String.valueOf(42))
+                .subject("42")
                 .claim("projectId", PROJECT)
                 .claim("role", "user")
                 .issueTime(Date.from(Instant.now()))

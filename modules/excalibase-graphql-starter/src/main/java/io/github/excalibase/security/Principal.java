@@ -68,6 +68,11 @@ public record Principal(String role, boolean bypass, JwtClaims claims, Map<Strin
         return name != null && USER_ID_NAMES.contains(name.toLowerCase(Locale.ROOT).replace('_', '-'));
     }
 
+    /** An API-key token (secret or publishable) names a key, not a person, so it has no user id. */
+    private static boolean isApiKey(JwtClaims claims) {
+        return claims.keyId() != 0 || "public".equals(claims.scope()) || SERVICE.equals(claims.scope());
+    }
+
     public static Principal anonymous() {
         return new Principal(ANON, false, null, Map.of());
     }
@@ -92,7 +97,7 @@ public record Principal(String role, boolean bypass, JwtClaims claims, Map<Strin
         } else if (claims != null) {
             variables.putAll(claimVariables(claims));
             // The id is the token's sub (JwtClaims.userId); anon has no user, even with a keyed subject.
-            if (!ANON.equals(role) && claims.userId() != null && !claims.userId().isBlank()) {
+            if (!ANON.equals(role) && !isApiKey(claims) && claims.userId() != null && !claims.userId().isBlank()) {
                 variables.put(SESSION_VARIABLE_PREFIX + "user-id", claims.userId());
             }
         }

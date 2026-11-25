@@ -104,7 +104,7 @@ class MultiTenantNoDefaultDbTest extends EngineIntegrationTest {
     Map<String, String> properties = EngineProperties.isolated();
     properties.put("spring.datasource.url", "");
     properties.put("app.database-type", "postgres");
-    properties.put("app.max-rows", String.valueOf(30));
+    properties.put("app.max-rows", "30");
     properties.put("app.security.jwt-enabled", "true");
     properties.put("app.security.auth.jwks-url", String.valueOf("http://localhost:" + mockVaultPort + "/.well-known/jwks.json"));
     properties.put("app.security.multi-tenant.provisioning-url", String.valueOf("http://localhost:" + mockVaultPort + "/api"));
@@ -130,7 +130,7 @@ class MultiTenantNoDefaultDbTest extends EngineIntegrationTest {
     // for test stability; real provisioner generates a random ref at provision time.
     String projectId = projectIdOf(projectName);
     JWTClaimsSet claims = new JWTClaimsSet.Builder()
-        .subject(String.valueOf(1L))
+        .subject("1")
         .claim("projectId", projectId)
         .audience("excalibase:" + projectId)
         .claim("orgSlug", orgSlug)

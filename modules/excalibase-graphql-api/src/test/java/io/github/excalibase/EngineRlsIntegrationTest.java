@@ -137,7 +137,7 @@ class EngineRlsIntegrationTest extends EngineIntegrationTest {
         postgres.start();
         Map<String, String> properties = EngineProperties.isolated();
         properties.put("app.database-type", "postgres");
-        properties.put("app.max-rows", String.valueOf(30));
+        properties.put("app.max-rows", "30");
         properties.put("app.security.jwt-enabled", "true");
         properties.put("app.security.auth.jwks-url", String.valueOf("http://localhost:" + mockVaultPort + "/.well-known/jwks.json"));
         properties.put("app.security.multi-tenant.provisioning-url", String.valueOf("http://localhost:" + mockVaultPort + "/api"));
@@ -253,7 +253,7 @@ class EngineRlsIntegrationTest extends EngineIntegrationTest {
     /** A guest's token as excalibase-auth signs it: sub is the id, no address. */
     private String guestJwt(String projectId) throws Exception {
         JWTClaimsSet claims = new JWTClaimsSet.Builder()
-                .subject(String.valueOf(77L))
+                .subject("77")
                 .claim("projectId", projectId)
                 .audience("excalibase:" + projectId)
                 .claim("role", "guest")

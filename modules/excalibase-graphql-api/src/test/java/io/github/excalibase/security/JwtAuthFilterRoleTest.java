@@ -57,7 +57,7 @@ class JwtAuthFilterRoleTest {
 
     private static String token(Map<String, Object> extraClaims) throws Exception {
         JWTClaimsSet.Builder builder = new JWTClaimsSet.Builder()
-                .subject(String.valueOf(42))
+                .subject("42")
                 .claim("projectId", PROJECT)
                 .expirationTime(Date.from(Instant.now().plusSeconds(3600)));
         extraClaims.forEach(builder::claim);

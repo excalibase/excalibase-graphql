@@ -38,7 +38,7 @@ class MysqlRestParityTest extends EngineIntegrationTest {
         properties.put("app.project-id", "test-proj");
         properties.put("app.security.jwt-enabled", "false");
         properties.put("app.security.insecure-dev-mode", "true");
-        properties.put("app.max-rows", String.valueOf(30));
+        properties.put("app.max-rows", "30");
         properties.put("app.database-type", "mysql");
         return properties;
     }

@@ -168,7 +168,7 @@ class ProvisioningRlsIntegrationTest extends EngineIntegrationTest {
         properties.put("spring.datasource.username", postgres.getUsername());
         properties.put("spring.datasource.password", postgres.getPassword());
         properties.put("app.database-type", "postgres");
-        properties.put("app.max-rows", String.valueOf(30));
+        properties.put("app.max-rows", "30");
         properties.put("app.security.jwt-enabled", "true");
         properties.put("app.project-id", String.valueOf(PROJECT));
         properties.put("app.security.auth.jwks-url", String.valueOf("http://localhost:" + stubPort + "/.well-known/jwks.json"));

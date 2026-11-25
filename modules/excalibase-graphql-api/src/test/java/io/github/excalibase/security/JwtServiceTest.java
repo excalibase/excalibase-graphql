@@ -106,7 +106,7 @@ class JwtServiceTest {
     void apiKeyToken_extractsScopeAndKeyId() throws Exception {
         // Mirror the wire format that excalibase-auth's grant_type=api_key emits.
         JWTClaimsSet apiKeyClaims = new JWTClaimsSet.Builder()
-                .subject(String.valueOf(42L))
+                .subject("apikey:7")
                 .claim("projectId", "duc-corp/app-a")
                 .claim("orgSlug", "duc-corp")
                 .claim("projectName", "app-a")
@@ -131,7 +131,7 @@ class JwtServiceTest {
     @Test
     void publishableKeyToken_hasPublicScope() throws Exception {
         JWTClaimsSet pubClaims = new JWTClaimsSet.Builder()
-                .subject(String.valueOf(1L))
+                .subject("apikey:3")
                 .claim("projectId", "duc-corp/app-a")
                 .claim("orgSlug", "duc-corp")
                 .claim("projectName", "app-a")
@@ -303,7 +303,7 @@ class JwtServiceTest {
 
             for (int i = 0; i < 3; i++) {
                 JWTClaimsSet claims = new JWTClaimsSet.Builder()
-                        .subject(String.valueOf(1L))
+                        .subject("1")
                         .claim("projectId", "test/proj")
                         .claim("role", "user")
                         .issuer("excalibase")

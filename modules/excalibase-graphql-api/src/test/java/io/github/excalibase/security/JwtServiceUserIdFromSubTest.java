@@ -74,6 +74,16 @@ class JwtServiceUserIdFromSubTest {
                 .containsEntry("x-excalibase-email", "alice@test.com");
     }
 
+    @Test
+    @DisplayName("hosted shape today (sub = email, userId = account id): the id is the email until auth sends sub = account id")
+    void hostedLegacyShape_yieldsTheEmailAsUserId() throws Exception {
+        Map<String, String> variables = variablesOf(platformClaims()
+                .subject("alice@test.com").claim("userId", "42").build());
+
+        assertThat(variables).containsEntry(USER_ID_VARIABLE, "alice@test.com");
+        assertThat(variables.values()).doesNotContain("42");
+    }
+
     @ParameterizedTest
     @ValueSource(strings = {"user-id", "User-Id", "USER-ID", "user_id", "USER_ID", "User_Id", "userId", "userid",
             "user"})

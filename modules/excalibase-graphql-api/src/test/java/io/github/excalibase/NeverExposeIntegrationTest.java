@@ -132,7 +132,7 @@ class NeverExposeIntegrationTest extends EngineIntegrationTest {
 
     private static String jwt(String role) throws Exception {
         JWTClaimsSet claims = new JWTClaimsSet.Builder()
-                .subject(String.valueOf("u-1")).claim("projectId", PROJECT).claim("role", role).claim("scope", SERVICE.equals(role) ? "service" : "authenticated")
+                .subject("u-1").claim("projectId", PROJECT).claim("role", role).claim("scope", SERVICE.equals(role) ? "service" : "authenticated")
                 .audience("excalibase:" + PROJECT).issuer("excalibase")
                 .issueTime(Date.from(Instant.parse("2024-01-01T00:00:00Z")))
                 .expirationTime(Date.from(Instant.parse("2099-01-01T00:00:00Z"))).build();

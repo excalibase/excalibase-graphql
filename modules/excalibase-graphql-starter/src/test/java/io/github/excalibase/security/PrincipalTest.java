@@ -108,6 +108,26 @@ class PrincipalTest {
                 .doesNotContainValue("forged");
     }
 
+    @ParameterizedTest
+    @ValueSource(strings = {"public", "service"})
+    void apiKeyScopes_haveNoUserId(String scope) {
+        Map<String, Object> raw = userClaims();
+        raw.put("sub", "apikey:9");
+        raw.put("scope", scope);
+        Principal principal = new Principal("user", false, passwordToken(raw), Map.of());
+
+        assertThat(principal.sessionVariables(PROJECT)).doesNotContainKey("x-excalibase-user-id");
+    }
+
+    @Test
+    void aTokenWithAKeyId_hasNoUserId() {
+        JwtClaims keyed = new JwtClaims("apikey:9", PROJECT, "org", "app", "Org", "user", null, null, 9L,
+                Map.of("sub", "apikey:9"), Set.of("user"));
+
+        assertThat(new Principal("user", false, keyed, Map.of()).sessionVariables(PROJECT))
+                .doesNotContainKey("x-excalibase-user-id");
+    }
+
     @Test
     void anon_hasNoUserEvenWhenItsTokenCarriesASubject() {
         Map<String, Object> raw = userClaims();

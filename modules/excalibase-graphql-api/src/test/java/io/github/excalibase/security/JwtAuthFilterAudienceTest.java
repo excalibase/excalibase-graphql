@@ -58,7 +58,7 @@ class JwtAuthFilterAudienceTest {
 
     private String token(String audience, String tokenUse) throws Exception {
         JWTClaimsSet.Builder builder = new JWTClaimsSet.Builder()
-                .subject(String.valueOf(42))
+                .subject("42")
                 .claim("projectId", PROJECT)
                 .claim("role", "user")
                 .issueTime(Date.from(Instant.now()))

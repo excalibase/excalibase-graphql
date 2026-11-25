@@ -84,7 +84,7 @@ class JwtServiceHmacTest {
     void tokenMissingExp_throws() throws Exception {
         JwtService svc = new JwtService(SECRET).requireAudience(false, null);
         JWTClaimsSet claims = new JWTClaimsSet.Builder()
-                .subject(String.valueOf(1L))
+                .subject("1")
                 .build();
         String token = signHmac(SECRET, claims);
 
@@ -98,7 +98,7 @@ class JwtServiceHmacTest {
     void apiKeyToken_noExp_isRefused() throws Exception {
         JwtService svc = new JwtService(SECRET).requireAudience(false, null);
         JWTClaimsSet claims = new JWTClaimsSet.Builder()
-                .subject(String.valueOf(7L))
+                .subject("7")
                 .claim("scope", "api-key")
                 .claim("keyId", 99L)
                 .claim("role", "anon")
@@ -115,7 +115,7 @@ class JwtServiceHmacTest {
     void expiredToken_throws() throws Exception {
         JwtService svc = new JwtService(SECRET).requireAudience(false, null);
         JWTClaimsSet claims = new JWTClaimsSet.Builder()
-                .subject(String.valueOf(1L))
+                .subject("1")
                 .expirationTime(Date.from(Instant.now().minusSeconds(10)))
                 .build();
         String token = signHmac(SECRET, claims);
@@ -130,7 +130,7 @@ class JwtServiceHmacTest {
     void notBeforeInFuture_throws() throws Exception {
         JwtService svc = new JwtService(SECRET).requireAudience(false, null);
         JWTClaimsSet claims = new JWTClaimsSet.Builder()
-                .subject(String.valueOf(1L))
+                .subject("1")
                 .expirationTime(Date.from(Instant.now().plusSeconds(3600)))
                 .notBeforeTime(Date.from(Instant.now().plusSeconds(600)))
                 .build();

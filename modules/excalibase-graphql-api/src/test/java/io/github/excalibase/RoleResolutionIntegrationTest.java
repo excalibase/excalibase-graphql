@@ -100,7 +100,7 @@ class RoleResolutionIntegrationTest extends EngineIntegrationTest {
         properties.put("app.security.auth.jwks-url", String.valueOf("http://localhost:" + mockJwks.getAddress().getPort() + "/.well-known/jwks.json"));
         properties.put("app.security.rls.policy-url", String.valueOf("http://localhost:" + mockJwks.getAddress().getPort() + "/api"));
         properties.put("app.security.rls.policy-pat", "test-pat");
-        properties.put("app.security.rls.policy-ttl-ms", String.valueOf(0));
+        properties.put("app.security.rls.policy-ttl-ms", "0");
         return properties;
     }
 
@@ -119,7 +119,7 @@ class RoleResolutionIntegrationTest extends EngineIntegrationTest {
 
     private static String token(Map<String, Object> roleClaims) throws Exception {
         JWTClaimsSet.Builder builder = new JWTClaimsSet.Builder()
-                .subject(String.valueOf("u-1"))
+                .subject("u-1")
                 .claim("projectId", PROJECT)
                 .audience("excalibase:" + PROJECT)
                 .issueTime(Date.from(Instant.now()))

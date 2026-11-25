@@ -82,7 +82,7 @@ Permissions refer to the caller through session variables, written as strings th
 | Variable | Value |
 |----------|-------|
 | `X-Excalibase-Role` | the role the request runs as |
-| `X-Excalibase-User-Id` | the token's `sub` claim and nothing else. No custom claim can set or replace it, whatever its spelling (`user-id`, `USER_ID`, `userId`, `user`); `anon` never has one |
+| `X-Excalibase-User-Id` | the token's `sub` claim and nothing else. No custom claim can set or replace it, whatever its spelling (`user-id`, `USER_ID`, `userId`, `user`); `anon` and API-key tokens (a `keyId`, or scope `public` or `service`) never have one |
 | `X-Excalibase-Project-Id` | the project in the URL |
 | `X-Excalibase-Email` | the token's `email` claim only; absent for a token without one (a guest, an API key). `sub` is never read as an address |
 | `X-Excalibase-Is-Guest` | the token's `is_guest` claim, `true` for a guest account and `false` for any other account; absent when the token has none |

@@ -96,13 +96,13 @@ class EngineRlsMutationIntegrationTest extends EngineIntegrationTest {
         properties.put("spring.datasource.username", postgres.getUsername());
         properties.put("spring.datasource.password", postgres.getPassword());
         properties.put("app.database-type", "postgres");
-        properties.put("app.max-rows", String.valueOf(30));
+        properties.put("app.max-rows", "30");
         properties.put("app.security.jwt-enabled", "true");
         properties.put("app.project-id", String.valueOf(PROJECT));
         properties.put("app.security.auth.jwks-url", String.valueOf("http://localhost:" + mockVaultPort + "/.well-known/jwks.json"));
         properties.put("app.security.rls.policy-url", String.valueOf("http://localhost:" + mockVaultPort + "/api"));
         properties.put("app.security.rls.policy-pat", "test-pat");
-        properties.put("app.security.rls.policy-ttl-ms", String.valueOf(0));
+        properties.put("app.security.rls.policy-ttl-ms", "0");
         return properties;
     }
 

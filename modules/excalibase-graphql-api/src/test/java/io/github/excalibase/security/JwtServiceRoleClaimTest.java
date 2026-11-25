@@ -40,7 +40,7 @@ class JwtServiceRoleClaimTest {
 
     private static JWTClaimsSet.Builder baseClaims() {
         return new JWTClaimsSet.Builder()
-                .subject(String.valueOf("u-1"))
+                .subject("u-1")
                 .claim("projectId", "proj-a")
                 .expirationTime(Date.from(Instant.now().plusSeconds(3600)));
     }

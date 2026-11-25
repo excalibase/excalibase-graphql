@@ -167,7 +167,7 @@ class MultiTenantIntegrationTest extends EngineIntegrationTest {
     properties.put("management.health.db.enabled", "false");
     properties.put("app.cors.provisioning-url", String.valueOf("http://localhost:" + mockVaultPort + "/api"));
     properties.put("app.database-type", "postgres");
-    properties.put("app.max-rows", String.valueOf(30));
+    properties.put("app.max-rows", "30");
     properties.put("app.security.jwt-enabled", "true");
     properties.put("app.security.auth.jwks-url", String.valueOf("http://localhost:" + mockVaultPort + "/.well-known/jwks.json"));
     properties.put("app.security.multi-tenant.provisioning-url", String.valueOf("http://localhost:" + mockVaultPort + "/api"));

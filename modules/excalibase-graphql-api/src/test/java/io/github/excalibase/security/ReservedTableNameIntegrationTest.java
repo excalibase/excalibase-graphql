@@ -105,7 +105,7 @@ class ReservedTableNameIntegrationTest extends EngineIntegrationTest {
 
     private String token(String project) throws Exception {
         JWTClaimsSet claims = new JWTClaimsSet.Builder()
-                .subject(String.valueOf("u-1")).claim("projectId", project)
+                .subject("u-1").claim("projectId", project)
                 .claim("role", "user").claim("scope", "authenticated")
                 .audience("excalibase:" + project).issuer("excalibase")
                 .issueTime(Date.from(Instant.parse("2024-01-01T00:00:00Z")))
