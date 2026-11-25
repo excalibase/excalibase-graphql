@@ -8,6 +8,8 @@ export interface EnvForm {
   jwksUrl: string;
   audience: string;
   algorithms: string;
+  /** Seconds, as the document says them. */
+  clockSkew: string;
   role: string;
   defaultRole: string;
   userId: string;
@@ -19,7 +21,7 @@ export const SECRET_PLACEHOLDER = '<a secret of 32 bytes or more>';
 const SECRET_NAME = 'jwt-secret';
 
 export function emptyForm(): EnvForm {
-  return { keys: 'secret', issuer: '', jwksUrl: '', audience: '', algorithms: '', role: '', defaultRole: '', userId: '', extra: {} };
+  return { keys: 'secret', issuer: '', jwksUrl: '', audience: '', algorithms: '', clockSkew: '', role: '', defaultRole: '', userId: '', extra: {} };
 }
 
 /** The form that says what the engine runs with now, so a move starts from the values in use. */
@@ -33,6 +35,7 @@ export function formFrom(settings: AuthSettings | null): EnvForm {
     jwksUrl: settings.jwksUrl ?? '',
     audience: settings.audience.join(', '),
     algorithms: settings.algorithms.join(', '),
+    clockSkew: settings.clockSkew === undefined ? '' : String(settings.clockSkew),
     role: settings.claims?.role ?? '',
     defaultRole: settings.claims?.defaultRole ?? '',
     userId: settings.claims?.userId ?? '',
@@ -42,15 +45,19 @@ export function formFrom(settings: AuthSettings | null): EnvForm {
 
 const list = (text: string): string => text.split(',').map((item) => item.trim()).filter(Boolean).join(',');
 
-/** The variables, in the order the README lists them; a blank setting is left out. */
+/**
+ * The variables, in the order the README lists them; a blank setting is left out. Every field a document section can
+ * hold is here, because the engine takes a section beside its own settings only when they say exactly the same.
+ */
 export function envPairs(form: EnvForm): Array<[string, string]> {
   const extra = Object.entries(form.extra).map(([name, path]) => `${name}=${path}`).join(',');
   const pairs: Array<[string, string]> = [
-    ['APP_AUTH_ISSUER', form.keys === 'provider' ? form.issuer.trim() : ''],
+    ['APP_AUTH_ISSUER', form.issuer.trim()],
     ['APP_AUTH_JWKS_URL', form.keys === 'provider' ? form.jwksUrl.trim() : ''],
     ['APP_AUTH_SECRET', form.keys === 'secret' ? SECRET_PLACEHOLDER : ''],
     ['APP_AUTH_ALGORITHMS', list(form.algorithms)],
     ['APP_AUTH_AUDIENCE', list(form.audience)],
+    ['APP_AUTH_CLOCK_SKEW_SECONDS', form.clockSkew.trim()],
     ['APP_AUTH_CLAIMS_ROLE', form.role.trim()],
     ['APP_AUTH_CLAIMS_DEFAULT_ROLE', form.defaultRole.trim()],
     ['APP_AUTH_CLAIMS_USER_ID', form.userId.trim()],

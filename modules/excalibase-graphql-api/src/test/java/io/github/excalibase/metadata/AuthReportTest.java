@@ -33,6 +33,10 @@ class AuthReportTest {
     private static final String HEADER = "format: 1\nprojectId: demo\n";
     private static final String DOC_JWT = "jwt:\n  secret: file:" + secretFile() + "\n  audience: my-api\n";
     private static final String SOURCE = "source";
+    private static final String API = "my-api";
+    private static final String JWKS_URL = "jwksUrl";
+    private static final String ABSENT = "absent";
+    private static final String UNSET = "unset";
     private static final String KEYS_LOADED = "keysLoaded";
     private static final String AUDIENCE_NAME = "APP_AUTH_AUDIENCE";
     private static final String IDP = "https://idp.example.com/";
@@ -48,7 +52,7 @@ class AuthReportTest {
     }
 
     private static EngineAuth engine() {
-        return AuthSettingsReader.fromEnv(Map.of("APP_AUTH_SECRET", SECRET, AUDIENCE_NAME, "my-api",
+        return AuthSettingsReader.fromEnv(Map.of("APP_AUTH_SECRET", SECRET, AUDIENCE_NAME, API,
                 "APP_AUTH_ISSUER", IDP, "APP_AUTH_CLAIMS_EXTRA", "org=app.org"));
     }
 
@@ -76,9 +80,9 @@ class AuthReportTest {
 
         assertThat(report).containsEntry(SOURCE, "engine").containsEntry(SECRET_KEY, "set")
                 .containsEntry(KEYS_LOADED, true).containsEntry("issuer", IDP)
-                .containsEntry("algorithms", List.of("HS256")).containsEntry("audience", List.of("my-api"))
-                .containsEntry("clockSkew", 30L).containsEntry(DOCUMENT_JWT, "absent");
-        assertThat(report.get("jwksUrl")).isNull();
+                .containsEntry("algorithms", List.of("HS256")).containsEntry("audience", List.of(API))
+                .containsEntry("clockSkew", 30L).containsEntry(DOCUMENT_JWT, ABSENT);
+        assertThat(report.get(JWKS_URL)).isNull();
         assertThat(report.get("claims")).isEqualTo(Map.of("role", "role", "defaultRole", "", "userId", "sub",
                 "extra", Map.of("org", "app.org")));
         assertThat(report.toString()).doesNotContain(SECRET);
@@ -93,14 +97,14 @@ class AuthReportTest {
 
         Map<String, Object> report = AuthReport.of(auth, null, null, ENV);
 
-        assertThat(report).containsEntry("jwksUrl", "https://idp.example.com/jwks.json").containsEntry(SECRET_KEY, "unset");
+        assertThat(report).containsEntry(JWKS_URL, "https://idp.example.com/jwks.json").containsEntry(SECRET_KEY, UNSET);
         assertThat(report.toString()).doesNotContain("abc");
     }
 
     @Test
     @DisplayName("an identical document section is reported as identical, with the note to remove it")
     void identical() {
-        Map<String, String> same = Map.of("APP_AUTH_SECRET", DOC_SECRET_VALUE, AUDIENCE_NAME, "my-api");
+        Map<String, String> same = Map.of("APP_AUTH_SECRET", DOC_SECRET_VALUE, AUDIENCE_NAME, API);
         EngineAuth auth = AuthSettingsReader.fromEnv(same);
 
         Map<String, Object> report = AuthReport.of(auth, null, served(HEADER + DOC_JWT + RULES, auth), ENV);
@@ -128,7 +132,7 @@ class AuthReportTest {
         Map<String, Object> report = report(EngineAuth.NONE, DOC_JWT + RULES);
 
         assertThat(report).containsEntry(SOURCE, "document").containsEntry(SECRET_KEY, "set")
-                .containsEntry(KEYS_LOADED, true).containsEntry("audience", List.of("my-api"))
+                .containsEntry(KEYS_LOADED, true).containsEntry("audience", List.of(API))
                 .containsEntry(DOCUMENT_JWT, "present-deprecated");
         assertThat(codes(report)).containsExactly("jwt_deprecated");
         assertThat(report.toString()).doesNotContain("doc-secret").doesNotContain(DOC_SECRET_VALUE);
@@ -141,7 +145,7 @@ class AuthReportTest {
         Map<String, Object> anonOnly = report(EngineAuth.NONE, ANON_ONLY);
 
         assertThat(withRules).containsEntry(SOURCE, "none").containsEntry(KEYS_LOADED, false)
-                .containsEntry(SECRET_KEY, "unset").containsEntry(DOCUMENT_JWT, "absent");
+                .containsEntry(SECRET_KEY, UNSET).containsEntry(DOCUMENT_JWT, ABSENT);
         assertThat(codes(withRules)).containsExactly("no_token_verifier");
         assertThat(codes(anonOnly)).isEmpty();
     }
@@ -151,7 +155,7 @@ class AuthReportTest {
     void noDocument() {
         Map<String, Object> report = AuthReport.of(EngineAuth.NONE, null, null, ENV);
 
-        assertThat(report).containsEntry(SOURCE, "none").containsEntry(DOCUMENT_JWT, "absent");
+        assertThat(report).containsEntry(SOURCE, "none").containsEntry(DOCUMENT_JWT, ABSENT);
         assertThat(codes(report)).isEmpty();
     }
 
@@ -167,7 +171,7 @@ class AuthReportTest {
         assertThat(viaHmac).containsEntry(SOURCE, "legacy-engine").containsEntry(SECRET_KEY, "set")
                 .containsEntry("issuer", "https://issuer.example");
         assertThat(viaHmac.get(KEYS_LOADED)).isNull();
-        assertThat(viaJwks).containsEntry("jwksUrl", "https://idp.example.com/jwks").containsEntry(SECRET_KEY, "unset");
+        assertThat(viaJwks).containsEntry(JWKS_URL, "https://idp.example.com/jwks").containsEntry(SECRET_KEY, UNSET);
         assertThat(viaJwks.toString()).doesNotContain("zzz");
     }
 }

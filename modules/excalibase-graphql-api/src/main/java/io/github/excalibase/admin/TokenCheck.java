@@ -46,6 +46,7 @@ public final class TokenCheck {
             Map.entry("JWT token not yet valid", Reason.NOT_YET_VALID),
             Map.entry("JWT signature verification failed", Reason.BAD_SIGNATURE),
             Map.entry("JWT algorithm is not accepted", Reason.ALGORITHM),
+            Map.entry("Unexpected JWS algorithm", Reason.ALGORITHM),
             Map.entry("JWT issuer not accepted", Reason.ISSUER),
             Map.entry("Missing required claim", Reason.MISSING_USER_ID),
             Map.entry("No JWT verifier is configured", Reason.NO_VERIFIER));

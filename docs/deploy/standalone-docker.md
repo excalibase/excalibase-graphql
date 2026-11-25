@@ -91,11 +91,16 @@ start. The other providers and every `APP_AUTH_*` name are in the
 [folder README](https://github.com/excalibase/excalibase-graphql/blob/main/deploy/standalone/README.md).
 
 **Upgrading an older compose file.** Earlier examples set only `JWT_SECRET` and kept a `jwt:` section in
-`permissions.yaml`. The new default file has no `jwt:` section. If you take the new file and keep the old compose,
-the engine starts but nothing verifies a token: every token is rejected (it fails closed) and the log says
-`no_token_verifier`. Replace `JWT_SECRET` with `APP_AUTH_SECRET` (the same value) and set `APP_AUTH_AUDIENCE` to the
-audience your tokens carry (`my-app-api` in the old file). An old document that still has a `jwt:` section keeps working
-until you set `APP_AUTH_*`; then it must say exactly the same, and you remove it (see the README).
+`permissions.yaml` (`secret: env:JWT_SECRET`). The new default file has no `jwt:` section. If you take the new file and
+keep the old compose, the engine starts but nothing verifies a token: every token is rejected (it fails closed) and the
+log says `no_token_verifier`. Set `APP_AUTH_SECRET` (the value `JWT_SECRET` had) and `APP_AUTH_AUDIENCE` (the audience
+your tokens carry, `my-app-api` in the old file).
+
+If you keep a document that still has a `jwt:` section, do not swap `JWT_SECRET` for `APP_AUTH_SECRET` in one step: the
+engine then cannot read the document's secret, refuses the document and serves nothing. Go in this order and keep
+`JWT_SECRET` until the end: (1) add `APP_AUTH_*` with the same values as the section, keeping `JWT_SECRET`; (2) restart
+every replica and check for `metadata_jwt_identical` in the log; (3) remove `jwt:` from the document; (4) drop
+`JWT_SECRET`. The Auth page below writes the lines for step 1.
 
 Check the document before you start the engine. `validate` reads `APP_AUTH_*` from its environment the way the engine
 does, so export them first to also see whether the engine has a token verifier:

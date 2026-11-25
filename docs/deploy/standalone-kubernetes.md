@@ -115,9 +115,12 @@ Provider notes:
 - Do not set `APP_SECURITY_AUTH_JWKS_URL` or `APP_SECURITY_AUTH_HMAC_SECRET` together with `APP_AUTH_*`: the engine
   refuses to start.
 - **Upgrading.** A Deployment that only sets `JWT_SECRET`, with a new document that has no `jwt:` section, starts but
-  rejects every token and logs `no_token_verifier`. Set `APP_AUTH_SECRET` (same value) and `APP_AUTH_AUDIENCE`.
-  Do the move on every replica before you remove a `jwt:` section from a document: a replica still on the old
-  image loses its verifier when the section goes.
+  rejects every token and logs `no_token_verifier`: set `APP_AUTH_SECRET` (same value) and `APP_AUTH_AUDIENCE`. If the
+  document still has `jwt:` (with `secret: env:JWT_SECRET`), do not swap the variable in one step, or the engine cannot
+  read the secret, refuses the document and serves nothing. In order, keeping `JWT_SECRET` until the end: (1) add
+  `APP_AUTH_*` with the section's exact values; (2) roll every replica and check for `metadata_jwt_identical`;
+  (3) remove `jwt:` from the document (a replica still on the old image loses its verifier when it goes); (4) drop
+  `JWT_SECRET`.
 
 ## Reach the console
 

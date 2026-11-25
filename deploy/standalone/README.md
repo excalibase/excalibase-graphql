@@ -195,12 +195,22 @@ The `jwt:` section below still works when no engine settings are set, and is dep
 
 ### Upgrading an older compose file or manifest
 
-An older example set only `JWT_SECRET` and kept a `jwt:` section in `permissions.yaml`. If you take the new default
-file and keep that compose file, the engine **starts but rejects every token**: with no `APP_AUTH_*` and no `jwt:`
-there is no verifier, so it fails closed and logs `no_token_verifier` (`validate` and the console's save say the
-same when the document has rules for a role other than `anon`). Fix it in the compose file or manifest: replace
-`JWT_SECRET` with `APP_AUTH_SECRET` (same value, 32 bytes or more) and set `APP_AUTH_AUDIENCE` to the audience your
-tokens carry (`my-app-api` in the old file). Keep an old document that still has `jwt:` as it is until then.
+An older example set only `JWT_SECRET` and kept a `jwt:` section in `permissions.yaml` that read it
+(`secret: env:JWT_SECRET`). Two cases:
+
+- **You take the new default file (no `jwt:`) and keep the old compose file.** The engine **starts but rejects every
+  token**: with no `APP_AUTH_*` and no `jwt:` there is no verifier, so it fails closed and logs `no_token_verifier`
+  (`validate` and the console's save say the same when the document has rules for a role other than `anon`). Set
+  `APP_AUTH_SECRET` (the value `JWT_SECRET` had, 32 bytes or more) and `APP_AUTH_AUDIENCE` (the audience your tokens
+  carry, `my-app-api` in the old file).
+- **You keep a document that still has `jwt:`.** Do not swap `JWT_SECRET` for `APP_AUTH_SECRET` in one step: the
+  document's `env:JWT_SECRET` then cannot be read, the engine refuses the document, and it serves nothing. Go in this
+  order, and keep `JWT_SECRET` until the last step:
+  1. Add `APP_AUTH_*` with exactly the values of the `jwt:` section (every field: secret bytes, issuer, audience,
+     algorithms, clock skew and the claim names; the Auth page's snippet writes them), and keep `JWT_SECRET`.
+  2. Restart every replica and check the logs say `metadata_jwt_identical`.
+  3. Remove `jwt:` from the document.
+  4. Only then drop `JWT_SECRET`.
 
 ### The Auth page
 

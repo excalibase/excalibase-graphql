@@ -2,6 +2,7 @@ package io.github.excalibase.admin;
 
 import com.nimbusds.jose.JWSAlgorithm;
 import io.github.excalibase.metadata.AuthSettingsReader;
+import io.github.excalibase.security.JwtService;
 import io.github.excalibase.security.JwtVerificationException;
 import io.github.excalibase.security.TokenVerifier;
 import org.junit.jupiter.api.DisplayName;
@@ -27,6 +28,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 class TokenCheckTest {
 
     private static final String REASON = "reason";
+    private static final String MALFORMED = "malformed";
+    private static final String VALID = "valid";
     private static final TokenVerifier VERIFIER = AuthSettingsReader.fromEnv(Map.of(
             "APP_AUTH_SECRET", SECRET, "APP_AUTH_AUDIENCE", AUDIENCE, "APP_AUTH_ISSUER", ISSUER)).verifier();
 
@@ -47,8 +50,8 @@ class TokenCheckTest {
                 Arguments.of("audience", AuthTokens.sign(c -> c.audience("another-api"))),
                 Arguments.of("role_claim", AuthTokens.sign(c -> c.claim("role", null))),
                 Arguments.of("missing_user_id", AuthTokens.sign(c -> c.subject(null))),
-                Arguments.of("malformed", "not-a-token"),
-                Arguments.of("malformed", "a.b.c"),
+                Arguments.of(MALFORMED, "not-a-token"),
+                Arguments.of(MALFORMED, "a.b.c"),
                 Arguments.of("unsupported_token_type", AuthTokens.sign(c -> c.claim("token_use", "refresh"))));
     }
 
@@ -58,7 +61,7 @@ class TokenCheckTest {
     void refused(String reason, String token) {
         Map<String, Object> answer = check(token);
 
-        assertThat(answer).containsEntry("valid", false).containsEntry(REASON, reason);
+        assertThat(answer).containsEntry(VALID, false).containsEntry(REASON, reason);
         assertThat(answer.get("role")).isNull();
         assertThat(answer.toString()).doesNotContain(token).doesNotContain(SECRET);
     }
@@ -68,7 +71,7 @@ class TokenCheckTest {
     void acceptedSingleRole() {
         Map<String, Object> answer = check(AuthTokens.sign(c -> { }));
 
-        assertThat(answer).containsEntry("valid", true).containsEntry(REASON, null).containsEntry("role", "user")
+        assertThat(answer).containsEntry(VALID, true).containsEntry(REASON, null).containsEntry("role", "user")
                 .containsEntry("userId", "u-1");
         assertThat(answer.get("allowedRoles")).isEqualTo(List.of("user"));
         @SuppressWarnings("unchecked")
@@ -82,7 +85,7 @@ class TokenCheckTest {
     void noVerifier() {
         Map<String, Object> answer = TokenCheck.run(null, "x.y.z".getBytes(StandardCharsets.UTF_8), null);
 
-        assertThat(answer).containsEntry("valid", false).containsEntry(REASON, "no_verifier");
+        assertThat(answer).containsEntry(VALID, false).containsEntry(REASON, "no_verifier");
     }
 
     @Test
@@ -94,7 +97,7 @@ class TokenCheckTest {
 
         Map<String, Object> answer = TokenCheck.run(broken, "tok".getBytes(StandardCharsets.UTF_8), null);
 
-        assertThat(answer).containsEntry(REASON, "malformed");
+        assertThat(answer).containsEntry(REASON, MALFORMED);
         assertThat(answer.toString()).doesNotContain("secret detail");
     }
 
@@ -107,21 +110,33 @@ class TokenCheckTest {
 
         Map<String, Object> answer = TokenCheck.run(odd, "tok".getBytes(StandardCharsets.UTF_8), null);
 
-        assertThat(answer).containsEntry(REASON, "malformed");
+        assertThat(answer).containsEntry(REASON, MALFORMED);
         assertThat(answer.toString()).doesNotContain("alice");
     }
 
     @Test
     @DisplayName("a body that is not UTF-8, or empty, is malformed")
     void notText() {
-        assertThat(TokenCheck.run(VERIFIER, new byte[] {(byte) 0xff, (byte) 0xfe}, null)).containsEntry(REASON, "malformed");
-        assertThat(TokenCheck.run(VERIFIER, new byte[0], null)).containsEntry(REASON, "malformed");
-        assertThat(TokenCheck.run(VERIFIER, null, null)).containsEntry(REASON, "malformed");
+        assertThat(TokenCheck.run(VERIFIER, new byte[] {(byte) 0xff, (byte) 0xfe}, null)).containsEntry(REASON, MALFORMED);
+        assertThat(TokenCheck.run(VERIFIER, new byte[0], null)).containsEntry(REASON, MALFORMED);
+        assertThat(TokenCheck.run(VERIFIER, null, null)).containsEntry(REASON, MALFORMED);
     }
 
     @Test
     @DisplayName("whitespace around the token is not part of it")
     void trimmed() {
-        assertThat(check("  " + AuthTokens.sign(c -> { }) + "\n")).containsEntry("valid", true);
+        assertThat(check("  " + AuthTokens.sign(c -> { }) + "\n")).containsEntry(VALID, true);
+    }
+
+    @Test
+    @DisplayName("the older engine settings (APP_SECURITY_AUTH_*) say algorithm too, not malformed")
+    void legacyAlgorithm() {
+        JwtService legacy = new JwtService(SECRET);
+        String token = AuthTokens.sign(AuthTokens.good(), JWSAlgorithm.HS512, SECRET.repeat(2));
+
+        Map<String, Object> answer = TokenCheck.run((text, project) -> legacy.verify(text, project),
+                token.getBytes(StandardCharsets.UTF_8), null);
+
+        assertThat(answer).containsEntry(REASON, "algorithm");
     }
 }

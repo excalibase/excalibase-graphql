@@ -1,0 +1,74 @@
+[
+  {
+    "name": "a shared secret and an audience, nothing else",
+    "section": "secret: file:@SECRET_FILE@\naudience: my-api\n",
+    "report": {
+      "source": "document", "algorithms": ["HS256"], "audience": ["my-api"], "clockSkew": 30,
+      "claims": {"role": "role", "defaultRole": "", "userId": "sub", "extra": {}}, "secret": "set"
+    },
+    "env": [
+      "APP_AUTH_SECRET=\"<a secret of 32 bytes or more>\"",
+      "APP_AUTH_ALGORITHMS=HS256",
+      "APP_AUTH_AUDIENCE=my-api",
+      "APP_AUTH_CLOCK_SKEW_SECONDS=30",
+      "APP_AUTH_CLAIMS_ROLE=role",
+      "APP_AUTH_CLAIMS_USER_ID=sub"
+    ]
+  },
+  {
+    "name": "a shared secret with an issuer, two audiences, two algorithms, a skew and every claim field",
+    "section": "secret: file:@SECRET_FILE@\nissuer: https://idp.example.com/\naudience: [my-api, other]\nalgorithms: [HS256, HS384]\nclockSkew: 12\nclaims:\n  role: https://x/role\n  defaultRole: user\n  userId: uid\n  extra:\n    org-id: https://x/org\n    team: team\n",
+    "report": {
+      "source": "document", "issuer": "https://idp.example.com/", "algorithms": ["HS256", "HS384"],
+      "audience": ["my-api", "other"], "clockSkew": 12,
+      "claims": {"role": "https://x/role", "defaultRole": "user", "userId": "uid", "extra": {"org-id": "https://x/org", "team": "team"}},
+      "secret": "set"
+    },
+    "env": [
+      "APP_AUTH_ISSUER=https://idp.example.com/",
+      "APP_AUTH_SECRET=\"<a secret of 32 bytes or more>\"",
+      "APP_AUTH_ALGORITHMS=HS256,HS384",
+      "APP_AUTH_AUDIENCE=my-api,other",
+      "APP_AUTH_CLOCK_SKEW_SECONDS=12",
+      "APP_AUTH_CLAIMS_ROLE=https://x/role",
+      "APP_AUTH_CLAIMS_DEFAULT_ROLE=user",
+      "APP_AUTH_CLAIMS_USER_ID=uid",
+      "APP_AUTH_CLAIMS_EXTRA=org-id=https://x/org,team=team"
+    ]
+  },
+  {
+    "name": "a key set with an issuer, an algorithm, a skew and claims",
+    "section": "issuer: https://idp.example.com/\njwksUrl: https://idp.example.com/jwks.json\naudience: api\nalgorithms: [RS256]\nclockSkew: 0\nclaims:\n  role: realm_access.roles\n  defaultRole: user\n  userId: sub\n",
+    "report": {
+      "source": "document", "issuer": "https://idp.example.com/", "jwksUrl": "https://idp.example.com/jwks.json",
+      "algorithms": ["RS256"], "audience": ["api"], "clockSkew": 0,
+      "claims": {"role": "realm_access.roles", "defaultRole": "user", "userId": "sub", "extra": {}}, "secret": "unset"
+    },
+    "env": [
+      "APP_AUTH_ISSUER=https://idp.example.com/",
+      "APP_AUTH_JWKS_URL=https://idp.example.com/jwks.json",
+      "APP_AUTH_ALGORITHMS=RS256",
+      "APP_AUTH_AUDIENCE=api",
+      "APP_AUTH_CLOCK_SKEW_SECONDS=0",
+      "APP_AUTH_CLAIMS_ROLE=realm_access.roles",
+      "APP_AUTH_CLAIMS_DEFAULT_ROLE=user",
+      "APP_AUTH_CLAIMS_USER_ID=sub"
+    ]
+  },
+  {
+    "name": "an issuer alone, found by discovery",
+    "section": "issuer: https://idp.example.com/\naudience: api\n",
+    "report": {
+      "source": "document", "issuer": "https://idp.example.com/", "algorithms": ["RS256", "ES256"], "audience": ["api"],
+      "clockSkew": 30, "claims": {"role": "role", "defaultRole": "", "userId": "sub", "extra": {}}, "secret": "unset"
+    },
+    "env": [
+      "APP_AUTH_ISSUER=https://idp.example.com/",
+      "APP_AUTH_ALGORITHMS=RS256,ES256",
+      "APP_AUTH_AUDIENCE=api",
+      "APP_AUTH_CLOCK_SKEW_SECONDS=30",
+      "APP_AUTH_CLAIMS_ROLE=role",
+      "APP_AUTH_CLAIMS_USER_ID=sub"
+    ]
+  }
+]

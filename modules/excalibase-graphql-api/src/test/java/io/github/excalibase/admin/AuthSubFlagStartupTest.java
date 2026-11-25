@@ -14,11 +14,13 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 /** The Auth page needs the console: a flag that would do nothing refuses start, and a misspelt one too. */
 class AuthSubFlagStartupTest {
 
+    private static final String FALSE = "false";
+
     private static Map<String, Object> engine(String console, String authPage) {
         Map<String, Object> properties = new HashMap<>(Map.of(
                 "spring.datasource.url", "jdbc:postgresql://localhost:59999/nonexistent",
                 "spring.datasource.username", "fake", "spring.datasource.password", "fake",
-                "app.project-id", "demo", "app.nats.enabled", "false",
+                "app.project-id", "demo", "app.nats.enabled", FALSE,
                 "micronaut.server.port", "-1", "endpoints.all.port", "-1",
                 "excalibase.console.enabled", console, "console.auth-page.enabled", authPage));
         return properties;
@@ -27,7 +29,7 @@ class AuthSubFlagStartupTest {
     @Test
     @DisplayName("the Auth page on with the console off refuses start")
     void withoutTheConsole(@TempDir Path dir) {
-        Map<String, Object> properties = engine("false", "true");
+        Map<String, Object> properties = engine(FALSE, "true");
 
         assertThatThrownBy(() -> ApplicationContext.run(properties).close())
                 .hasStackTraceContaining("CONSOLE_AUTH_PAGE_ENABLED")
@@ -37,7 +39,7 @@ class AuthSubFlagStartupTest {
     @Test
     @DisplayName("a value that is not true or false refuses start")
     void misspelt() {
-        Map<String, Object> properties = engine("false", "yes");
+        Map<String, Object> properties = engine(FALSE, "yes");
 
         assertThatThrownBy(() -> ApplicationContext.run(properties).close())
                 .hasStackTraceContaining("CONSOLE_AUTH_PAGE_ENABLED must be true or false");

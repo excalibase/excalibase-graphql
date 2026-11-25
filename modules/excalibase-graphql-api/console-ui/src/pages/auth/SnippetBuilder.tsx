@@ -123,14 +123,11 @@ export function SnippetBuilder({ settings }: { settings: AuthSettings }) {
           <input type="radio" name="keys" checked={form.keys === 'provider'} onChange={() => setForm((current) => ({ ...current, keys: 'provider' }))} /> An identity provider
         </label>
       </fieldset>
-      {form.keys === 'provider' ? (
-        <>
-          <Field id="snippet-issuer" label="Issuer" value={form.issuer} onChange={set('issuer')} />
-          <Field id="snippet-jwks" label="Key set address (JWKS URL)" value={form.jwksUrl} onChange={set('jwksUrl')} />
-        </>
-      ) : null}
+      <Field id="snippet-issuer" label="Issuer" value={form.issuer} onChange={set('issuer')} />
+      {form.keys === 'provider' ? <Field id="snippet-jwks" label="Key set address (JWKS URL)" value={form.jwksUrl} onChange={set('jwksUrl')} /> : null}
       <Field id="snippet-audience" label="Audience (comma separated)" value={form.audience} onChange={set('audience')} />
       <Field id="snippet-algorithms" label="Algorithms (comma separated)" value={form.algorithms} onChange={set('algorithms')} />
+      <Field id="snippet-skew" label="Clock skew (seconds)" value={form.clockSkew} onChange={set('clockSkew')} />
       <Field id="snippet-role" label="Role claim" value={form.role} onChange={set('role')} />
       <Field id="snippet-default-role" label="Default role (when the role claim is a list)" value={form.defaultRole} onChange={set('defaultRole')} />
       <Field id="snippet-user" label="User id claim" value={form.userId} onChange={set('userId')} />

@@ -1,5 +1,5 @@
 import { screen, waitFor, within } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { AuthSettings } from '../api';
 import { DOC, healthy, META, type Reply, type Routes } from '../test/engine';
 import { openConsole } from '../test/render';
@@ -16,7 +16,8 @@ const SETTINGS: AuthSettings = {
   documentJwt: 'absent',
   warnings: [],
 };
-const TOKEN = 'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1LTEifQ.canary-sig-9f2c';
+const CANARY_SIGNATURE = 'canary-sig';
+const TOKEN = `eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ1LTEifQ.${CANARY_SIGNATURE}-9f2c`;
 const WITH_JWT = 'format: 1\nprojectId: my-app\njwt:\n  secret: env:JWT_SECRET\n  audience: my-api\ntables:\n  - table: public.todos\n    role: user\n    select: {filter: {}, columns: "*"}\n';
 const TABLES = [{ table: 'public.todos', role: 'user', select: { filter: {}, columns: '*' } }];
 const AUTH_PAGE = '#/settings/auth';
@@ -187,22 +188,38 @@ describe('test a token', () => {
 
     expect(screen.getByLabelText('Token to test')).toHaveValue('');
     expect(storage()).not.toContain(TOKEN);
-    expect(storage()).not.toContain('canary-sig');
-    expect(document.body.textContent).not.toContain('canary-sig');
-    const sends = engine.calls.filter((call) => call.body?.includes('canary-sig'));
+    expect(storage()).not.toContain(CANARY_SIGNATURE);
+    expect(document.body.textContent).not.toContain(CANARY_SIGNATURE);
+    const sends = engine.calls.filter((call) => call.body?.includes(CANARY_SIGNATURE));
     expect(sends).toHaveLength(1);
     expect(sends[0]).toMatchObject({ method: 'POST', path: '/auth/check' });
     expect(engine.calls.some((call) => call.method === 'PUT')).toBe(false);
   });
 
-  it('a draft of the permissions never holds the token', async () => {
-    const { user } = await openConsole(AUTH_PAGE, on({}, { [CHECK]: { body: { valid: false, reason: 'malformed' } } }));
-    await paste(user);
-    await screen.findByText('This is not a readable token.');
+  describe('the draft of the permissions', () => {
+    const rangeProto = Range.prototype as unknown as Record<string, unknown>;
+    const saved = { rects: rangeProto.getClientRects, box: rangeProto.getBoundingClientRect };
 
-    window.location.hash = '#/permissions/yaml';
+    // jsdom has no layout, and the editor measures text with ranges.
+    beforeAll(() => {
+      rangeProto.getClientRects = () => [];
+      rangeProto.getBoundingClientRect = () => ({ top: 0, left: 0, right: 0, bottom: 0, width: 0, height: 0 });
+    });
+    afterAll(() => {
+      rangeProto.getClientRects = saved.rects;
+      rangeProto.getBoundingClientRect = saved.box;
+    });
 
-    expect((await screen.findByRole('textbox')) as HTMLTextAreaElement).not.toHaveValue(expect.stringContaining('canary'));
+    it('never holds the token, read from the editor itself once the document has loaded', async () => {
+      const { user } = await openConsole(AUTH_PAGE, on({}, { [CHECK]: { body: { valid: false, reason: 'malformed' } } }));
+      await paste(user);
+      await screen.findByText('This is not a readable token.');
+
+      window.location.hash = '#/permissions/yaml';
+
+      await waitFor(() => expect(document.querySelector('.cm-content')?.textContent).toContain('projectId: my-app'));
+      expect(document.querySelector('.cm-content')?.textContent).not.toContain(CANARY_SIGNATURE);
+    });
   });
 
   it('says so when the checks are used up', async () => {

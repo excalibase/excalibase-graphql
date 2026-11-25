@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { AuthSettings } from '../api';
+import cases from './authSnippetCases.json';
 import { emptyForm, envText, formFrom, k8sText, SECRET_PLACEHOLDER } from './envSnippet';
 
 const ENGINE: AuthSettings = {
@@ -30,13 +31,15 @@ describe('formFrom', () => {
 });
 
 describe('envText', () => {
-  it('writes only what is filled in, a secret placeholder for a shared secret, and the lists without spaces', () => {
+  it('writes every field, an issuer beside a shared secret too, a secret placeholder, and the lists without spaces', () => {
     const text = envText(formFrom(ENGINE));
 
     expect(text.split('\n')).toEqual([
+      'APP_AUTH_ISSUER=https://idp.example.com/',
       `APP_AUTH_SECRET="${SECRET_PLACEHOLDER}"`,
       'APP_AUTH_ALGORITHMS=HS256',
       'APP_AUTH_AUDIENCE=my-api,other',
+      'APP_AUTH_CLOCK_SKEW_SECONDS=30',
       'APP_AUTH_CLAIMS_ROLE=role',
       'APP_AUTH_CLAIMS_USER_ID=sub',
       'APP_AUTH_CLAIMS_EXTRA=org=app.org',
@@ -53,6 +56,12 @@ describe('envText', () => {
 
   it('a value that needs quoting is quoted', () => {
     expect(envText({ ...emptyForm(), keys: 'provider', issuer: 'https://idp/ x' })).toContain('APP_AUTH_ISSUER="https://idp/ x"');
+  });
+});
+
+describe('the snippet says what the document section says', () => {
+  it.each(cases)('$name', ({ report, env }) => {
+    expect(envText(formFrom({ ...report, documentJwt: 'present-deprecated', warnings: [] } as AuthSettings)).split('\n')).toEqual(env);
   });
 });
 
