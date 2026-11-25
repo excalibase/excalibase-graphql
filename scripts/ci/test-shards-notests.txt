@@ -1,0 +1,2 @@
+# Classes whose name Surefire matches but that hold no test method (helpers), so no shard reports them.
+io.github.excalibase.config.datasource.TestPki
