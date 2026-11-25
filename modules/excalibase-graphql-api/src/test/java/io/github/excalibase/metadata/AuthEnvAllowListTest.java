@@ -29,13 +29,44 @@ class AuthEnvAllowListTest {
     }
 
     @Test
-    void anUnknownPropertyKey_refusesStart_eachSpellingOfAKnownOneIsFine() {
-        assertThatThrownBy(() -> AuthSettingsReader.refuseUnknown(Set.of(), Set.of("claim.role")))
-                .hasMessageContaining("app.auth.claim.role");
-        assertThatCode(() -> AuthSettingsReader.refuseUnknown(Set.of(),
-                Set.of("claims.user-id", "claims.user.id", "claims-user-id", "jwks-url", "jwksUrl", "issuer",
-                        "secret-file", "clock-skew", "claims.default-role", "claims.extra", "claims.role", "audience",
-                        "algorithms", "secret"))).doesNotThrowAnyException();
+    void anUnknownPropertyKey_refusesStart() {
+        for (String key : AuthSpellings.NEVER_READ) {
+            assertThatThrownBy(() -> AuthSettingsReader.refuseUnknown(Set.of(), Set.of(key)))
+                    .isInstanceOf(IllegalStateException.class).hasMessageContaining("app.auth." + key);
+        }
+    }
+
+    @Test
+    void theSpellingsMicronautReads_areAccepted() {
+        for (String key : AuthSpellings.READ) {
+            assertThatCode(() -> AuthSettingsReader.refuseUnknown(Set.of(), Set.of(key))).doesNotThrowAnyException();
+        }
+    }
+
+    @Test
+    void aLowerCaseEnvironmentName_isCheckedLikeTheUpperCaseOne() {
+        for (String name : List.of("app_auth_claim_role", "App_Auth_Audiences", "app_auth_")) {
+            assertThatThrownBy(() -> AuthSettingsReader.refuseUnknown(Set.of(name), Set.of()))
+                    .isInstanceOf(IllegalStateException.class).hasMessageContaining(name);
+            assertThatThrownBy(() -> AuthSettingsReader.fromEnv(Map.of(name, "x")))
+                    .isInstanceOf(IllegalStateException.class);
+        }
+        assertThatCode(() -> AuthSettingsReader.refuseUnknown(Set.of("app_auth_secret"), Set.of()))
+                .doesNotThrowAnyException();
+    }
+
+    @Test
+    void aLowerCaseKnownName_isReadAsTheSameSetting() {
+        EngineAuth auth = AuthSettingsReader.fromEnv(Map.of("app_auth_secret", AuthSettingsReaderTest.SECRET,
+                "app_auth_audience", "api"));
+
+        assertThat(auth.engine()).isTrue();
+    }
+
+    @Test
+    void aStrayLowerCaseName_inHostedMode_isRefusedAsHosted() {
+        assertThatThrownBy(() -> AuthSettingsReader.resolve(new AuthSettingsReader.Inputs(true, true, true,
+                Set.of("app_auth_stray"), Set.of(), key -> null))).hasMessage(AuthSettingsReader.HOSTED_REFUSAL);
     }
 
     @Test

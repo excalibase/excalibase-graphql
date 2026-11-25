@@ -130,6 +130,17 @@ test("a rule for a table the database lacks saves and says what the engine will 
   expect((await metadata(request)).document).toBe(ghost);
 });
 
+test("saving a document that still has a jwt: section says it is deprecated, apart from any database warning", async ({ page }) => {
+  await signIn(page);
+  await editDraft(page, EXAMPLE + "# note\n");
+  await page.locator("#save").click();
+  await expect(savedMessage(page)).toBeVisible();
+
+  await expect(page.locator("#token-notes")).toContainText("deprecated");
+  await expect(page.locator("#token-notes")).toContainText("About how tokens are checked");
+  await expect(page.locator("#warnings")).toHaveCount(0);
+});
+
 test("markup in a served document is shown as text and never runs", async ({ page, request }) => {
   const hostile = EXAMPLE + `# ${MARKUP}\n`;
   await replaceDocument(request, hostile);

@@ -102,7 +102,7 @@ class AuthSettingsReaderTest {
                 "APP_AUTH_AUDIENCE", "my-api"));
 
         assertThat(auth.engine()).isTrue();
-        assertThat(auth.identicalSecret(SECRET.getBytes(StandardCharsets.UTF_8))).isTrue();
+        assertThat(auth.verifier().verify(AuthPrecedenceTest.token(SECRET, "u-1"), "demo").userId()).isEqualTo("u-1");
     }
 
     @Test

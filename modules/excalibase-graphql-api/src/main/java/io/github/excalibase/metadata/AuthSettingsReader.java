@@ -11,7 +11,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.UnaryOperator;
-import java.util.stream.Collectors;
+import java.util.regex.Pattern;
 import java.util.function.Supplier;
 
 /**
@@ -32,9 +32,10 @@ public final class AuthSettingsReader {
     private static final Map<String, String> ENV_TO_KEY = envToKey();
 
     public static final Set<String> ENV_NAMES = Set.copyOf(ENV_TO_KEY.keySet());
-    private static final Set<String> KEYS = Set.copyOf(ENV_TO_KEY.values());
-    private static final Set<String> NORMALISED_KEYS = KEYS.stream().map(AuthSettingsReader::normalise)
-            .collect(Collectors.toUnmodifiableSet());
+    private static final Pattern CAMEL_BOUNDARY = Pattern.compile("(?<=[a-z0-9])(?=[A-Z])");
+
+    /** The property keys under {@code app.auth}, exactly as Micronaut holds them. */
+    public static final Set<String> KEYS = Set.copyOf(ENV_TO_KEY.values());
 
     public static final String BOTH_REFUSAL = "app.auth.* and app.security.auth.* are both set: configure one token "
             + "source, not two";
@@ -91,8 +92,8 @@ public final class AuthSettingsReader {
     }
 
     private static boolean anySet(Inputs inputs) {
-        boolean unknown = inputs.envNames().stream().anyMatch(name -> name.startsWith(PREFIX) && !ENV_NAMES.contains(name));
-        boolean unknownKey = inputs.propertyKeys().stream().anyMatch(key -> !NORMALISED_KEYS.contains(normalise(key)));
+        boolean unknown = inputs.envNames().stream().anyMatch(AuthSettingsReader::unknownEnvName);
+        boolean unknownKey = inputs.propertyKeys().stream().anyMatch(AuthSettingsReader::unknownPropertyKey);
         boolean known = KEYS.stream().anyMatch(key -> !blank(inputs.value().apply(key)));
         return unknown || unknownKey || known;
     }
@@ -100,32 +101,50 @@ public final class AuthSettingsReader {
     /** The CLI's reading: the process environment, with the same names and checks. */
     public static EngineAuth fromEnv(Map<String, String> env) {
         refuseUnknown(env.keySet(), Set.of());
+        Map<String, String> upper = new LinkedHashMap<>();
+        env.forEach((name, value) -> upper.putIfAbsent(name.toUpperCase(Locale.ROOT), value));
         return fromValues(key -> {
             String name = ENV_TO_KEY.entrySet().stream().filter(entry -> entry.getValue().equals(key))
                     .map(Map.Entry::getKey).findFirst().orElseThrow();
-            return env.get(name);
+            return upper.get(name);
         });
     }
 
     /** @throws IllegalStateException a name that is not one of the engine's token settings */
     public static void refuseUnknown(Collection<String> envNames, Collection<String> propertyKeys) {
         for (String name : envNames) {
-            if (name.startsWith(PREFIX) && !ENV_NAMES.contains(name)) {
+            if (unknownEnvName(name)) {
                 throw new IllegalStateException(name + " is not an engine token setting; the names are: "
                         + String.join(", ", ENV_NAMES.stream().sorted().toList()));
             }
         }
         for (String key : propertyKeys) {
-            if (!NORMALISED_KEYS.contains(normalise(key))) {
+            if (unknownPropertyKey(key)) {
                 throw new IllegalStateException("app.auth." + key + " is not an engine token setting; the keys are: "
                         + String.join(", ", KEYS.stream().sorted().toList()));
             }
         }
     }
 
-    /** A spelling of a key (kebab, dotted, camel) compares equal to its property form. */
-    private static String normalise(String key) {
-        return key.replaceAll("[-_.]", "").toLowerCase(Locale.ROOT);
+    /** Micronaut binds an environment name in any case, so the prefix and the known names are compared upper-cased. */
+    private static boolean unknownEnvName(String name) {
+        String upper = name.toUpperCase(Locale.ROOT);
+        return upper.startsWith(PREFIX) && !ENV_NAMES.contains(upper);
+    }
+
+    /**
+     * What Micronaut reads under {@code app.auth} once the settings are declared in application.yml: any case, camel
+     * case ({@code userId} is {@code user-id}) and {@code _} for {@code -}. It does not read a dot for a dash
+     * ({@code jwks.url}: the declared {@code jwks-url} wins and stays empty) and never lets a dash or an underscore
+     * stand in for the dot between {@code claims} and its field. Any other key is never read, so accepting it would
+     * start cleanly and leave a default in place.
+     */
+    private static boolean unknownPropertyKey(String key) {
+        return !KEYS.contains(canonical(key));
+    }
+
+    private static String canonical(String key) {
+        return CAMEL_BOUNDARY.matcher(key).replaceAll("-").toLowerCase(Locale.ROOT).replace('_', '-');
     }
 
     private static boolean blank(String value) {
@@ -157,7 +176,7 @@ public final class AuthSettingsReader {
             secret = secret(() -> JwtKeyLoader.secret("file:" + value.apply(SECRET_FILE).strip(), System::getenv),
                     "APP_AUTH_SECRET_FILE");
         }
-        String source = hasSecret ? "engine:APP_AUTH_SECRET" : hasFile ? "engine:APP_AUTH_SECRET_FILE" : null;
+        String source = secretSource(hasSecret, hasFile);
         JwtSettings settings = JwtSettingsParser.parseEngine(tree(value), source);
         return EngineAuth.engine(settings, secret);
     }
@@ -168,6 +187,13 @@ public final class AuthSettingsReader {
         } catch (IllegalStateException e) {
             throw new IllegalStateException("app.auth: " + name + " must hold a secret of at least 32 bytes", e);
         }
+    }
+
+    private static String secretSource(boolean hasSecret, boolean hasFile) {
+        if (hasSecret) {
+            return "engine:APP_AUTH_SECRET";
+        }
+        return hasFile ? "engine:APP_AUTH_SECRET_FILE" : null;
     }
 
     private static ObjectNode tree(UnaryOperator<String> value) {

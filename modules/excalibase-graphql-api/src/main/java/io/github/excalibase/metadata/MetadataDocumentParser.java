@@ -137,8 +137,13 @@ public final class MetadataDocumentParser {
     public synchronized MetadataDocument load(String text, long version) {
         Parsed parsed = validated(text, version, System::getenv);
         parsed.notes().stream().filter(note -> !NO_VERIFIER_NOTE.equals(note.code()))
-                .forEach(note -> log.warn("metadata_{} version={}", note.code(), version));
+                .forEach(note -> log.warn("{} version={}", logName(note), version));
         return new MetadataDocument(parsed.permissions(), verifierFor(parsed.jwt()));
+    }
+
+    /** The line operators grep for: {@code metadata_jwt_identical}, {@code metadata_jwt_deprecated}. */
+    private static String logName(Note note) {
+        return "metadata_" + note.code().replace("_remove_it", "");
     }
 
     /** Unchanged settings keep the served verifier (a rotated secret is picked up when the section changes). */

@@ -55,10 +55,6 @@ public final class EngineAuth {
         return settings;
     }
 
-    boolean identicalSecret(byte[] other) {
-        return secret != null && other != null && MessageDigest.isEqual(secret, other);
-    }
-
     /** Fetches the keys (or uses the secret) now, so settings that cannot work refuse the start. */
     public TokenVerifier verifier() {
         return DocumentJwtVerifier.create(settings, secret);

@@ -35,13 +35,29 @@ export function historyWarning() {
   return h("p", { class: "warn", role: "alert" }, "Saved, but this version could not be added to History.");
 }
 
-/** What the database does not fit in a valid document: the server's own sentences, shown as text. */
+/** Notes about how tokens are checked: they say nothing about the database and get their own notice. */
+const TOKEN_NOTES = new Set(["jwt_deprecated", "jwt_identical_remove_it", "no_token_verifier"]);
+
+/**
+ * What a valid document comes with: what the database does not fit (the server's own sentences, shown as text) under
+ * the given heading, and, apart from it, the notes about token verification.
+ */
 export function warningList(warnings, heading) {
   if (!Array.isArray(warnings) || warnings.length === 0) {
     return null;
   }
-  return h("div", { class: "warn", role: "alert", id: "warnings" }, h("p", {}, heading),
-    h("ul", {}, warnings.map((warning) => h("li", {}, warning.message))));
+  const notes = warnings.filter((warning) => TOKEN_NOTES.has(warning.code));
+  const schema = warnings.filter((warning) => !TOKEN_NOTES.has(warning.code));
+  const parts = [];
+  if (schema.length > 0) {
+    parts.push(h("div", { class: "warn", role: "alert", id: "warnings" }, h("p", {}, heading),
+      h("ul", {}, schema.map((warning) => h("li", {}, warning.message)))));
+  }
+  if (notes.length > 0) {
+    parts.push(h("div", { class: "warn", role: "note", id: "token-notes" }, h("p", {}, "About how tokens are checked:"),
+      h("ul", {}, notes.map((note) => h("li", {}, note.message)))));
+  }
+  return parts.length === 1 ? parts[0] : h("div", {}, parts);
 }
 
 function errorList(errors) {
