@@ -27,6 +27,12 @@ public final class S3MetadataSource {
     public static ReloadingMetadataSource create(S3Settings settings, ReservedSchemas reserved,
                                                  String expectedProjectId, MeterRegistry meters,
                                                  boolean envJwtConfigured) {
+        return create(settings, reserved, expectedProjectId, meters, EngineAuth.of(envJwtConfigured));
+    }
+
+    public static ReloadingMetadataSource create(S3Settings settings, ReservedSchemas reserved,
+                                                 String expectedProjectId, MeterRegistry meters,
+                                                 EngineAuth engineAuth) {
         URI object = S3Location.require(settings, expectedProjectId);
         if (!settings.credentials().configured()) {
             throw new IllegalStateException("metadata.s3.access-key-id and metadata.s3.secret-access-key are required "
@@ -37,7 +43,7 @@ public final class S3MetadataSource {
         MetadataWriter writer = new S3DocumentWriter(fetcher, http, object,
                 new S3ConditionalProbe(http, object, System::currentTimeMillis));
         return new ReloadingMetadataSource(NAME, fetcher,
-                new MetadataDocumentParser(reserved, expectedProjectId, envJwtConfigured)::load, writer,
+                new MetadataDocumentParser(reserved, expectedProjectId, engineAuth)::load, writer,
                 settings.pollInterval(), meters);
     }
 }

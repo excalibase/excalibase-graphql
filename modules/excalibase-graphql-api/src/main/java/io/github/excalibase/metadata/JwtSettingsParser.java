@@ -20,13 +20,21 @@ final class JwtSettingsParser {
     static final Set<String> ASYMMETRIC = Set.of("RS256", "RS384", "RS512", "ES256", "ES384", "ES512",
             "PS256", "PS384", "PS512");
     static final Set<String> SYMMETRIC = Set.of("HS256", "HS384", "HS512");
-    private static final Set<String> KEYS = Set.of("jwksUrl", "issuer", "secret", "algorithms", "audience",
-            "claims", "clockSkew");
+    private static final String ISSUER_FIELD = "issuer";
+    private static final String AUDIENCE_FIELD = "audience";
+    private static final String ALGORITHMS_FIELD = "algorithms";
+    private static final String JWKS_URL_FIELD = "jwksUrl";
+    private static final String CLAIMS_FIELD = "claims";
+    private static final String CLOCK_SKEW_FIELD = "clockSkew";
+    private static final Set<String> KEYS = Set.of(JWKS_URL_FIELD, ISSUER_FIELD, "secret", ALGORITHMS_FIELD, AUDIENCE_FIELD,
+            CLAIMS_FIELD, CLOCK_SKEW_FIELD);
+    private static final Set<String> ENGINE_KEYS = Set.of(JWKS_URL_FIELD, ISSUER_FIELD, ALGORITHMS_FIELD, AUDIENCE_FIELD, CLAIMS_FIELD,
+            CLOCK_SKEW_FIELD);
     private static final Set<String> CLAIM_KEYS = Set.of("role", "defaultRole", "userId", "extra");
     private static final Pattern SECRET_REF = Pattern.compile("^(env:[A-Za-z_]\\w*|file:\\S.*)$");
     private static final Pattern EXTRA_NAME = Pattern.compile("^[a-z0-9][a-z0-9_-]{0,62}$");
     /** Names the engine fills itself; a document may not map a claim onto them. */
-    private static final Set<String> RESERVED_NAMES = Set.of("role", "userid", "user-id", "project-id", "projectid",
+    private static final Set<String> RESERVED_NAMES = Set.of("role", "user", "userid", "user-id", "project-id", "projectid",
             "email", "is-guest", "is_guest", "aal", "iss", "aud", "exp", "iat", "nbf", "jti", "token_use");
     private static final int MAX_PATH = 256;
     private static final int MAX_SKEW_SECONDS = 300;
@@ -41,9 +49,23 @@ final class JwtSettingsParser {
             throw invalid("jwt: must be an object");
         }
         rejectUnknown(jwt, KEYS, "jwt");
-        String secret = secretRef(jwt);
-        String jwksUrl = text(jwt, "jwksUrl");
-        String issuer = text(jwt, "issuer");
+        return build(jwt, secretRef(jwt));
+    }
+
+    /**
+     * The engine's own settings: the same grammar and checks as the document section, with the secret given by the
+     * caller (a document may only name a reference, the engine holds the value).
+     *
+     * @param secretSource a label for where the secret comes from, or null when the settings name a key set
+     */
+    static JwtSettings parseEngine(JsonNode settings, String secretSource) {
+        rejectUnknown(settings, ENGINE_KEYS, "jwt");
+        return build(settings, secretSource);
+    }
+
+    private static JwtSettings build(JsonNode jwt, String secret) {
+        String jwksUrl = text(jwt, JWKS_URL_FIELD);
+        String issuer = text(jwt, ISSUER_FIELD);
         requireOneKeySource(secret, jwksUrl, issuer);
         if (jwksUrl != null) {
             requireHttpsUrl(jwksUrl, "jwt.jwksUrl");
@@ -51,7 +73,7 @@ final class JwtSettingsParser {
             requireHttpsUrl(issuer, ISSUER);
         }
         return new JwtSettings(jwksUrl, issuer, secret, algorithms(jwt, secret != null), audience(jwt),
-                claims(jwt.get("claims")), clockSkew(jwt));
+                claims(jwt.get(CLAIMS_FIELD)), clockSkew(jwt));
     }
 
     private static void requireOneKeySource(String secret, String jwksUrl, String issuer) {
@@ -94,7 +116,7 @@ final class JwtSettingsParser {
 
     private static List<String> algorithms(JsonNode jwt, boolean hmac) {
         Set<String> allowed = hmac ? SYMMETRIC : ASYMMETRIC;
-        JsonNode node = jwt.get("algorithms");
+        JsonNode node = jwt.get(ALGORITHMS_FIELD);
         if (node == null) {
             return hmac ? List.of("HS256") : List.of("RS256", "ES256");
         }
@@ -113,7 +135,7 @@ final class JwtSettingsParser {
     }
 
     private static List<String> audience(JsonNode jwt) {
-        JsonNode node = jwt.get("audience");
+        JsonNode node = jwt.get(AUDIENCE_FIELD);
         List<String> values = new ArrayList<>();
         if (node != null && node.isTextual()) {
             values.add(node.asText());
@@ -163,7 +185,7 @@ final class JwtSettingsParser {
     }
 
     private static Duration clockSkew(JsonNode jwt) {
-        JsonNode node = jwt.get("clockSkew");
+        JsonNode node = jwt.get(CLOCK_SKEW_FIELD);
         if (node == null) {
             return Duration.ofSeconds(DEFAULT_SKEW_SECONDS);
         }
