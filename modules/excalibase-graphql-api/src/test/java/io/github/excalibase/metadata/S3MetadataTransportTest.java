@@ -44,7 +44,9 @@ class S3MetadataTransportTest {
     private static final class Forwarder implements AutoCloseable {
         private final ServerSocket listener;
         private final List<Socket> open = new CopyOnWriteArrayList<>();
-        private volatile Mode mode = Mode.FORWARD;
+        private final Object lock = new Object();
+        private Mode mode = Mode.FORWARD;
+        private boolean closed;
 
         Forwarder() throws IOException {
             listener = new ServerSocket(0, 50, InetAddress.getLoopbackAddress());
@@ -57,9 +59,9 @@ class S3MetadataTransportTest {
 
         /** Existing connections are dropped too: the client keeps its connection alive and would reuse a working one. */
         void mode(Mode mode) throws IOException {
-            this.mode = mode;
-            for (Socket socket : open) {
-                socket.close();
+            synchronized (lock) {
+                this.mode = mode;
+                closeOpenSockets();
             }
         }
 
@@ -67,16 +69,37 @@ class S3MetadataTransportTest {
             try {
                 while (true) {
                     Socket client = listener.accept();
-                    open.add(client);
-                    if (mode == Mode.FORWARD) {
-                        Socket server = new Socket(minio.host(), minio.port());
-                        open.add(server);
-                        Thread.ofVirtual().start(() -> pipe(client, server));
-                        Thread.ofVirtual().start(() -> pipe(server, client));
-                    }
+                    registerOrDrop(client);
                 }
             } catch (IOException _) {
                 // closed
+            }
+        }
+
+        /**
+         * Registering and the mode check happen under the same lock as closing: a connection accepted just before a
+         * close or a mode change is either closed with the others or sees the new state, never left forwarding.
+         */
+        private void registerOrDrop(Socket client) throws IOException {
+            synchronized (lock) {
+                if (closed || mode != Mode.FORWARD) {
+                    open.add(client);
+                    if (closed) {
+                        client.close();
+                    }
+                    return;
+                }
+                Socket server = new Socket(minio.host(), minio.port());
+                open.add(client);
+                open.add(server);
+                Thread.ofVirtual().start(() -> pipe(client, server));
+                Thread.ofVirtual().start(() -> pipe(server, client));
+            }
+        }
+
+        private void closeOpenSockets() throws IOException {
+            for (Socket socket : open) {
+                socket.close();
             }
         }
 
@@ -90,9 +113,10 @@ class S3MetadataTransportTest {
 
         @Override
         public void close() throws IOException {
-            listener.close();
-            for (Socket socket : open) {
-                socket.close();
+            synchronized (lock) {
+                closed = true;
+                listener.close();
+                closeOpenSockets();
             }
         }
     }
