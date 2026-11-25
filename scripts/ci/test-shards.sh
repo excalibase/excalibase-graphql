@@ -44,7 +44,7 @@ case ${1:-} in
   select)
     n=${2:?shard number}
     all_classes | while read -r class; do
-      [[ $(shard_of "$class") == "$n" ]] && echo "$class"
+      if [[ $(shard_of "$class") == "$n" ]]; then echo "$class"; fi
     done | sort -u | paste -sd, -
     ;;
   check)
