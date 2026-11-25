@@ -1,6 +1,6 @@
 import { useEffect, useRef, type ReactNode } from 'react';
 import type { Change } from '../lib/docmodel';
-import type { Warning } from '../lib/outcome';
+import { OUTAGE_NOTE_CODE, TOKEN_NOTE_CODES, type Warning } from '../lib/outcome';
 
 export function Loading({ label = 'Loading' }: { label?: string }) {
   return (
@@ -33,19 +33,45 @@ export function Empty({ title, children }: { title: string; children?: ReactNode
   );
 }
 
+function TokenNotice({ role, testId, notes }: { role: 'note' | 'alert'; testId: string; notes: Warning[] }) {
+  if (notes.length === 0) {
+    return null;
+  }
+  return (
+    <div className="notice warn" role={role} data-testid={testId}>
+      <p>About how tokens are checked:</p>
+      <ul>
+        {notes.map((note) => (
+          <li key={note.message}>{note.message}</li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 export function Warnings({ warnings, heading }: { warnings: Warning[] | undefined; heading: string }) {
   if (!warnings || warnings.length === 0) {
     return null;
   }
+  const tokenNotes = warnings.filter((warning) => warning.code !== undefined && TOKEN_NOTE_CODES.has(warning.code));
+  const outage = tokenNotes.filter((warning) => warning.code === OUTAGE_NOTE_CODE);
+  const notes = tokenNotes.filter((warning) => warning.code !== OUTAGE_NOTE_CODE);
+  const schema = warnings.filter((warning) => !tokenNotes.includes(warning));
   return (
-    <div className="notice warn" role="alert" data-testid="warnings">
-      <p>{heading}</p>
-      <ul>
-        {warnings.map((warning) => (
-          <li key={warning.message}>{warning.message}</li>
-        ))}
-      </ul>
-    </div>
+    <>
+      {schema.length > 0 ? (
+        <div className="notice warn" role="alert" data-testid="warnings">
+          <p>{heading}</p>
+          <ul>
+            {schema.map((warning) => (
+              <li key={warning.message}>{warning.message}</li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+      <TokenNotice role="note" testId="token-notes" notes={notes} />
+      <TokenNotice role="alert" testId="token-outage" notes={outage} />
+    </>
   );
 }
 

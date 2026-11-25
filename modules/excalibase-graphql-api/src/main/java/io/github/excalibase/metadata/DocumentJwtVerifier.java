@@ -55,6 +55,14 @@ public final class DocumentJwtVerifier implements TokenVerifier {
         return create(settings, System::currentTimeMillis);
     }
 
+    /** The engine's own settings: the secret is already resolved, a key set is fetched now. */
+    public static DocumentJwtVerifier create(JwtSettings settings, byte[] secret) {
+        if (secret != null) {
+            return new DocumentJwtVerifier(settings, null, secret);
+        }
+        return create(settings, System::currentTimeMillis);
+    }
+
     /** The clock paces key refreshes; a test moves it instead of waiting. */
     static DocumentJwtVerifier create(JwtSettings settings, LongSupplier clock) {
         if (settings.secretRef() != null) {

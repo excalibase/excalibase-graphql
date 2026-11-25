@@ -170,6 +170,27 @@ example `aws s3 cp permissions.yaml s3://my-bucket/permissions.yaml`, or `mc cp`
 
 ## Tokens from Auth0, Cognito, Keycloak or any OIDC issuer
 
+**Preferred: set the engine's own token settings (`APP_AUTH_*`).** They are checked with the same rules as the
+`jwt:` section below and cannot be changed by whoever can edit the permissions document.
+
+| Variable | Meaning |
+|---|---|
+| `APP_AUTH_ISSUER`, `APP_AUTH_JWKS_URL` | issuer (alone: OIDC discovery) and key set URL |
+| `APP_AUTH_SECRET` or `APP_AUTH_SECRET_FILE` | a shared secret (at least 32 bytes), as a value or a file; not both |
+| `APP_AUTH_AUDIENCE`, `APP_AUTH_ALGORITHMS` | comma lists; audience is required |
+| `APP_AUTH_CLOCK_SKEW_SECONDS` | 0 to 300 |
+| `APP_AUTH_CLAIMS_ROLE`, `APP_AUTH_CLAIMS_DEFAULT_ROLE`, `APP_AUTH_CLAIMS_USER_ID` | claim paths |
+| `APP_AUTH_CLAIMS_EXTRA` | `name=path,name=path` |
+
+Any other `APP_AUTH_*` name stops start-up. They are refused in hosted mode, with `JWT_ENABLED=false`, and together
+with `APP_SECURITY_AUTH_*`. A document `jwt:` beside them is refused unless it says exactly the same (every field and
+the same key bytes): to move without a gap, set `APP_AUTH_*` to the section's values, restart every replica, check
+the logs say `metadata_jwt_identical`, then remove `jwt:` from the document. Removing it before every replica
+runs the new version leaves the old replicas with no verifier, so every token is rejected there. With no
+verifier at all the engine starts, warns `no_token_verifier`, and rejects every token.
+
+The `jwt:` section below still works when no engine settings are set, and is deprecated.
+
 Put a `jwt:` section in the document. It applies only when `METADATA_SOURCE` is set; without it the engine
 verifies tokens from its own settings (`APP_SECURITY_AUTH_*`), exactly as before. Do not set both: a document
 with a `jwt:` section is refused (at start and on every reload) while `APP_SECURITY_AUTH_JWKS_URL` or

@@ -109,4 +109,44 @@ describe('Dialog', () => {
 
     expect(close).toHaveBeenCalledOnce();
   });
+
+  it('token-verification notes get their own notice and wording, never the database-mismatch heading', () => {
+    render(
+      <Warnings
+        heading="Saved, but your database does not fit everything in it:"
+        warnings={[
+          { code: 'jwt_deprecated', message: 'The jwt: section is deprecated.' },
+          { code: 'no_token_verifier', message: 'Every token is rejected.' },
+          { code: 'unknown_column', message: 'Column nope is missing.' },
+        ]}
+      />,
+    );
+
+    const schema = screen.getByTestId('warnings');
+    expect(schema).toHaveTextContent('does not fit everything');
+    expect(schema).toHaveTextContent('Column nope is missing.');
+    expect(schema).not.toHaveTextContent('deprecated');
+    const notes = screen.getByTestId('token-notes');
+    expect(notes).toHaveTextContent('About how tokens are checked:');
+    expect(notes).toHaveTextContent('The jwt: section is deprecated.');
+    expect(notes).not.toHaveTextContent('Every token is rejected.');
+    expect(notes).not.toHaveTextContent('does not fit');
+    expect(notes).toHaveAttribute('role', 'note');
+  });
+
+  it('no_token_verifier describes an outage, so it is an alert of its own', () => {
+    render(<Warnings heading="x" warnings={[{ code: 'no_token_verifier', message: 'Every token is rejected.' }]} />);
+
+    const outage = screen.getByTestId('token-outage');
+    expect(outage).toHaveAttribute('role', 'alert');
+    expect(outage).toHaveTextContent('Every token is rejected.');
+    expect(screen.queryByTestId('token-notes')).toBeNull();
+  });
+
+  it('only notes: no database heading is shown at all', () => {
+    render(<Warnings heading="Saved, but your database does not fit everything in it:" warnings={[{ code: 'jwt_identical_remove_it', message: 'Remove it.' }]} />);
+
+    expect(screen.queryByTestId('warnings')).toBeNull();
+    expect(screen.getByTestId('token-notes')).toHaveTextContent('Remove it.');
+  });
 });
