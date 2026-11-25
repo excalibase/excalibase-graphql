@@ -1,6 +1,6 @@
 services:
   sc-shopify-postgres:
-    image: postgres:16-alpine
+    image: ${HUB_MIRROR:-}postgres:16-alpine
     container_name: sc-shopify-postgres
     environment:
       POSTGRES_DB: shopify_db
@@ -24,7 +24,7 @@ services:
     # pgvector/pgvector:pg16 is the official upstream build — vanilla Postgres 16
     # with the pgvector extension pre-installed. Needed so kanban can exercise
     # both FTS (tsvector) and k-NN vector search in the e2e suite.
-    image: pgvector/pgvector:pg16
+    image: ${HUB_MIRROR:-}pgvector/pgvector:pg16
     container_name: sc-kanban-postgres
     environment:
       POSTGRES_DB: kanban_db
@@ -45,7 +45,7 @@ services:
       - study-cases-network
 
   sc-clinic-postgres:
-    image: postgres:16-alpine
+    image: ${HUB_MIRROR:-}postgres:16-alpine
     container_name: sc-clinic-postgres
     environment:
       POSTGRES_DB: clinic_db
@@ -66,7 +66,7 @@ services:
       - study-cases-network
 
   sc-mock-vault:
-    image: wiremock/wiremock:3.10.0
+    image: ${HUB_MIRROR:-}wiremock/wiremock:3.10.0
     container_name: sc-mock-vault
     volumes:
       - ./wiremock:/home/wiremock
@@ -80,7 +80,7 @@ services:
 
   sc-excalibase-auth:
     # Pinned: this fails closed when it cannot read project info, so a moving tag breaks CI unannounced (EXC-867).
-    image: excalibase/excalibase-auth:1.7.5@sha256:267e907108c405d45be6e8d3acad749ed863cb442ec088c6c4e29b411049c28c
+    image: ${HUB_MIRROR:-}excalibase/excalibase-auth:1.7.5@sha256:267e907108c405d45be6e8d3acad749ed863cb442ec088c6c4e29b411049c28c
     container_name: sc-excalibase-auth
     environment:
       PROVISIONING_URL: http://sc-mock-vault:8080/api

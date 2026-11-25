@@ -26,7 +26,7 @@ final class MinioFixture implements AutoCloseable {
     static final String SECRET_KEY = "test-secret-key-0123456789-abcdef";
     static final String REGION = "us-east-1";
 
-    private final GenericContainer<?> container = new GenericContainer<>("docker.io/pgsty/minio:RELEASE.2026-08-04T00-00-00Z"
+    private final GenericContainer<?> container = new GenericContainer<>("pgsty/minio:RELEASE.2026-08-04T00-00-00Z"
             + "@sha256:b6bfe7239bfc83fb90d31612d9704d86039dd714f7904b3f1ad68f211e602372")
             .withEnv("MINIO_ROOT_USER", ACCESS_KEY).withEnv("MINIO_ROOT_PASSWORD", SECRET_KEY)
             .withCommand("server", "/data").withExposedPorts(9000)

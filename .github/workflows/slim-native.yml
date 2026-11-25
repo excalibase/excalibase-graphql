@@ -20,6 +20,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
+  # EXC-881: no mirror in this workflow: it pushes images, and what ships is built and tested from Docker Hub.
   DOCKER_IMAGE: excalibase/excalibase-graphql
   MAVEN_CLI_OPTS: "--batch-mode --errors --fail-at-end --show-version"
   # the binaries ship the console, so it is built; its lint and Vitest run in the Console browser test job

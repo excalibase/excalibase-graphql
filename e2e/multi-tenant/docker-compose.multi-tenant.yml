@@ -1,6 +1,6 @@
 services:
   tenant-a-postgres:
-    image: postgres:16-alpine
+    image: ${HUB_MIRROR:-}postgres:16-alpine
     container_name: mt-tenant-a-postgres
     environment:
       POSTGRES_DB: tenant_a_db
@@ -28,7 +28,7 @@ services:
       - multi-tenant-network
 
   tenant-b-postgres:
-    image: postgres:16-alpine
+    image: ${HUB_MIRROR:-}postgres:16-alpine
     container_name: mt-tenant-b-postgres
     environment:
       POSTGRES_DB: tenant_b_db
@@ -56,7 +56,7 @@ services:
       - multi-tenant-network
 
   mock-vault:
-    image: wiremock/wiremock:3.10.0
+    image: ${HUB_MIRROR:-}wiremock/wiremock:3.10.0
     container_name: mt-mock-vault
     volumes:
       - ./wiremock:/home/wiremock
@@ -70,7 +70,7 @@ services:
 
   excalibase-auth:
     # Pinned: this fails closed when it cannot read project info, so a moving tag breaks CI unannounced (EXC-867).
-    image: excalibase/excalibase-auth:1.7.5@sha256:267e907108c405d45be6e8d3acad749ed863cb442ec088c6c4e29b411049c28c
+    image: ${HUB_MIRROR:-}excalibase/excalibase-auth:1.7.5@sha256:267e907108c405d45be6e8d3acad749ed863cb442ec088c6c4e29b411049c28c
     container_name: mt-excalibase-auth
     environment:
       PROVISIONING_URL: http://mock-vault:8080/api
@@ -150,7 +150,7 @@ services:
 
   # ── CDC infra (shared NATS broker, per-tenant watcher-go) ───────────────────
   nats:
-    image: nats:2.10
+    image: ${HUB_MIRROR:-}nats:2.10
     container_name: mt-nats
     command: ["-js", "-m", "8222"]
     ports:
@@ -168,7 +168,7 @@ services:
   # does not create/mutate streams — ops own topology so per-tenant watchers
   # don't fight over the subjects list.
   nats-init:
-    image: natsio/nats-box:latest
+    image: ${HUB_MIRROR:-}natsio/nats-box:0.14.5@sha256:0784ab710aefaf6ef037ed797ee7dcde613c6ad208c4dbff1945fc7c1b5b5375
     container_name: mt-nats-init
     entrypoint: ["/bin/sh", "-c"]
     command:
@@ -182,7 +182,7 @@ services:
     restart: "no"
 
   watcher-tenant-a:
-    image: excalibase/excalibase-watcher-go:1.7.5@sha256:e31bbddc0753189510be1f536fb70535f68b706795b7bf049da0a8af612f1069
+    image: ${HUB_MIRROR:-}excalibase/excalibase-watcher-go:1.7.5@sha256:e31bbddc0753189510be1f536fb70535f68b706795b7bf049da0a8af612f1069
     container_name: mt-watcher-a
     command: ["--config", "/config/config.yaml"]
     environment:
@@ -204,7 +204,7 @@ services:
       - multi-tenant-network
 
   watcher-tenant-b:
-    image: excalibase/excalibase-watcher-go:1.7.5@sha256:e31bbddc0753189510be1f536fb70535f68b706795b7bf049da0a8af612f1069
+    image: ${HUB_MIRROR:-}excalibase/excalibase-watcher-go:1.7.5@sha256:e31bbddc0753189510be1f536fb70535f68b706795b7bf049da0a8af612f1069
     container_name: mt-watcher-b
     command: ["--config", "/config/config.yaml"]
     environment:

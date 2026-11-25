@@ -18,7 +18,7 @@ x-engine-env: &engine-env
 
 services:
   postgres:
-    image: pgvector/pgvector:pg15
+    image: ${HUB_MIRROR:-}pgvector/pgvector:pg15
     environment:
       POSTGRES_DB: hana
       POSTGRES_USER: hana001
@@ -36,7 +36,7 @@ services:
     networks: [contracts]
 
   mock-vault:
-    image: wiremock/wiremock:3.10.0
+    image: ${HUB_MIRROR:-}wiremock/wiremock:3.10.0
     volumes:
       # Own mappings: contracts run no auth, so no /info stub (it would answer the engine's CORS lookup).
       - ./wiremock/mappings:/home/wiremock/mappings:ro
@@ -51,7 +51,7 @@ services:
     networks: [contracts]
 
   nats:
-    image: nats:2.10
+    image: ${HUB_MIRROR:-}nats:2.10
     command: ["-js", "-m", "8222"]
     healthcheck:
       test: ["CMD", "/nats-server", "--help"]
@@ -61,7 +61,7 @@ services:
     networks: [contracts]
 
   nats-init:
-    image: natsio/nats-box:latest
+    image: ${HUB_MIRROR:-}natsio/nats-box:0.14.5@sha256:0784ab710aefaf6ef037ed797ee7dcde613c6ad208c4dbff1945fc7c1b5b5375
     entrypoint: ["/bin/sh", "-c"]
     command:
       - |
@@ -72,7 +72,7 @@ services:
     networks: [contracts]
 
   watcher:
-    image: excalibase/excalibase-watcher-go:1.7.5@sha256:e31bbddc0753189510be1f536fb70535f68b706795b7bf049da0a8af612f1069
+    image: ${HUB_MIRROR:-}excalibase/excalibase-watcher-go:1.7.5@sha256:e31bbddc0753189510be1f536fb70535f68b706795b7bf049da0a8af612f1069
     command: ["--config", "/config/config.yaml"]
     environment:
       WATCHER_POSTGRES_USERNAME: hana001
@@ -88,7 +88,7 @@ services:
     networks: [contracts]
 
   otel-collector:
-    image: otel/opentelemetry-collector-contrib:0.119.0
+    image: ${HUB_MIRROR:-}otel/opentelemetry-collector-contrib:0.119.0
     user: "0:0"
     command: ["--config=/etc/otelcol/config.yaml"]
     volumes:

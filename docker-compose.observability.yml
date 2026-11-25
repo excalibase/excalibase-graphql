@@ -20,7 +20,7 @@ services:
 
   # ── OpenTelemetry Collector ──────────────────────────────────────────────────
   otel-collector:
-    image: otel/opentelemetry-collector-contrib:0.119.0
+    image: ${HUB_MIRROR:-}otel/opentelemetry-collector-contrib:0.119.0
     container_name: otel-collector
     command: ["--config=/etc/otelcol/config.yaml"]
     volumes:
@@ -39,7 +39,7 @@ services:
 
   # ── Tempo (distributed traces) ───────────────────────────────────────────────
   tempo:
-    image: grafana/tempo:2.7.2
+    image: ${HUB_MIRROR:-}grafana/tempo:2.7.2
     container_name: tempo
     command: ["-config.file=/etc/tempo/tempo.yaml"]
     volumes:
@@ -53,7 +53,7 @@ services:
 
   # ── Prometheus (metrics) ─────────────────────────────────────────────────────
   prometheus:
-    image: prom/prometheus:v3.3.0
+    image: ${HUB_MIRROR:-}prom/prometheus:v3.3.0
     container_name: prometheus
     command:
       - "--config.file=/etc/prometheus/prometheus.yml"
@@ -73,7 +73,7 @@ services:
 
   # ── Loki (logs) ──────────────────────────────────────────────────────────────
   loki:
-    image: grafana/loki:3.4.2
+    image: ${HUB_MIRROR:-}grafana/loki:3.4.2
     container_name: loki
     user: root                  # named volume is owned by root; root avoids permission errors
     command: ["-config.file=/etc/loki/loki.yaml"]
@@ -88,7 +88,7 @@ services:
 
   # ── Promtail (Docker log collector → Loki) ───────────────────────────────────
   promtail:
-    image: grafana/promtail:3.4.2
+    image: ${HUB_MIRROR:-}grafana/promtail:3.4.2
     container_name: promtail
     command: ["-config.file=/etc/promtail/config.yaml"]
     volumes:
@@ -102,7 +102,7 @@ services:
 
   # ── Grafana (dashboards) ─────────────────────────────────────────────────────
   grafana:
-    image: grafana/grafana:11.6.0
+    image: ${HUB_MIRROR:-}grafana/grafana:11.6.0
     container_name: grafana
     environment:
       GF_AUTH_ANONYMOUS_ENABLED: "true"

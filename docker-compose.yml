@@ -1,6 +1,6 @@
 services:
   postgres:
-    image: pgvector/pgvector:pg15
+    image: ${HUB_MIRROR:-}pgvector/pgvector:pg15
     container_name: excalibase-postgres
     environment:
       POSTGRES_DB: hana
@@ -130,7 +130,7 @@ services:
           cpus: '0.25'
 
   nats:
-    image: nats:2.10
+    image: ${HUB_MIRROR:-}nats:2.10
     container_name: excalibase-nats
     command: ["-js", "-m", "8222"]
     ports:
@@ -147,7 +147,7 @@ services:
 
   # Pre-provision the shared CDC stream; watcher-go does not create/mutate streams.
   nats-init:
-    image: natsio/nats-box:latest
+    image: ${HUB_MIRROR:-}natsio/nats-box:0.14.5@sha256:0784ab710aefaf6ef037ed797ee7dcde613c6ad208c4dbff1945fc7c1b5b5375
     container_name: excalibase-nats-init
     entrypoint: ["/bin/sh", "-c"]
     command:
@@ -161,7 +161,7 @@ services:
     restart: "no"
 
   excalibase-watcher:
-    image: excalibase/excalibase-watcher-go:1.7.5@sha256:e31bbddc0753189510be1f536fb70535f68b706795b7bf049da0a8af612f1069
+    image: ${HUB_MIRROR:-}excalibase/excalibase-watcher-go:1.7.5@sha256:e31bbddc0753189510be1f536fb70535f68b706795b7bf049da0a8af612f1069
     container_name: excalibase-watcher
     command: ["--config", "/config/config.yaml"]
     environment:
@@ -186,7 +186,7 @@ services:
   # A fresh clone has no signing keys (they are never committed): generate the
   # throwaway pair once, owned by whoever owns the checkout. `make up` makes its own.
   keygen:
-    image: alpine:3.20
+    image: ${HUB_MIRROR:-}alpine:3.20
     container_name: excalibase-keygen
     entrypoint: ["/bin/sh", "-c"]
     command:
@@ -202,7 +202,7 @@ services:
     restart: "no"
 
   mock-vault:
-    image: wiremock/wiremock:3.10.0
+    image: ${HUB_MIRROR:-}wiremock/wiremock:3.10.0
     container_name: excalibase-mock-vault
     volumes:
       - ./e2e/wiremock:/home/wiremock
@@ -222,7 +222,7 @@ services:
 
   excalibase-auth:
     # Pinned: this fails closed when it cannot read project info, so a moving tag breaks CI unannounced (EXC-867).
-    image: excalibase/excalibase-auth:1.7.5@sha256:267e907108c405d45be6e8d3acad749ed863cb442ec088c6c4e29b411049c28c
+    image: ${HUB_MIRROR:-}excalibase/excalibase-auth:1.7.5@sha256:267e907108c405d45be6e8d3acad749ed863cb442ec088c6c4e29b411049c28c
     container_name: excalibase-auth
     environment:
       PROVISIONING_URL: http://mock-vault:8080/api
@@ -242,7 +242,7 @@ services:
 
   graphiql:
     container_name: graphiql
-    image: excalibase/graphiql
+    image: ${HUB_MIRROR:-}excalibase/graphiql:latest@sha256:d45bdde0e28eb21561be507aa81bc555c25bc95a27f72b8378f34bd78a90abf6
     ports:
       - 20000:80
     environment:
