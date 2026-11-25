@@ -72,8 +72,8 @@ class TokenCheckTest {
         Map<String, Object> answer = check(AuthTokens.sign(c -> { }));
 
         assertThat(answer).containsEntry(VALID, true).containsEntry(REASON, null).containsEntry("role", "user")
-                .containsEntry("userId", "u-1");
-        assertThat(answer).containsEntry("allowedRoles", List.of("user"));
+                .containsEntry("userId", "u-1")
+                .containsEntry("allowedRoles", List.of("user"));
         @SuppressWarnings("unchecked")
         Map<String, String> variables = (Map<String, String>) answer.get("sessionVariables");
         assertThat(variables).containsEntry("x-excalibase-user-id", "u-1").containsEntry("x-excalibase-role", "user")
