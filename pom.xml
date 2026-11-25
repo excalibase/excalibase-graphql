@@ -471,6 +471,26 @@
                             <goal>report</goal>
                         </goals>
                     </execution>
+                    <!-- EXC-885: the CI test shards each leave target/shards/shard-N.exec; the coverage job merges them into the
+                         jacoco.exec that `report` reads. Bound to no phase, run by name: jacoco:merge@merge-shards -->
+                    <execution>
+                        <id>merge-shards</id>
+                        <phase>none</phase>
+                        <goals>
+                            <goal>merge</goal>
+                        </goals>
+                        <configuration>
+                            <fileSets>
+                                <fileSet>
+                                    <directory>${project.build.directory}/shards</directory>
+                                    <includes>
+                                        <include>*.exec</include>
+                                    </includes>
+                                </fileSet>
+                            </fileSets>
+                            <destFile>${project.build.directory}/jacoco.exec</destFile>
+                        </configuration>
+                    </execution>
                 </executions>
             </plugin>
             <plugin>
