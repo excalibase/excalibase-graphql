@@ -22,6 +22,8 @@ import org.slf4j.LoggerFactory;
 @Requires(property = "app.overload.enabled", notEquals = "false")
 public class OverloadConfig {
 
+    private static final int MAX_SENSIBLE_WAIT_MILLIS = 5_000;
+
     private static final Logger log = LoggerFactory.getLogger(OverloadConfig.class);
 
     @Context
@@ -29,17 +31,24 @@ public class OverloadConfig {
             @Value("${app.overload.max-connections-per-cpu:256}") int connectionsPerCpu,
             @Value("${app.overload.accept-count-per-cpu:256}") int backlogPerCpu,
             @Value("${app.overload.max-keep-alive-requests:20}") int maxKeepAliveRequests,
-            @Value("${app.overload.keep-alive-timeout-ms:5000}") int keepAliveTimeoutMillis) {
+            @Value("${app.overload.keep-alive-timeout-ms:5000}") int keepAliveTimeoutMillis,
+            @Value("${app.overload.admission-wait-ms:250}") int admissionWaitMillis,
+            @Value("${app.overload.wait-queue-per-cpu:-1}") int waitQueuePerCpu) {
         int cpus = Runtime.getRuntime().availableProcessors();
+        if (admissionWaitMillis > MAX_SENSIBLE_WAIT_MILLIS) {
+            log.warn("app.overload.admission-wait-ms={} is longer than most clients wait; they would time out "
+                    + "before the 503", admissionWaitMillis);
+        }
         ConnectionBound bound = new ConnectionBound(cpus, connectionsPerCpu, backlogPerCpu,
-                maxKeepAliveRequests, keepAliveTimeoutMillis);
+                maxKeepAliveRequests, keepAliveTimeoutMillis, admissionWaitMillis,
+                waitQueuePerCpu < 0 ? connectionsPerCpu : waitQueuePerCpu);
         log.info("Connection bound on the main port: cpus={}, {}", cpus, bound);
         return bound;
     }
 
     @Singleton
     ConnectionGate connectionGate(ConnectionBound bound) {
-        return new ConnectionGate(bound.maxConnections());
+        return new ConnectionGate(bound.maxConnections(), bound.maxWaiting());
     }
 
     /** Puts the bound on every connection of the main port. */
@@ -70,7 +79,7 @@ public class OverloadConfig {
         return registry -> ConnectionMetrics.register(registry, gate, bound);
     }
 
-    /** The accept backlog follows the CPUs too: excess clients wait in the kernel queue. */
+    /** The accept backlog follows the CPUs too; it only absorbs a burst, since a connection over the bound is accepted and refused. */
     @Singleton
     @Requires(property = "app.overload.enabled", notEquals = "false")
     static class AcceptBacklog implements BeanCreatedEventListener<NettyHttpServerConfiguration> {

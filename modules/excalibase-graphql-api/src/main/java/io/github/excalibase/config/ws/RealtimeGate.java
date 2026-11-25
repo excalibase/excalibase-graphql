@@ -11,6 +11,7 @@ import io.github.excalibase.schema.AccessPlans;
 import io.github.excalibase.schema.SchemaUnavailableException;
 import io.github.excalibase.schema.SubscriptionsUnsupportedException;
 import io.github.excalibase.security.Principal;
+import io.github.excalibase.security.ProjectPausedException;
 
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -110,6 +111,8 @@ final class RealtimeGate {
             return new Opening(null, PermissionsUnavailableException.CODE, true);
         } catch (SubscriptionsUnsupportedException e) {
             return Opening.refused(e.getMessage());
+        } catch (ProjectPausedException _) {
+            return new Opening(null, "project_paused", true);
         } catch (SchemaUnavailableException e) {
             return new Opening(null, "project_unavailable", true);
         } catch (PermissionEvaluationException e) {

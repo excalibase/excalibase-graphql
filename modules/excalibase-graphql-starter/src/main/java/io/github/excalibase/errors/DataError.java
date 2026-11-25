@@ -23,10 +23,26 @@ public record DataError(int status, String code, String message, String constrai
     public static final String RAISED_EXCEPTION = "raised_exception";
     public static final String INVALID_VALUE = "invalid_value";
     public static final String PERMISSION_DENIED = "permission_denied";
+    /** An embed names a table that more than one relationship leads to; the request must say which. */
+    public static final String AMBIGUOUS_RELATIONSHIP = "ambiguous_relationship";
+    /** The project's database could not be reached: down, restarting, or shut down by a pause. */
+    public static final String PROJECT_UNAVAILABLE = "project_unavailable";
+    public static final String UNKNOWN_RELATIONSHIP_HINT = "unknown_relationship_hint";
+    /** The answer is bigger than the database can hand back as one value; a narrower select or a lower limit fits. */
+    public static final String RESULT_TOO_LARGE = "result_too_large";
+    private static final int PAYLOAD_TOO_LARGE = 413;
+    /** The project is paused on purpose; like {@link #PROJECT_UNAVAILABLE}, it means retry later. */
+    public static final String PROJECT_PAUSED = "project_paused";
+    /** The connection was lost while committing: the write may or may not have been applied. Never retry blindly. */
+    public static final String COMMIT_UNKNOWN = "commit_unknown";
+    public static final String EMBED_KEY_COLLISION = "embed_key_collision";
 
     private static final int BAD_REQUEST = 400;
     private static final int FORBIDDEN = 403;
+    private static final int MULTIPLE_CHOICES = 300;
     private static final int CONFLICT = 409;
+    private static final int SERVICE_UNAVAILABLE = 503;
+    private static final int INTERNAL_ERROR_STATUS = 500;
     private static final String KEY_CODE = "code";
     private static final String KEY_MESSAGE = "message";
     private static final String KEY_CONSTRAINT = "constraint";
@@ -47,6 +63,58 @@ public record DataError(int status, String code, String message, String constrai
 
     public static DataError badRequest(String code, String message, String constraint, String column) {
         return new DataError(BAD_REQUEST, code, message, constraint, column);
+    }
+
+    /** Several relationships fit {@code relation}; {@code options} are embed names that each pick exactly one. */
+    public static DataError ambiguousRelationship(String relation, java.util.List<String> options) {
+        return new DataError(MULTIPLE_CHOICES, AMBIGUOUS_RELATIONSHIP, "More than one relationship fits '"
+                + relation + "'; use one of: " + String.join(", ", options), null, null);
+    }
+
+    /** Two embeds of one select would answer under {@code key}; an alias ({@code alias:name(...)}) tells them apart. */
+    public static DataError embedKeyCollision(String key) {
+        return badRequest(EMBED_KEY_COLLISION, "More than one embed would be returned as '" + key
+                + "'; give each its own key with an alias, as in creator:" + key + "!column(...)");
+    }
+
+    /** An embed's alias is also a column the select answers, and would overwrite its value. */
+    public static DataError embedAliasCollidesWithColumn(String alias) {
+        return badRequest(EMBED_KEY_COLLISION, "The embed alias '" + alias + "' collides with column '" + alias
+                + "'; choose another alias");
+    }
+
+    /** An embed's {@code !hint} names no foreign key column of the relationship it is on. */
+    public static DataError unknownRelationshipHint(String relation, String hint) {
+        return badRequest(UNKNOWN_RELATIONSHIP_HINT,
+                "No foreign key column '" + hint + "' leads to '" + relation + "'");
+    }
+
+    /** The database is not there; says nothing of where it is or what the driver reported. */
+    public static DataError projectUnavailable() {
+        return new DataError(SERVICE_UNAVAILABLE, PROJECT_UNAVAILABLE, "Project unavailable", null, null);
+    }
+
+    /** The project is paused; the database comes back when it is resumed. */
+    public static DataError projectPaused() {
+        return new DataError(SERVICE_UNAVAILABLE, PROJECT_PAUSED, "Project paused", null, null);
+    }
+
+    /** A read whose rows the database could not return as one value (MySQL's max_allowed_packet). */
+    public static DataError resultTooLarge() {
+        return new DataError(PAYLOAD_TOO_LARGE, RESULT_TOO_LARGE,
+                "The result is too large to return in one response; select fewer columns or lower the limit", null, null);
+    }
+
+    /** No rows beside a warning list so full that the one saying they were cut may be missing from it. */
+    public static DataError resultUnconfirmed() {
+        return new DataError(PAYLOAD_TOO_LARGE, RESULT_TOO_LARGE,
+                "The result could not be confirmed complete: the database raised more warnings than it reports", null, null);
+    }
+
+    /** The connection was lost at commit; says nothing of what was written. */
+    public static DataError commitUnknown() {
+        return new DataError(INTERNAL_ERROR_STATUS, COMMIT_UNKNOWN,
+                "The outcome of the request is unknown; check the data before retrying", null, null);
     }
 
     public static DataError forbidden(String message, String column) {

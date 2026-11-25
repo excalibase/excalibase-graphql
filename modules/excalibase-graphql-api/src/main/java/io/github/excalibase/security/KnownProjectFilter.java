@@ -95,6 +95,8 @@ public class KnownProjectFilter implements Ordered {
                     FilterErrors.write(HttpStatus.TOO_MANY_REQUESTS, "Too many project lookups", "project_lookup_throttled"));
         } catch (ProjectWithoutDatabaseException e) {
             return FilterErrors.write(HttpStatus.CONFLICT, "Project has no database", "project_has_no_database");
+        } catch (ProjectPausedException _) {
+            return FilterErrors.write(HttpStatus.SERVICE_UNAVAILABLE, "Project paused", "project_paused");
         } catch (VaultCredentialException e) {
             log.error("project_lookup_failed project={}", projectId, e);
             return FilterErrors.write(HttpStatus.SERVICE_UNAVAILABLE, "Project unavailable", "project_unavailable");

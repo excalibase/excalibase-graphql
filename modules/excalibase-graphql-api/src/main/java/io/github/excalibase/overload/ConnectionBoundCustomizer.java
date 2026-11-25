@@ -69,6 +69,6 @@ final class ConnectionBoundCustomizer implements NettyServerCustomizer {
         }
         pipeline.addFirst(ADMISSION, admin
                 ? new AdminConnectionCap(adminOpen, AdminConnectionCap.MAX_CONNECTIONS, rotation)
-                : new ConnectionAdmission(gate, rotation));
+                : new ConnectionAdmission(gate, rotation, bound.admissionWaitMillis()));
     }
 }

@@ -1,0 +1,11 @@
+{
+  "request": {
+    "method": "GET",
+    "url": "/api/projects/e2e-test/info"
+  },
+  "response": {
+    "status": 200,
+    "headers": { "Content-Type": "application/json" },
+    "jsonBody": { "projectId": "e2e-test", "allowNewUsers": true, "requireEmailVerification": false, "projectName": "e2e-test", "orgSlug": "e2e-org" }
+  }
+}

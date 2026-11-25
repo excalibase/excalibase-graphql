@@ -12,7 +12,12 @@ import io.github.excalibase.permissions.PermissionSetParser;
 import io.github.excalibase.schema.ReservedSchemas;
 import io.github.excalibase.security.TokenVerifier;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Set;
 import java.util.function.UnaryOperator;
 
@@ -23,6 +28,7 @@ import java.util.function.UnaryOperator;
  */
 public final class MetadataDocumentParser {
 
+    private static final Logger log = LoggerFactory.getLogger(MetadataDocumentParser.class);
     public static final int MAX_BYTES = 1024 * 1024;
     static final int FORMAT = 1;
     private static final String PROJECT_ID = "projectId";
@@ -44,31 +50,49 @@ public final class MetadataDocumentParser {
     public static final String KEYS_UNAVAILABLE = "jwt: the signing keys or the secret cannot be loaded; check the "
             + "secret reference, or the JWKS and discovery URLs";
 
+    private static final String NO_VERIFIER_NOTE = "no_token_verifier";
+    private static final String DIFFERS = "jwt: the engine already has token settings of its own (app.auth.*) and this "
+            + "section differs; keep them in one place, there or in the document, or make them identical to move them";
+
     private final ReservedSchemas reserved;
     private final String expectedProjectId;
+    private final EngineAuth engineAuth;
 
     /** The verifier last built and the settings it came from; a rules-only edit reuses it instead of refetching. */
     private JwtSettings builtFor;
     private TokenVerifier built;
-    private final boolean envJwtConfigured;
 
     /** @param expectedProjectId the deployment's project, or null to accept any (the CLI without a project) */
     public MetadataDocumentParser(ReservedSchemas reserved, String expectedProjectId) {
-        this(reserved, expectedProjectId, false);
+        this(reserved, expectedProjectId, EngineAuth.NONE);
+    }
+
+    /** @param envJwtConfigured the engine has the legacy {@code app.security.auth.*} settings */
+    public MetadataDocumentParser(ReservedSchemas reserved, String expectedProjectId, boolean envJwtConfigured) {
+        this(reserved, expectedProjectId, EngineAuth.of(envJwtConfigured));
     }
 
     /**
-     * @param envJwtConfigured the engine has token settings of its own; a document {@code jwt:} section is then
-     *                         refused, so start-up and every reload agree whatever the provider is doing
+     * @param engineAuth the engine's own token settings; a document {@code jwt:} section is then refused (legacy
+     *                   settings always, {@code app.auth.*} unless the section is identical), so start-up and every
+     *                   reload agree whatever the provider is doing
      */
-    public MetadataDocumentParser(ReservedSchemas reserved, String expectedProjectId, boolean envJwtConfigured) {
-        this.envJwtConfigured = envJwtConfigured;
+    public MetadataDocumentParser(ReservedSchemas reserved, String expectedProjectId, EngineAuth engineAuth) {
+        this.engineAuth = engineAuth;
         this.reserved = reserved;
         this.expectedProjectId = expectedProjectId == null || expectedProjectId.isBlank() ? null : expectedProjectId;
     }
 
     /** The rules and the JWT settings, validated; nothing is fetched. */
-    private record Parsed(PermissionSet permissions, JwtSettings jwt) {
+    private record Parsed(PermissionSet permissions, JwtSettings jwt, List<Note> notes) {
+    }
+
+    /** A thing worth telling the operator that does not make the document wrong, by a stable code. */
+    public record Note(String code, String message) {
+    }
+
+    /** @param notes deprecation, "identical, remove it" and "nothing verifies a token" */
+    public record Checked(PermissionSet permissions, List<Note> notes) {
     }
 
     /**
@@ -77,7 +101,7 @@ public final class MetadataDocumentParser {
      * @param version the engine's local version, given to the rules; a document cannot set its own
      */
     public PermissionSet parse(String text, long version) {
-        return validated(text, version).permissions();
+        return validated(text, version, System::getenv).permissions();
     }
 
     /**
@@ -88,7 +112,12 @@ public final class MetadataDocumentParser {
      * @throws MetadataDocumentException the document is invalid or its secret cannot be loaded; never holds the secret
      */
     public PermissionSet check(String text, long version, UnaryOperator<String> environment) {
-        Parsed parsed = validated(text, version);
+        return checkWithNotes(text, version, environment).permissions();
+    }
+
+    /** {@link #check} with the notes that go beside a valid document. */
+    public Checked checkWithNotes(String text, long version, UnaryOperator<String> environment) {
+        Parsed parsed = validated(text, version, environment);
         if (parsed.jwt() != null && parsed.jwt().secretRef() != null) {
             try {
                 JwtKeyLoader.secret(parsed.jwt().secretRef(), environment);
@@ -96,7 +125,7 @@ public final class MetadataDocumentParser {
                 throw new MetadataDocumentException(KEYS_UNAVAILABLE, e);
             }
         }
-        return parsed.permissions();
+        return new Checked(parsed.permissions(), parsed.notes());
     }
 
     /**
@@ -106,8 +135,15 @@ public final class MetadataDocumentParser {
      * @throws IllegalStateException the document is valid but the keys or secret cannot be had right now
      */
     public synchronized MetadataDocument load(String text, long version) {
-        Parsed parsed = validated(text, version);
+        Parsed parsed = validated(text, version, System::getenv);
+        parsed.notes().stream().filter(note -> !NO_VERIFIER_NOTE.equals(note.code()))
+                .forEach(note -> log.warn("{} version={}", logName(note), version));
         return new MetadataDocument(parsed.permissions(), verifierFor(parsed.jwt()));
+    }
+
+    /** The line operators grep for: {@code metadata_jwt_identical}, {@code metadata_jwt_deprecated}. */
+    private static String logName(Note note) {
+        return "metadata_" + note.code().replace("_remove_it", "");
     }
 
     /** Unchanged settings keep the served verifier (a rotated secret is picked up when the section changes). */
@@ -122,9 +158,9 @@ public final class MetadataDocumentParser {
         return built;
     }
 
-    private Parsed validated(String text, long version) {
+    private Parsed validated(String text, long version, UnaryOperator<String> environment) {
         try {
-            return read(text, version);
+            return read(text, version, environment);
         } catch (MetadataDocumentException e) {
             throw e;
         } catch (StackOverflowError _) {
@@ -134,7 +170,7 @@ public final class MetadataDocumentParser {
         }
     }
 
-    private Parsed read(String text, long version) {
+    private Parsed read(String text, long version, UnaryOperator<String> environment) {
         if (text.getBytes(StandardCharsets.UTF_8).length > MAX_BYTES) {
             throw new MetadataDocumentException("document is larger than 1 MiB");
         }
@@ -151,11 +187,54 @@ public final class MetadataDocumentParser {
         requireFormat(document);
         PermissionSet permissions = rules(document, projectId(document), version);
         refuseReserved(permissions);
-        if (document.has(JWT) && envJwtConfigured) {
-            throw new MetadataDocumentException("jwt: the engine already has token settings of its own "
-                    + "(app.security.auth.*); keep them in one place, there or in the document");
+        return withJwt(document, permissions, environment);
+    }
+
+    /** The section decides the verifier, or is refused, or is identical to the engine's and adds nothing. */
+    private Parsed withJwt(ObjectNode document, PermissionSet permissions, UnaryOperator<String> environment) {
+        List<Note> notes = new ArrayList<>();
+        JwtSettings jwt = null;
+        if (document.has(JWT)) {
+            if (engineAuth.legacy()) {
+                throw new MetadataDocumentException("jwt: the engine already has token settings of its own "
+                        + "(app.security.auth.*); keep them in one place, there or in the document");
+            }
+            if (engineAuth.engine()) {
+                requireIdentical(document.get(JWT), environment);
+                notes.add(new Note("jwt_identical_remove_it", "The jwt: section says the same as the engine's own "
+                        + "token settings (app.auth.*). You can remove it from the document."));
+            } else {
+                jwt = JwtSettingsParser.parse(document.get(JWT));
+                notes.add(new Note("jwt_deprecated", "The jwt: section in the document is deprecated: move it to the "
+                        + "engine's token settings (APP_AUTH_*)."));
+            }
+        } else if (!engineAuth.configured() && hasRulesBesidesAnon(permissions)) {
+            notes.add(new Note(NO_VERIFIER_NOTE, "The document has rules for a role other than anon, but no token "
+                    + "verifier is configured (app.auth.*, app.security.auth.* or a jwt: section): every token is "
+                    + "rejected."));
         }
-        return new Parsed(permissions, document.has(JWT) ? JwtSettingsParser.parse(document.get(JWT)) : null);
+        return new Parsed(permissions, jwt, List.copyOf(notes));
+    }
+
+    private static boolean hasRulesBesidesAnon(PermissionSet permissions) {
+        return permissions.tables().stream().anyMatch(rule -> !"anon".equals(rule.role()));
+    }
+
+    /** Never builds a verifier or fetches keys: it only proves the section says what the engine already has. */
+    private void requireIdentical(JsonNode section, UnaryOperator<String> environment) {
+        JwtSettings document = JwtSettingsParser.parse(section);
+        byte[] secret = null;
+        if (document.secretRef() != null) {
+            try {
+                secret = JwtKeyLoader.secret(document.secretRef(), environment);
+            } catch (IllegalStateException _) {
+                throw new MetadataDocumentException(DIFFERS + ": its secret cannot be resolved to compare it");
+            }
+        }
+        String differences = engineAuth.differences(document, secret);
+        if (!differences.isEmpty()) {
+            throw new MetadataDocumentException(DIFFERS + " in: " + differences);
+        }
     }
 
     private static String unknownKey(String key) {

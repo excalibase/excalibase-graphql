@@ -1,0 +1,18 @@
+# The engine on a SQLite file: no database server. One replica only (a file has one writer).
+services:
+  engine:
+    image: ${ENGINE_IMAGE:-excalibase/excalibase-graphql:main}
+    ports:
+      - "10000:10000"
+    environment:
+      SERVER_PORT: 10000
+      SPRING_DATASOURCE_URL: jdbc:sqlite:/data/app.db
+      SPRING_DATASOURCE_DRIVER_CLASS_NAME: org.sqlite.JDBC
+      APP_DATABASE_TYPE: sqlite
+      APP_PROJECT_ID: my-app
+      JWT_SECRET: change-me-to-a-long-random-secret-of-32-bytes-or-more
+      METADATA_SOURCE: file
+      METADATA_FILE_PATH: /etc/excalibase
+    volumes:
+      - ./data:/data
+      - ./metadata:/etc/excalibase:ro

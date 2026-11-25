@@ -9,6 +9,9 @@ import org.testcontainers.containers.MySQLContainer;
 import org.testcontainers.containers.PostgreSQLContainer;
 
 import java.io.IOException;
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.Statement;
 import java.net.ServerSocket;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -50,11 +53,11 @@ class SlimBuildSmokeTest {
     static void readBuild() {
         command = System.getProperty("slim.command");
         assumeTrue(command != null && !command.isBlank(), "slim.command names the build to run; not set");
-        serves = Set.of(System.getProperty("slim.serves", "postgres,mysql").split(","));
+        serves = Set.of(System.getProperty("slim.serves", "postgres,mysql,sqlite").split(","));
     }
 
     @ParameterizedTest
-    @ValueSource(strings = {"postgres", "mysql"})
+    @ValueSource(strings = {"postgres", "mysql", "sqlite"})
     void aBuildServesTheDatabasesItCarriesAndRefusesTheOthers(String engine) throws Exception {
         if (serves.contains(engine)) {
             servesItsDatabase(engine);
@@ -65,10 +68,14 @@ class SlimBuildSmokeTest {
 
     @Test
     void aBuildThatCarriesNothingToServeWouldBeAMisconfiguredTest() {
-        assertThat(serves).isNotEmpty().isSubsetOf("postgres", "mysql");
+        assertThat(serves).isNotEmpty().isSubsetOf("postgres", "mysql", "sqlite");
     }
 
     private void servesItsDatabase(String engine) throws Exception {
+        if (engine.equals("sqlite")) {
+            servesItsFile();
+            return;
+        }
         try (JdbcDatabaseContainer<?> database = database(engine)) {
             database.start();
             try (EngineProcess process = EngineProcess.start(settings(engine, database.getJdbcUrl(),
@@ -82,8 +89,30 @@ class SlimBuildSmokeTest {
         }
     }
 
+    /** A SQLite database is a file: made here, then served by the engine process, which needs no container. */
+    private void servesItsFile() throws Exception {
+        Path directory = Files.createTempDirectory("slim-smoke-sqlite");
+        Path file = directory.resolve("smoke.db");
+        try (Connection connection = DriverManager.getConnection("jdbc:sqlite:" + file);
+             Statement statement = connection.createStatement()) {
+            statement.execute("CREATE TABLE smoke_item (id INTEGER PRIMARY KEY, name TEXT NOT NULL)");
+            statement.execute("INSERT INTO smoke_item (name) VALUES ('from-sqlite')");
+        }
+        try (EngineProcess process = EngineProcess.start(settings("sqlite", "jdbc:sqlite:" + file, "", ""))) {
+            process.awaitServing();
+            String schema = process.query("{ __schema { queryType { fields { name } } } }");
+            Matcher table = Pattern.compile("\"name\":\"(\\w*SmokeItem)\"").matcher(schema);
+            assertThat(table.find()).as("the engine reflected the file it was started on: " + schema).isTrue();
+            assertThat(process.query("{ " + table.group(1) + " { name } }")).contains("from-sqlite");
+        }
+    }
+
     private void refusesTheDatabase(String engine) throws Exception {
-        String url = engine.equals("mysql") ? "jdbc:mysql://127.0.0.1:1/app" : "jdbc:postgresql://127.0.0.1:1/app";
+        String url = switch (engine) {
+            case "mysql" -> "jdbc:mysql://127.0.0.1:1/app";
+            case "sqlite" -> "jdbc:sqlite:/nonexistent/app.db";
+            default -> "jdbc:postgresql://127.0.0.1:1/app";
+        };
         try (EngineProcess process = EngineProcess.start(settings(engine, url, "app", "secret"))) {
             assertThat(process.awaitExit()).as("a build without the %s plugin must not start on a %s database", engine, engine)
                     .isNotZero();
@@ -108,8 +137,11 @@ class SlimBuildSmokeTest {
                 "APP_PROJECT_ID", PROJECT,
                 "APP_SECURITY_JWT_ENABLED", "false",
                 "APP_SECURITY_INSECURE_DEV_MODE", "true"));
-        env.put("SPRING_DATASOURCE_DRIVER_CLASS_NAME",
-                engine.equals("mysql") ? "com.mysql.cj.jdbc.Driver" : "org.postgresql.Driver");
+        env.put("SPRING_DATASOURCE_DRIVER_CLASS_NAME", switch (engine) {
+            case "mysql" -> "com.mysql.cj.jdbc.Driver";
+            case "sqlite" -> "org.sqlite.JDBC";
+            default -> "org.postgresql.Driver";
+        });
         return env;
     }
 

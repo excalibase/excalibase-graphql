@@ -189,4 +189,9 @@ final class MysqlSql implements DialectSql {
     public boolean tracksFunctions() {
         return false;
     }
+
+    @Override
+    public String likeEscape() {
+        return " ESCAPE CHAR(92)";
+    }
 }

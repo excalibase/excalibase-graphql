@@ -6,7 +6,9 @@ import com.fasterxml.jackson.databind.node.NullNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import io.github.excalibase.SqlDialect;
 import io.github.excalibase.json.JsonFieldOrder;
+import io.github.excalibase.errors.DataError;
 import io.github.excalibase.errors.DataErrorException;
+import io.github.excalibase.errors.DataErrors;
 import io.github.excalibase.rest.compiler.RestQueryCompiler;
 import io.github.excalibase.rest.service.OpenApiGenerator;
 import io.github.excalibase.rest.parser.FilterParser;
@@ -50,10 +52,19 @@ import io.micronaut.scheduling.TaskExecutors;
 import io.micronaut.scheduling.annotation.ExecuteOn;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.dao.DataAccessException;
+import org.springframework.transaction.CannotCreateTransactionException;
+import org.springframework.transaction.TransactionSystemException;
 import org.springframework.transaction.TransactionStatus;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.util.*;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Function;
+import java.util.function.UnaryOperator;
 import java.util.stream.Collectors;
 
 import static io.github.excalibase.compiler.SqlKeywords.*;
@@ -66,6 +77,7 @@ import static io.github.excalibase.compiler.SqlKeywords.*;
 @ExecuteOn(TaskExecutors.BLOCKING)
 public class RestApiController {
 
+    private static final Logger log = LoggerFactory.getLogger(RestApiController.class);
     private static final String IDENT_REGEX = "^[A-Za-z_]\\w{0,62}$";
 
     /** The logic parameters: each is one group of filters, AND- or OR-joined, possibly negated. */
@@ -88,12 +100,15 @@ public class RestApiController {
     private final ObjectMapper mapper;
     private final int maxRows;
     private final boolean capNestedLists;
+    private final boolean strictSelectNames;
 
     public RestApiController(SchemaProvider schemaProvider, NamedParameterJdbcTemplate namedJdbc,
                              TransactionTemplate txTemplate, ObjectMapper mapper,
                              @Value("${app.max-rows:30}") int maxRows,
-                             @Value("${app.cap-nested-lists:false}") boolean capNestedLists) {
+                             @Value("${app.cap-nested-lists:false}") boolean capNestedLists,
+                             @Value("${app.rest.strict-select-names:false}") boolean strictSelectNames) {
         this.capNestedLists = capNestedLists;
+        this.strictSelectNames = strictSelectNames;
         this.schemaProvider = schemaProvider;
         this.namedJdbc = namedJdbc;
         this.txTemplate = txTemplate;
@@ -147,7 +162,7 @@ public class RestApiController {
     private HttpResponse<Object> handleSingular(RequestContext ctx, ParsedParams parsed) {
         var compiled = ctx.compiler().compileSelect(new RestQueryCompiler.SelectQuery(ctx.tableKey(), parsed.columns, parsed.filters, parsed.orConditions, parsed.embeds, parsed.orderSpecs, 2, 0, false));
         return executeInTx(compiled, ctx.scope(parsed.allFilters()), rows -> {
-            List<?> data = rowsOf(rows.get("body"), responseKeys(ctx, parsed));
+            List<?> data = rowsOf(rows.get("body"), responseShape(ctx, parsed));
             if (data.size() != 1) {
                 return Reply.status(HttpStatus.NOT_ACCEPTABLE).contentType(SINGULAR_TYPE)
                         .body(errorBody("not_acceptable", "Expected 1 row, got " + data.size()));
@@ -169,7 +184,7 @@ public class RestApiController {
         String orderCol = parsed.orderSpecs.isEmpty() ? null : parsed.orderSpecs.get(0).column();
         var query = new RestQueryCompiler.SelectQuery(ctx.tableKey(), parsed.columns, parsed.filters, parsed.orConditions, parsed.embeds, parsed.orderSpecs, fetchLimit + 1, 0, false, after, orderCol);
         return executeInTx(ctx.compiler().compileSelect(query), ctx.scope(parsed.allFilters()), rows -> {
-            List<?> data = rowsOf(rows.get("body"), responseKeys(ctx, parsed));
+            List<?> data = rowsOf(rows.get("body"), responseShape(ctx, parsed));
             boolean hasNext = data.size() > fetchLimit;
             return Reply.ok(Map.of("data", hasNext ? data.subList(0, fetchLimit) : data, "pageInfo", Map.of("hasNextPage", hasNext)));
         });
@@ -189,7 +204,7 @@ public class RestApiController {
         var compiled = ctx.compiler().compileSelect(new RestQueryCompiler.SelectQuery(ctx.tableKey(), parsed.columns, parsed.filters, parsed.orConditions, parsed.embeds, parsed.orderSpecs, clamped, offset, count));
         var resp = executeInTx(compiled, ctx.scope(parsed.allFilters()), rows -> {
             var response = new LinkedHashMap<String, Object>();
-            response.put("data", limit == 0 ? List.of() : rowsOf(rows.get("body"), responseKeys(ctx, parsed)));
+            response.put("data", limit == 0 ? List.of() : rowsOf(rows.get("body"), responseShape(ctx, parsed)));
             if (count && rows.containsKey("total_count")) {
                 long total = ((Number) rows.get("total_count")).longValue();
                 response.put("pagination", Map.of("total", total, "limit", limit == 0 ? 0 : clamped, "offset", offset));
@@ -327,7 +342,7 @@ public class RestApiController {
                 Math.clamp(paging("limit", first(readParams, "limit"), maxRows), 1, maxRows),
                 paging("offset", first(readParams, "offset"), 0), false);
         var compiled = compiler.compileFunctionSelect(query, call, params, !callable.returnsSet());
-        return executeInTx(compiled, new ErrorScope(dialect, parsed.allFilters()), rows -> {
+        return executeCallInTx(compiled, new ErrorScope(dialect, parsed.allFilters()), rows -> {
             List<?> data = rowsOf(rows.get("body"), parsed.columns);
             if (callable.returnsSet()) return Reply.ok(Map.of("data", data));
             // A JSON tree keeps "data": null; the API's non-null inclusion would drop it from a map.
@@ -430,6 +445,32 @@ public class RestApiController {
         return RestErrors.response(e.error());
     }
 
+    /** The transaction could not begin because the project's database cannot be reached (a paused or stopped one). */
+    @Error(exception = CannotCreateTransactionException.class)
+    public HttpResponse<Object> databaseUnreachable(CannotCreateTransactionException e) {
+        log.warn("rest_database_unreachable: {}", e.getMessage());
+        return RestErrors.response(DataError.projectUnavailable());
+    }
+
+    /** A commit that failed: when the connection was lost it, the write's outcome is unknown, never a retryable 503. */
+    @Error(exception = TransactionSystemException.class)
+    public HttpResponse<Object> transactionFailed(TransactionSystemException e) {
+        return transactionFailure(e);
+    }
+
+    /** The JDBC transaction manager reports a failed commit as a data access failure of its own. */
+    @Error(exception = DataAccessException.class)
+    public HttpResponse<Object> dataAccessFailed(DataAccessException e) {
+        return transactionFailure(e);
+    }
+
+    private HttpResponse<Object> transactionFailure(Exception e) {
+        log.error("rest_transaction_failed", e);
+        return DataErrors.describe(e, null).map(RestErrors::response)
+                .orElseGet(() -> Reply.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                        .body(Map.of(KEY_ERROR, "Mutation execution failed", "code", "internal_error")));
+    }
+
     /** A request naming a column, operator or shape this caller's schema does not have. */
     @Error(exception = IllegalArgumentException.class)
     public HttpResponse<Object> badRequest(IllegalArgumentException e) {
@@ -453,7 +494,18 @@ public class RestApiController {
 
     private HttpResponse<Object> executeInTx(RestQueryCompiler.CompiledResult compiled, ErrorScope scope,
                                                QueryResultHandler handler) {
-        return txTemplate.execute(status -> {
+        return executeInTx(compiled, scope, handler, answer -> answer);
+    }
+
+    /** A function call may write, so a commit it lost is of unknown outcome, never the answer it computed. */
+    private HttpResponse<Object> executeCallInTx(RestQueryCompiler.CompiledResult compiled, ErrorScope scope,
+                                                   QueryResultHandler handler) {
+        return executeInTx(compiled, scope, handler, answer -> RestErrors.response(DataError.commitUnknown()));
+    }
+
+    private HttpResponse<Object> executeInTx(RestQueryCompiler.CompiledResult compiled, ErrorScope scope,
+                                               QueryResultHandler handler, UnaryOperator<HttpResponse<Object>> commitLost) {
+        return inTransaction(status -> {
             try {
                 var rows = namedJdbc.queryForMap(compiled.sql(), new MapSqlParameterSource(compiled.params()));
                 return handler.handle(rows);
@@ -461,52 +513,87 @@ public class RestApiController {
                 status.setRollbackOnly();
                 return RestErrors.of(e, scope.dialect(), scope.filters(), "Query execution failed");
             }
-        });
+        }, commitLost);
     }
 
     private HttpResponse<Object> executeDml(RestQueryCompiler.CompiledResult compiled, ErrorScope scope, boolean rollback,
                                               Integer maxAffected, String prefer, HttpStatus successStatus, String table) {
         Dml dml = new Dml(compiled, scope, rollback, maxAffected, prefer, successStatus, table);
-        HttpResponse<Object> answer = null;
-        for (int attempt = 1; answer == null && attempt <= WriteRetry.ATTEMPTS; attempt++) {
-            answer = executeDmlOnce(dml, attempt == WriteRetry.ATTEMPTS);
-        }
-        return answer;
+        return executeDml(dml, new WriteRetry.Run());
+    }
+
+    /** Runs the mutation, and again after a pause each time it lost a lock; {@link WriteRetry} bounds the tries. */
+    private HttpResponse<Object> executeDml(Dml dml, WriteRetry.Run run) {
+        Optional<HttpResponse<Object>> answer = executeDmlOnce(dml, run);
+        if (answer.isPresent()) return answer.get();
+        if (run.pause()) return executeDml(dml, run);
+        return mutationFailed(run.lastFailure(), dml);
     }
 
     /** One mutation as the request made it. */
     private record Dml(RestQueryCompiler.CompiledResult compiled, ErrorScope scope, boolean rollback,
                        Integer maxAffected, String prefer, HttpStatus successStatus, String table) {}
 
-    /** One transaction; null when it lost a lock to a concurrent request, was rolled back, and may run again. */
-    private HttpResponse<Object> executeDmlOnce(Dml dml, boolean last) {
-        return txTemplate.execute(status -> {
+    /** One transaction; empty when it lost a lock to a concurrent request, was rolled back, and may run again. */
+    private Optional<HttpResponse<Object>> executeDmlOnce(Dml dml, WriteRetry.Run run) {
+        return inTransaction(status -> {
             try {
                 boolean represent = dml.maxAffected() != null || preferContains(dml.prefer(), PREFER_REPRESENTATION);
                 String json = executeDmlQuery(dml.compiled(), represent);
                 HttpResponse<Object> overflow = checkMaxAffected(json, dml.maxAffected(), status);
-                if (overflow != null) return overflow;
+                if (overflow != null) return Optional.of(overflow);
                 if (dml.rollback()) status.setRollbackOnly();
-                return buildDmlResponse(json, dml.prefer(), dml.successStatus(), dml.table(), dml.rollback(), dml.scope().keys());
+                return Optional.of(buildDmlResponse(json, dml.prefer(), dml.successStatus(), dml.table(), dml.rollback(), dml.scope().keys()));
             } catch (Exception e) {
                 status.setRollbackOnly();
-                return dmlFailed(e, dml, last);
+                return dmlFailed(e, dml, run);
             }
-        });
+        }, answer -> Optional.of(RestErrors.response(DataError.commitUnknown())));
     }
 
-    /** The answer to a failed mutation; null when it lost a lock and may run again. */
-    private HttpResponse<Object> dmlFailed(Exception e, Dml dml, boolean last) {
+    /**
+     * Runs {@code body} in a transaction. When the answer was already made and only the transaction's end failed on a
+     * connection that is gone, the answer stands if the transaction was being rolled back anyway (the write never
+     * happened); if it was being committed, the outcome is unknown and {@code commitLost} says so. A failure before an
+     * answer existed is the caller's to map.
+     */
+    private <T> T inTransaction(Function<TransactionStatus, T> body,
+                                UnaryOperator<T> commitLost) {
+        AtomicReference<T> answer = new AtomicReference<>();
+        AtomicBoolean rolledBack = new AtomicBoolean();
+        try {
+            return txTemplate.execute(status -> {
+                T made = body.apply(status);
+                answer.set(made);
+                rolledBack.set(status.isRollbackOnly());
+                return made;
+            });
+        } catch (TransactionSystemException e) {
+            T made = answer.get();
+            if (made == null) {
+                throw e;
+            }
+            log.warn("rest_transaction_end_failed rolledBack={}: {}", rolledBack.get(), e.getMessage());
+            return rolledBack.get() ? made : commitLost.apply(made);
+        }
+    }
+
+    /** The answer to a failed mutation; empty when it lost a lock and may run again. */
+    private Optional<HttpResponse<Object>> dmlFailed(Exception e, Dml dml, WriteRetry.Run run) {
         Optional<PermissionCheckFailedException> failed = PermissionCheckFailedException.find(e);
         if (failed.isPresent()) {
-            return checkFailed(failed.get());
+            return Optional.of(checkFailed(failed.get()));
         }
         if (e instanceof IllegalArgumentException refused) {
-            return Reply.badRequest().body(errorBody(BAD_REQUEST, refused.getMessage()));
+            return Optional.of(Reply.badRequest().body(errorBody(BAD_REQUEST, refused.getMessage())));
         }
-        if (!last && WriteRetry.isLockConflict(e)) {
-            return null;
+        if (run.canRetry(e)) {
+            return Optional.empty();
         }
+        return Optional.of(mutationFailed(e, dml));
+    }
+
+    private HttpResponse<Object> mutationFailed(Exception e, Dml dml) {
         return RestErrors.of(e, dml.scope().dialect(), dml.scope().filters(), "Mutation execution failed");
     }
 
@@ -597,7 +684,7 @@ public class RestApiController {
     }
 
     private ParsedParams parseSelectParams(String select, String order, Map<String, List<String>> allParams) {
-        var selectResult = SelectParser.parse(select);
+        var selectResult = SelectParser.parse(select, strictSelectNames);
         return new ParsedParams(
             selectResult.columns(),
             parseFilters(allParams),
@@ -760,31 +847,25 @@ public class RestApiController {
     }
 
     private List<JsonNode> rowsOf(Object body, List<String> keys) {
-        return parseJsonList(body).stream().map(row -> JsonFieldOrder.ordered(row, keys)).toList();
+        return rowsOf(body, JsonFieldOrder.Shape.flat(keys));
+    }
+
+    private List<JsonNode> rowsOf(Object body, JsonFieldOrder.Shape shape) {
+        return parseJsonList(body).stream().map(row -> JsonFieldOrder.ordered(row, shape)).toList();
     }
 
     private List<JsonNode> parseJsonList(Object body) {
-        if (body == null) return List.of();
-        try {
-            List<JsonNode> rows = new ArrayList<>();
-            mapper.readTree(body.toString()).forEach(rows::add);
-            return rows;
-        } catch (Exception _) {
-            return List.of();
-        }
+        return DatabaseRows.parse(mapper, body);
     }
 
-    /** The order a read's fields are answered in: the selected columns, or the table's, then the embeds. */
-    private static List<String> responseKeys(RequestContext ctx, ParsedParams parsed) {
-        List<String> keys = new ArrayList<>(parsed.columns.isEmpty()
-                ? ctx.schemaInfo().getColumns(ctx.tableKey()) : parsed.columns);
-        parsed.embeds.forEach(embed -> keys.add(embed.relationName()));
-        return keys;
+    /** The order a read's fields are answered in: the selected columns, or the table's, then the embeds, each likewise. */
+    private static JsonFieldOrder.Shape responseShape(RequestContext ctx, ParsedParams parsed) {
+        return ctx.compiler().shapeOf(ctx.tableKey(), parsed.columns, parsed.embeds);
     }
 
     private static RestQueryCompiler.EmbedSpec toCompilerEmbed(SelectParser.EmbedSpec e) {
         List<RestQueryCompiler.EmbedSpec> children = e.children().stream().map(RestApiController::toCompilerEmbed).toList();
-        return new RestQueryCompiler.EmbedSpec(e.relationName(), e.columns(), e.fkHint(), children);
+        return new RestQueryCompiler.EmbedSpec(e.relationName(), e.columns(), e.fkHint(), children, e.alias());
     }
 
     /** A refusal shaped like every other error the data API answers: a code, a message, and the message as error. */

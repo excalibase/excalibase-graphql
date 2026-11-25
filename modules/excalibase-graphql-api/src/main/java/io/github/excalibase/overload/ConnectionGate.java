@@ -3,10 +3,12 @@ package io.github.excalibase.overload;
 import java.util.ArrayDeque;
 import java.util.Deque;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.LongAdder;
 
 /**
  * Counts open connections against the bound. A connection over it waits, in arrival order, and is let in
- * when another closes, so at most the bound is ever served at once.
+ * when another closes, so at most the bound is ever served at once. The queue is bounded too: a connection
+ * that finds it full is refused at once, and the owner of a waiting one refuses it when its wait runs out.
  */
 final class ConnectionGate implements ConnectionPressure {
 
@@ -15,23 +17,66 @@ final class ConnectionGate implements ConnectionPressure {
         void admitted();
     }
 
+    /** What became of a connection that asked for a slot. */
+    enum Outcome { ADMITTED, QUEUED, REFUSED }
+
     private final int maxConnections;
+    private final int maxWaiting;
+    private final LongAdder refused = new LongAdder();
     private final Deque<Waiter> waiting = new ArrayDeque<>();
     private final AtomicInteger idleConnections = new AtomicInteger();
+    private final int maxRefusing;
+    private int refusing;
     private int open;
 
+    /** The queue holds as many connections as the bound itself, so a flood never grows it without limit. */
     ConnectionGate(int maxConnections) {
-        this.maxConnections = maxConnections;
+        this(maxConnections, maxConnections);
     }
 
-    /** True when the connection took a slot; otherwise it is queued and {@link Waiter#admitted} fires later. */
-    synchronized boolean tryAdmit(Waiter waiter) {
+    ConnectionGate(int maxConnections, int maxWaiting) {
+        this.maxConnections = maxConnections;
+        this.maxWaiting = maxWaiting;
+        this.maxRefusing = maxConnections;
+    }
+
+    /** ADMITTED took a slot; QUEUED fires {@link Waiter#admitted} later; REFUSED was not queued at all. */
+    synchronized Outcome tryAdmit(Waiter waiter) {
         if (open < maxConnections) {
             open++;
-            return true;
+            return Outcome.ADMITTED;
+        }
+        if (waiting.size() >= maxWaiting) {
+            return Outcome.REFUSED;
         }
         waiting.addLast(waiter);
-        return false;
+        return Outcome.QUEUED;
+    }
+
+    /** True when another refusal may be written; refusals in progress are held to the size of the bound. */
+    synchronized boolean tryBeginRefusal() {
+        if (refusing >= maxRefusing) {
+            return false;
+        }
+        refusing++;
+        return true;
+    }
+
+    synchronized void endRefusal() {
+        refusing--;
+    }
+
+    /** Counts a connection answered with a 503 instead of being served. */
+    void recordRefusal() {
+        refused.increment();
+    }
+
+    long refused() {
+        return refused.sum();
+    }
+
+    synchronized int waiting() {
+        return waiting.size();
     }
 
     /** Gives a slot back and hands it to the longest waiting connection. */

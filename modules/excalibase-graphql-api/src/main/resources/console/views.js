@@ -1,4 +1,5 @@
 import { h } from "/console/dom.js";
+import { warningList } from "/console/editor.js";
 
 const MESSAGES = {
   unauthorized: "That secret was not accepted.",
@@ -78,8 +79,10 @@ function outcomeView(outcome) {
     return null;
   }
   if (outcome.valid) {
-    return h("p", { class: "ok", role: "status" },
+    const valid = h("p", { class: "ok", role: "status" },
       "Valid: " + outcome.tables + " table rules, " + outcome.functions + " functions.");
+    const warnings = warningList(outcome.warnings, "Valid, but the database does not fit everything in it:");
+    return warnings ? h("div", {}, valid, warnings) : valid;
   }
   return h("div", { class: "error", role: "alert" }, h("p", {}, "Not valid:"),
     h("ul", {}, outcome.errors.map((message) => h("li", {}, message))));

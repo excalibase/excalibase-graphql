@@ -240,6 +240,38 @@
     "allPublicConstructors": true
   },
   {
+    "name": "io.github.excalibase.sqlite.SqliteEngineProvider",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true
+  },
+  {
+    "name": "io.github.excalibase.sqlite.SqliteDialect",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allPublicMethods": true
+  },
+  {
+    "name": "io.github.excalibase.sqlite.SqliteSchemaLoader",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true
+  },
+  {
+    "name": "io.github.excalibase.sqlite.SqliteMutationCompiler",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true
+  },
+  {
+    "name": "io.github.excalibase.sqlite.SqliteMutationExecutor",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true
+  },
+  {
+    "name": "org.sqlite.JDBC",
+    "allDeclaredConstructors": true,
+    "allPublicConstructors": true,
+    "allPublicMethods": true
+  },
+  {
     "name": "io.github.excalibase.cdc.NatsCDCService",
     "allDeclaredConstructors": true,
     "allPublicConstructors": true,

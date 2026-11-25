@@ -120,6 +120,7 @@ nav:
   - Features:
       - Multi-Schema Support: features/multi-schema.md
       - MySQL Support: features/mysql.md
+      - SQLite (tiny projects): features/sqlite.md
       - Functions: features/functions.md
       - Enhanced PostgreSQL Types: features/enhanced-postgresql-types.md
       - Full-Text & Vector Search: features/search-and-vector.md

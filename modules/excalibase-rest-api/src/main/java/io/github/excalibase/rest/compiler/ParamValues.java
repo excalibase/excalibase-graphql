@@ -47,6 +47,11 @@ final class ParamValues {
         return serverCasts ? value : dialect.bindValue(schemaInfo.getColumnType(table, column), bindable(value));
     }
 
+    /** The type {@code column} of {@code table} is declared as, or null. */
+    String columnType(String table, String column) {
+        return schemaInfo.getColumnType(table, column);
+    }
+
     /** True for a Postgres array column, which cs / cd compare as arrays rather than as JSON. */
     boolean isArray(String table, String column) {
         return ArrayColumns.isArray(schemaInfo.getColumnType(table, column));

@@ -124,6 +124,12 @@ public class MysqlDialect implements SqlDialect {
         return colRef;
     }
 
+    /** Backslash escapes in MySQL, so it is doubled before the quote is. */
+    @Override
+    public String stringLiteral(String value) {
+        return "'" + value.replace("\\", "\\\\").replace("'", "''") + "'";
+    }
+
     @Override
     public String buildObject(List<String> keyValuePairs) {
         return "JSON_OBJECT(" + String.join(", ", keyValuePairs) + ")";

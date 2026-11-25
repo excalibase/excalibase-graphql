@@ -10,14 +10,25 @@ package io.github.excalibase.rls.jdbc;
  */
 public enum QuoteStyle {
     /** Standard SQL double quotes — Postgres, H2, etc. The default. */
-    ANSI('"'),
+    ANSI('"', ""),
     /** MySQL / MariaDB backticks. */
-    BACKTICK('`');
+    BACKTICK('`', " ESCAPE CHAR(92)");
 
     private final char q;
+    private final String likeEscape;
 
-    QuoteStyle(char q) {
+    QuoteStyle(char q, String likeEscape) {
         this.q = q;
+        this.likeEscape = likeEscape;
+    }
+
+    /**
+     * The clause stating LIKE's escape character, or empty where the default already is a backslash. MySQL's
+     * default stops being one under NO_BACKSLASH_ESCAPES, so it states it; CHAR(92) because a quoted backslash
+     * means something else (or is an error) under that mode.
+     */
+    public String likeEscape() {
+        return likeEscape;
     }
 
     /** Wraps an already-validated identifier in this dialect's quote character. */

@@ -328,7 +328,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        engine: [postgres, mysql]
+        engine: [postgres, mysql, sqlite]
 
     steps:
     - name: Checkout code

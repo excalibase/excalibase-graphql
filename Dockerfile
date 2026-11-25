@@ -1,6 +1,6 @@
-# ENGINE picks the image: "all" (default) carries every database plugin, "postgres" or "mysql" carries one (EXC-799).
+# ENGINE picks the image: "all" (default) carries every database plugin, "postgres", "mysql" or "sqlite" carries one (EXC-799).
 #   docker build .                          the all-in-one image
-#   docker build --build-arg ENGINE=mysql . the MySQL-only image
+#   docker build --build-arg ENGINE=mysql . the MySQL-only image (sqlite: the SQLite-only image)
 # The slim jars come from `mvn -Pslim-<engine> package`; the all-in-one jar from a plain `mvn package`.
 ARG ENGINE=all
 
@@ -27,11 +27,21 @@ ADD /modules/excalibase-graphql-api/target/excalibase-graphql-api-0.0.1-SNAPSHOT
 ENV APP_DATABASE_TYPE=mysql \
     SPRING_DATASOURCE_DRIVER_CLASS_NAME=com.mysql.cj.jdbc.Driver
 
+# A SQLite database is a file: mount a volume at /data and point SPRING_DATASOURCE_URL at jdbc:sqlite:/data/<file>.
+FROM runtime AS engine-sqlite
+ADD /modules/excalibase-graphql-api/target/excalibase-graphql-api-0.0.1-SNAPSHOT-sqlite.jar /app.jar
+RUN mkdir /data && chown app:app /data
+VOLUME /data
+ENV APP_DATABASE_TYPE=sqlite \
+    SPRING_DATASOURCE_DRIVER_CLASS_NAME=org.sqlite.JDBC
+
 FROM engine-${ENGINE}
 
 USER app
 
-ENV JAVA_OPTS="-XX:+UseG1GC \
+# --enable-native-access: the SQLite driver loads a native library (JAVA_TOOL_OPTIONS would print a line to stderr).
+ENV JAVA_OPTS="--enable-native-access=ALL-UNNAMED \
+               -XX:+UseG1GC \
                -XX:InitialRAMPercentage=25.0 \
                -XX:MaxRAMPercentage=60.0 \
                -XX:MinRAMPercentage=25.0 \

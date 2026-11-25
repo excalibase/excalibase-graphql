@@ -95,6 +95,8 @@ app:
     accept-count-per-cpu: ${APP_OVERLOAD_ACCEPT_COUNT_PER_CPU:256}
     max-keep-alive-requests: ${APP_OVERLOAD_MAX_KEEP_ALIVE_REQUESTS:20}
     keep-alive-timeout-ms: ${APP_OVERLOAD_KEEP_ALIVE_TIMEOUT_MS:5000}
+    wait-queue-per-cpu: ${APP_OVERLOAD_WAIT_QUEUE_PER_CPU:-1}   # connections over the bound allowed to wait at once; -1 = same as max-connections-per-cpu
+    admission-wait-ms: ${APP_OVERLOAD_ADMISSION_WAIT_MS:250}   # a connection over the bound waits this long for a slot, then gets 503 + Retry-After
   websocket:
     # Socket caps are percent of the connection bound (max-connections-per-cpu x CPUs).
     max-per-project-percent: ${APP_WEBSOCKET_MAX_PER_PROJECT_PERCENT:25}
@@ -106,10 +108,24 @@ app:
     slow-consumer-seconds: ${APP_WEBSOCKET_SLOW_CONSUMER_SECONDS:10}
   cache:
     schema-ttl-minutes: 30
+    schema-poll-seconds: ${APP_SCHEMA_POLL_SECONDS:5}   # standalone only: how often the catalogs are checked for DDL; 0 turns it off (EXC-802)
   cors:
     allowed-origins: ${APP_CORS_ALLOWED_ORIGINS:}   # empty: CORS_ORIGINS (platform-aio's name), else *
     provisioning-url: ${APP_CORS_PROVISIONING_URL:}   # empty: the RLS policy URL
     ttl-ms: 30000
+  auth:   # the engine's own token settings (APP_AUTH_*); empty means none, see docs/deploy/standalone.md
+    issuer: ${APP_AUTH_ISSUER:}
+    jwks-url: ${APP_AUTH_JWKS_URL:}
+    secret: ${APP_AUTH_SECRET:}
+    secret-file: ${APP_AUTH_SECRET_FILE:}
+    algorithms: ${APP_AUTH_ALGORITHMS:}
+    audience: ${APP_AUTH_AUDIENCE:}
+    clock-skew: ${APP_AUTH_CLOCK_SKEW_SECONDS:}
+    claims:
+      role: ${APP_AUTH_CLAIMS_ROLE:}
+      default-role: ${APP_AUTH_CLAIMS_DEFAULT_ROLE:}
+      user-id: ${APP_AUTH_CLAIMS_USER_ID:}
+      extra: ${APP_AUTH_CLAIMS_EXTRA:}
   security:
     jwt-enabled: ${JWT_ENABLED:true}
     insecure-dev-mode: ${APP_SECURITY_INSECURE_DEV_MODE:false}

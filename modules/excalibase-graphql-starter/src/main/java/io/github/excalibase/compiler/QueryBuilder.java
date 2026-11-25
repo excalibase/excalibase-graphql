@@ -928,7 +928,7 @@ public class QueryBuilder {
     List<Object> decodeCursor(String cursor, int keyCount) {
         String decoded;
         try {
-            decoded = new String(Base64.getDecoder().decode(cursor.trim()), StandardCharsets.UTF_8);
+            decoded = new String(dialect.decodeCursor(cursor.trim()), StandardCharsets.UTF_8);
         } catch (IllegalArgumentException _) {
             throw invalidCursor(cursor);
         }

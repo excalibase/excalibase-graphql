@@ -1,5 +1,6 @@
 package io.github.excalibase.metadata;
 
+import io.github.excalibase.access.RuleProblem;
 import io.github.excalibase.permissions.PermissionSet;
 import io.github.excalibase.schema.ReservedSchemas;
 
@@ -7,8 +8,12 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -21,13 +26,53 @@ import java.util.function.UnaryOperator;
  */
 public final class DocumentValidation {
 
+    private static final Logger log = LoggerFactory.getLogger(DocumentValidation.class);
     private static final ObjectMapper TREE_MAPPER = new ObjectMapper();
 
     private DocumentValidation() {
     }
 
-    /** @param tables rules read, {@code functions} tracked functions; both 0 when the document is refused */
-    public record Result(boolean valid, List<String> errors, int tables, int functions) {
+    /**
+     * A rule the database does not fit. The document is still valid and saves: tables may be created after the
+     * document, but until then the engine drops the rule and the role holds less than the document says.
+     */
+    public record Warning(String code, String role, String table, String operation, String message) {
+
+        /** A warning about the document as a whole, not one rule. */
+        static Warning note(MetadataDocumentParser.Note note) {
+            return new Warning(note.code(), null, null, null, note.message());
+        }
+
+        static Warning of(RuleProblem problem) {
+            return new Warning(problem.code(), problem.role(), problem.table(), problem.operation(), message(problem));
+        }
+
+        private static String message(RuleProblem problem) {
+            String who = "role `" + problem.role() + "`";
+            return switch (problem.code()) {
+                case "unknown_table" -> "Table `" + problem.table() + "` does not exist in the database yet. The engine "
+                        + "ignores the rules for it, so " + who + " has no access to it until it exists.";
+                case "needs_select" -> "The " + problem.operation() + " rule on `" + problem.table() + "` needs a "
+                        + "readable select rule beside it. The engine drops it, so " + who + " cannot "
+                        + problem.operation() + " there until the select rule is fixed.";
+                case "not_writable" -> "The " + problem.operation() + " rule on `" + problem.table() + "` is ignored: "
+                        + "it is a view, and the engine does not write to views.";
+                default -> "The " + problem.operation() + " rule of " + who + " on `" + problem.table() + "` does not "
+                        + "fit the database (" + problem.reason() + "). The engine drops it, so " + who + " cannot "
+                        + problem.operation() + " there until the column exists or the rule is fixed.";
+            };
+        }
+    }
+
+    /**
+     * @param tables   rules read, {@code functions} tracked functions; both 0 when the document is refused
+     * @param warnings what the database does not fit; empty when it fits or the schema is not known
+     */
+    public record Result(boolean valid, List<String> errors, int tables, int functions, List<Warning> warnings) {
+
+        public Result(boolean valid, List<String> errors, int tables, int functions) {
+            this(valid, errors, tables, functions, List.of());
+        }
 
         public Map<String, Object> toMap() {
             Map<String, Object> map = new LinkedHashMap<>();
@@ -35,6 +80,9 @@ public final class DocumentValidation {
             if (valid) {
                 map.put("tables", tables);
                 map.put("functions", functions);
+                if (!warnings.isEmpty()) {
+                    map.put("warnings", warnings);
+                }
             } else {
                 map.put("errors", errors);
             }
@@ -43,12 +91,27 @@ public final class DocumentValidation {
     }
 
     public static Result validate(byte[] body, ReservedSchemas reserved, String projectId, boolean envJwtConfigured) {
-        return validate(body, reserved, projectId, envJwtConfigured, System::getenv);
+        return validate(body, reserved, projectId, EngineAuth.of(envJwtConfigured), System::getenv, null);
     }
 
-    /** @param environment where an {@code env:} secret reference is read, as the engine reads it */
     public static Result validate(byte[] body, ReservedSchemas reserved, String projectId, boolean envJwtConfigured,
                                   UnaryOperator<String> environment) {
+        return validate(body, reserved, projectId, EngineAuth.of(envJwtConfigured), environment, null);
+    }
+
+    public static Result validate(byte[] body, ReservedSchemas reserved, String projectId, boolean envJwtConfigured,
+                                  UnaryOperator<String> environment, SchemaCheck schemaCheck) {
+        return validate(body, reserved, projectId, EngineAuth.of(envJwtConfigured), environment, schemaCheck);
+    }
+
+    /**
+     * @param engineAuth  the engine's own token settings, which decide what a {@code jwt:} section may be
+     * @param environment where an {@code env:} secret reference is read, as the engine reads it
+     * @param schemaCheck lists the rules the live schema does not fit, or null when the schema is not known; it can
+     *                    only add warnings, so a failing check never refuses a document
+     */
+    public static Result validate(byte[] body, ReservedSchemas reserved, String projectId, EngineAuth engineAuth,
+                                  UnaryOperator<String> environment, SchemaCheck schemaCheck) {
         if (body == null || body.length == 0) {
             return refused("the document is empty");
         }
@@ -62,9 +125,13 @@ public final class DocumentValidation {
             return refused("the document is not UTF-8 text");
         }
         try {
-            PermissionSet permissions = new MetadataDocumentParser(reserved, projectId, envJwtConfigured)
-                    .check(text, 1, environment);
-            return new Result(true, List.of(), permissions.tables().size(), permissions.functions().size());
+            MetadataDocumentParser.Checked checked = new MetadataDocumentParser(reserved, projectId, engineAuth)
+                    .checkWithNotes(text, 1, environment);
+            PermissionSet permissions = checked.permissions();
+            List<Warning> warnings = new ArrayList<>(checked.notes().stream().map(Warning::note).toList());
+            warnings.addAll(warnings(permissions, schemaCheck));
+            return new Result(true, List.of(), permissions.tables().size(), permissions.functions().size(),
+                    List.copyOf(warnings));
         } catch (MetadataDocumentException e) {
             return refused(e.getMessage());
         }
@@ -76,13 +143,36 @@ public final class DocumentValidation {
      */
     public static Map<String, Object> tree(byte[] body, ReservedSchemas reserved, String projectId,
                                            boolean envJwtConfigured) {
-        Result checked = validate(body, reserved, projectId, envJwtConfigured);
+        return tree(body, reserved, projectId, EngineAuth.of(envJwtConfigured), null);
+    }
+
+    public static Map<String, Object> tree(byte[] body, ReservedSchemas reserved, String projectId,
+                                           boolean envJwtConfigured, SchemaCheck schemaCheck) {
+        return tree(body, reserved, projectId, EngineAuth.of(envJwtConfigured), schemaCheck);
+    }
+
+    public static Map<String, Object> tree(byte[] body, ReservedSchemas reserved, String projectId,
+                                           EngineAuth engineAuth, SchemaCheck schemaCheck) {
+        Result checked = validate(body, reserved, projectId, engineAuth, System::getenv, schemaCheck);
         Map<String, Object> answer = checked.toMap();
         if (checked.valid()) {
             JsonNode root = ConfigText.read(new String(body, StandardCharsets.UTF_8), TREE_MAPPER);
             answer.put("tree", TREE_MAPPER.convertValue(root, new TypeReference<Map<String, Object>>() { }));
         }
         return answer;
+    }
+
+    private static List<Warning> warnings(PermissionSet permissions, SchemaCheck schemaCheck) {
+        if (schemaCheck == null) {
+            return List.of();
+        }
+        try {
+            return schemaCheck.problems(permissions).stream().map(Warning::of).toList();
+        } catch (RuntimeException e) {
+            // a schema that is reloading or a database with no permission dialect says nothing: no warning, never a refusal
+            log.warn("validate_schema_check_skipped reason={}", e.getClass().getSimpleName());
+            return List.of();
+        }
     }
 
     private static Result refused(String error) {

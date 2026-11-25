@@ -6,7 +6,7 @@ import java.util.List;
 import java.util.Optional;
 
 /** What a {@link PermissionDialect} differs in; the compiler asks it and nothing else about the database. */
-sealed interface DialectSql permits PostgresSql, MysqlSql {
+sealed interface DialectSql permits PostgresSql, MysqlSql, SqliteSql {
 
     String quote(String identifier);
 
@@ -46,4 +46,21 @@ sealed interface DialectSql permits PostgresSql, MysqlSql {
     boolean readsWrittenTableThroughDerivedTable();
 
     boolean tracksFunctions();
+
+    /**
+     * The clause stating LIKE's escape character, or empty where the default already is a backslash. MySQL's
+     * default stops being one under NO_BACKSLASH_ESCAPES, so it states it; CHAR(92) because a quoted backslash
+     * means something else under that mode.
+     */
+    String likeEscape();
+
+    /** A Postgres LIKE pattern as the database's own operator takes it; the default is the pattern itself. */
+    default Object likePattern(String pattern) {
+        return pattern;
+    }
+
+    /** {@code column LIKE placeholder}, or its negation, with Postgres's meaning of the pattern. */
+    default String like(String column, String placeholder, boolean negated) {
+        return column + (negated ? " NOT LIKE " : " LIKE ") + placeholder + likeEscape();
+    }
 }

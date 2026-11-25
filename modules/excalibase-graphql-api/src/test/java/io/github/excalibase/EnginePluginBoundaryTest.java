@@ -44,7 +44,7 @@ class EnginePluginBoundaryTest {
 
     @Test
     void thePluginsAreFoundSoTheRulesBelowAreNotVacuous() {
-        assertThat(pluginPackageNames(engine)).contains("io.github.excalibase.postgres", "io.github.excalibase.mysql");
+        assertThat(pluginPackageNames(engine)).contains("io.github.excalibase.postgres", "io.github.excalibase.mysql", "io.github.excalibase.sqlite");
     }
 
     @Test

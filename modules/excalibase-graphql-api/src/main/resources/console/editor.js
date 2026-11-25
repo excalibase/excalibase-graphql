@@ -35,6 +35,42 @@ export function historyWarning() {
   return h("p", { class: "warn", role: "alert" }, "Saved, but this version could not be added to History.");
 }
 
+/** Notes about how tokens are checked: they say nothing about the database and get their own notice. */
+const TOKEN_NOTES = new Set(["jwt_deprecated", "jwt_identical_remove_it", "no_token_verifier"]);
+/** The one note that describes an outage: nothing verifies a token, so every one is rejected. */
+const OUTAGE_NOTE = "no_token_verifier";
+
+/**
+ * What a valid document comes with: what the database does not fit (the server's own sentences, shown as text) under
+ * the given heading, and, apart from it, the notes about token verification.
+ */
+export function warningList(warnings, heading) {
+  if (!Array.isArray(warnings) || warnings.length === 0) {
+    return null;
+  }
+  const tokenNotes = warnings.filter((warning) => TOKEN_NOTES.has(warning.code));
+  const notes = tokenNotes.filter((warning) => warning.code !== OUTAGE_NOTE);
+  const outage = tokenNotes.filter((warning) => warning.code === OUTAGE_NOTE);
+  const schema = warnings.filter((warning) => !TOKEN_NOTES.has(warning.code));
+  const parts = [];
+  if (schema.length > 0) {
+    parts.push(h("div", { class: "warn", role: "alert", id: "warnings" }, h("p", {}, heading),
+      h("ul", {}, schema.map((warning) => h("li", {}, warning.message)))));
+  }
+  if (notes.length > 0) {
+    parts.push(tokenNotice("note", "token-notes", notes));
+  }
+  if (outage.length > 0) {
+    parts.push(tokenNotice("alert", "token-outage", outage));
+  }
+  return parts.length === 1 ? parts[0] : h("div", {}, parts);
+}
+
+function tokenNotice(role, id, notes) {
+  return h("div", { class: "warn", role, id }, h("p", {}, "About how tokens are checked:"),
+    h("ul", {}, notes.map((note) => h("li", {}, note.message))));
+}
+
 function errorList(errors) {
   return h("ul", {}, errors.map((message) => h("li", {}, message)));
 }
@@ -72,7 +108,8 @@ export function outcomeView(outcome, theirs, handlers) {
   }
   const text = TEXTS[outcome.kind](outcome);
   const line = h("p", { class: outcome.kind === "saved" ? "ok" : "error", role: outcome.kind === "saved" ? "status" : "alert" }, text);
-  return outcome.historyMissed ? h("div", {}, line, historyWarning()) : line;
+  const warnings = warningList(outcome.warnings, "Saved, but the database does not fit everything in it:");
+  return outcome.historyMissed || warnings ? h("div", {}, line, outcome.historyMissed ? historyWarning() : null, warnings) : line;
 }
 
 /** Save is off on a source that cannot be written; Export is then the way to take the document away. */

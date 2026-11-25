@@ -6,6 +6,7 @@ import io.github.excalibase.compiler.KeyedWrites;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.excalibase.DialectFeature;
 import io.github.excalibase.SqlDialect;
+import io.github.excalibase.json.JsonFieldOrder;
 import io.github.excalibase.compiler.VectorSearchBuilder;
 import io.github.excalibase.schema.SchemaInfo;
 import io.github.excalibase.schema.TableAccess;
@@ -15,8 +16,11 @@ import io.github.excalibase.security.RlsOp;
 import io.github.excalibase.security.RlsWhereContributor;
 import io.github.excalibase.security.WriteGuard;
 
+import io.github.excalibase.errors.DataError;
+import io.github.excalibase.errors.DataErrorException;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.Function;
 import java.util.function.UnaryOperator;
 
 import static io.github.excalibase.compiler.SqlKeywords.*;
@@ -73,12 +77,16 @@ public class RestQueryCompiler {
             this(group.allFilters(), group);
         }
     }
-    public record EmbedSpec(String relationName, List<String> columns, String fkHint, List<EmbedSpec> children) {
+    public record EmbedSpec(String relationName, List<String> columns, String fkHint, List<EmbedSpec> children,
+                            String alias) {
         public EmbedSpec(String relationName, List<String> columns) {
-            this(relationName, columns, null, List.of());
+            this(relationName, columns, null, List.of(), null);
         }
         public EmbedSpec(String relationName, List<String> columns, String fkHint) {
-            this(relationName, columns, fkHint, List.of());
+            this(relationName, columns, fkHint, List.of(), null);
+        }
+        public EmbedSpec(String relationName, List<String> columns, String fkHint, List<EmbedSpec> children) {
+            this(relationName, columns, fkHint, children, null);
         }
     }
     public record SelectQuery(
@@ -192,6 +200,7 @@ public class RestQueryCompiler {
 
         StringBuilder inner = buildInnerSelect(query.table(), quotedTable, where, orderBySql, effectiveLimit,
                 query.offset());
+        requireNoAliasOverColumn(query.table(), query.columns(), query.embeds());
         String jsonAgg = buildJsonAgg(query.table(), columns, buildEmbedEntries(query.table(), query.embeds(), params), knownCols);
 
         StringBuilder sql = new StringBuilder();
@@ -584,7 +593,7 @@ public class RestQueryCompiler {
     }
 
     private String aliasClause() {
-        return keyedWrites() ? SPACE + ALIAS : "";
+        return keyedWrites() ? dialect.updateAliasKeyword() + ALIAS : "";
     }
 
     /** No RETURNING: the write runs as statements whose rows are read back by key. */
@@ -923,7 +932,7 @@ public class RestQueryCompiler {
     private List<String> jsonEntries(String table, Collection<String> cols, String alias) {
         List<String> entries = new ArrayList<>();
         for (String col : cols) {
-            entries.add(sqlString(col) + COMMA_SEP + jsonValue(table, alias, col));
+            entries.add(dialect.stringLiteral(col) + COMMA_SEP + jsonValue(table, alias, col));
         }
         return entries;
     }
@@ -939,6 +948,47 @@ public class RestQueryCompiler {
     }
 
 
+    /**
+     * The order a read's rows are answered in: the selected columns ({@code *} meaning the table's, in its order), then
+     * the embeds, each laid out the same way. The database's JSON type keeps its own key order, not the table's.
+     */
+    public JsonFieldOrder.Shape shapeOf(String table, List<String> selected, List<EmbedSpec> embeds) {
+        Set<String> keys = new LinkedHashSet<>();
+        if (selected == null || selected.isEmpty()) {
+            keys.addAll(schemaInfo.getColumns(table));
+        }
+        for (String column : selected == null ? List.<String>of() : selected) {
+            if (STAR.equals(column)) keys.addAll(schemaInfo.getColumns(table));
+            else keys.add(column);
+        }
+        Map<String, JsonFieldOrder.Shape> embedded = new LinkedHashMap<>();
+        List<EmbedSpec> nested = embeds == null ? List.of() : embeds;
+        List<String> names = EmbedKeys.of(nested, EmbedSpec::relationName, EmbedSpec::alias);
+        for (int position = 0; position < nested.size(); position++) {
+            EmbedSpec embed = nested.get(position);
+            String target = embeddedTable(table, embed);
+            if (target == null) continue;
+            keys.add(names.get(position));
+            embedded.put(names.get(position), shapeOf(target, embed.columns(), embed.children()));
+        }
+        return new JsonFieldOrder.Shape(List.copyOf(keys), embedded);
+    }
+
+    private String embeddedTable(String table, EmbedSpec embed) {
+        var forward = findForwardFk(table, embed.relationName(), embed.fkHint());
+        if (forward != null) return forward.refTable();
+        var reverse = findReverseFk(table, embed.relationName(), embed.fkHint());
+        return reverse == null ? null : reverse.childTable();
+    }
+
+    /** An embed's alias must not be one of the columns its select answers, all of the table's when it selects {@code *}. */
+    private void requireNoAliasOverColumn(String table, List<String> selected, List<EmbedSpec> embeds) {
+        if (embeds == null || embeds.isEmpty()) return;
+        boolean all = selected == null || selected.isEmpty() || selected.contains("*");
+        Set<String> answered = all ? new HashSet<>(schemaInfo.getColumns(table)) : new HashSet<>(selected);
+        EmbedKeys.requireNoColumnCollision(embeds, EmbedSpec::alias, answered);
+    }
+
     private List<String> buildEmbedEntries(String table, List<EmbedSpec> embeds, Map<String, Object> params) {
         return buildEmbedEntries(table, embeds, ALIAS, new AtomicInteger(), params);
     }
@@ -947,32 +997,47 @@ public class RestQueryCompiler {
                                            AtomicInteger counter, Map<String, Object> params) {
         if (embeds == null || embeds.isEmpty()) return List.of();
         List<String> entries = new ArrayList<>();
-        for (EmbedSpec embed : embeds) {
+        List<String> keys = EmbedKeys.of(embeds, EmbedSpec::relationName, EmbedSpec::alias);
+        EmbedKeys.requireDistinct(keys);
+        for (int position = 0; position < embeds.size(); position++) {
+            EmbedSpec embed = embeds.get(position);
             String ia = ALIAS_R + counter.getAndIncrement();
             String oa = ALIAS_R + counter.getAndIncrement();
             var fwd = findForwardFk(table, embed.relationName(), embed.fkHint());
-            if (fwd != null) entries.add(buildForwardEmbed(embed, fwd, ia, oa, parentAlias, counter, params));
+            var keyed = new EmbedSpec(keys.get(position), embed.columns(), embed.fkHint(), embed.children());
+            if (fwd != null) entries.add(buildForwardEmbed(keyed, fwd, ia, oa, parentAlias, counter, params));
             else {
                 var rev = findReverseFk(table, embed.relationName(), embed.fkHint());
-                if (rev != null) entries.add(buildReverseEmbed(embed, rev, ia, oa, parentAlias, counter, params));
+                if (rev != null) entries.add(buildReverseEmbed(keyed, rev, ia, oa, parentAlias, counter, params));
             }
         }
         return entries;
     }
 
+    /** The join of a key: every column of one side equal to its pair on the other, never the first column alone. */
+    private String columnPairs(String childAlias, List<String> childColumns, String parentAlias,
+                               List<String> parentColumns) {
+        List<String> pairs = new ArrayList<>();
+        for (int i = 0; i < childColumns.size(); i++) {
+            pairs.add(childAlias + DOT + dialect.quoteIdentifier(childColumns.get(i))
+                    + ASSIGN + parentAlias + DOT + dialect.quoteIdentifier(parentColumns.get(i)));
+        }
+        return String.join(AND, pairs);
+    }
+
     private String buildForwardEmbed(EmbedSpec embed, SchemaInfo.FkInfo fk, String ia, String oa,
                                      String parentAlias, AtomicInteger counter, Map<String, Object> params) {
         String refTable = resolveTable(fk.refTable());
+        requireNoAliasOverColumn(fk.refTable(), embed.columns(), embed.children());
         List<String> childEntries = buildEmbedEntries(fk.refTable(), embed.children(), oa, counter, params);
         String innerSel = childEntries.isEmpty() ? buildEmbedSelect(embed, ia, fk.refTable())
                 : SELECT + starFor(fk.refTable(), ia);
         String rowExpr = buildRowExpr(embed, oa, fk.refTable(), childEntries);
         // RLS on the embedded related table (aliased ia) — without this, an embed
         // (?select=*,fk(*)) would expose related rows the caller may not read.
-        StringBuilder ew = new StringBuilder(ia + DOT + dialect.quoteIdentifier(fk.refColumn())
-            + ASSIGN + parentAlias + DOT + dialect.quoteIdentifier(fk.fkColumn()));
+        StringBuilder ew = new StringBuilder(columnPairs(ia, fk.refColumns(), parentAlias, fk.fkColumns()));
         appendRls(ew, fk.refTable(), ia, RlsOp.SELECT, params);
-        return sqlString(embed.relationName()) + COMMA_SEP + parens(
+        return dialect.stringLiteral(embed.relationName()) + COMMA_SEP + parens(
             SELECT + rowExpr + FROM
             + parens(innerSel + FROM + refTable + SPACE + ia + WHERE + ew)
             + SPACE + oa);
@@ -981,21 +1046,21 @@ public class RestQueryCompiler {
     private String buildReverseEmbed(EmbedSpec embed, SchemaInfo.ReverseFkInfo rev, String ia, String oa,
                                      String parentAlias, AtomicInteger counter, Map<String, Object> params) {
         String childTable = resolveTable(rev.childTable());
+        requireNoAliasOverColumn(rev.childTable(), embed.columns(), embed.children());
         List<String> childEntries = buildEmbedEntries(rev.childTable(), embed.children(), oa, counter, params);
         String innerSel = childEntries.isEmpty() ? buildEmbedSelect(embed, ia, rev.childTable())
                 : SELECT + starFor(rev.childTable(), ia);
         String rowExpr = buildRowExpr(embed, oa, rev.childTable(), childEntries);
         // RLS on the embedded child table (aliased ia) — same leak guard as forward.
-        StringBuilder ew = new StringBuilder(ia + DOT + dialect.quoteIdentifier(rev.fkColumn())
-            + ASSIGN + parentAlias + DOT + dialect.quoteIdentifier(rev.refColumns().get(0)));
+        StringBuilder ew = new StringBuilder(columnPairs(ia, rev.fkColumns(), parentAlias, rev.refColumns()));
         appendRls(ew, rev.childTable(), ia, RlsOp.SELECT, params);
         String children = parens(innerSel + FROM + childTable + SPACE + ia + WHERE + ew + roleLimit(rev.childTable()))
                 + SPACE + oa;
         if (!dialect.supportsRowToJson()) {
-            return sqlString(embed.relationName()) + COMMA_SEP
+            return dialect.stringLiteral(embed.relationName()) + COMMA_SEP
                     + parens(SELECT + dialect.coalesceArray(dialect.aggregateArray(rowExpr)) + FROM + children);
         }
-        return sqlString(embed.relationName()) + COMMA_SEP + COALESCE + parens(
+        return dialect.stringLiteral(embed.relationName()) + COMMA_SEP + COALESCE + parens(
             parens(SELECT + FN_JSON_AGG + parens(rowExpr) + FROM + children) + COMMA_SEP + EMPTY_JSON_ARRAY);
     }
 
@@ -1012,10 +1077,8 @@ public class RestQueryCompiler {
         if (childEntries.isEmpty()) {
             return dialect.buildObject(jsonEntries(table, embedColumns(embed, table), outerAlias));
         }
-        List<String> cols = embed.columns().isEmpty() || embed.columns().contains(STAR)
-            ? new ArrayList<>(schemaInfo.getColumns(table))
-            : embed.columns();
-        List<String> entries = jsonEntries(table, cols, outerAlias);
+        requireKnownColumns(embed, table);
+        List<String> entries = jsonEntries(table, embedColumns(embed, table), outerAlias);
         entries.addAll(childEntries);
         return dialect.buildObject(entries);
     }
@@ -1028,46 +1091,110 @@ public class RestQueryCompiler {
         return named.isEmpty() ? new ArrayList<>(known) : named;
     }
 
+    /**
+     * A column the table lacks is a mistake to answer when access is enforced; otherwise it is dropped, unless
+     * that leaves the embed with none of the columns it named, which would widen it to the whole table.
+     */
+    private void requireKnownColumns(EmbedSpec embed, String table) {
+        if (embed.columns().contains(STAR)) return;
+        Set<String> known = schemaInfo.getColumns(table);
+        boolean refuseAny = access.enforced();
+        boolean noneKnown = !embed.columns().isEmpty() && embed.columns().stream().noneMatch(known::contains);
+        if (!refuseAny && !noneKnown) return;
+        embed.columns().stream().filter(column -> !known.contains(column)).findFirst()
+                .ifPresent(column -> {
+                    throw new IllegalArgumentException("Unknown column '" + column + "' on " + table);
+                });
+    }
+
     private String buildEmbedSelect(EmbedSpec embed, String alias, String table) {
         if (embed.columns().isEmpty() || embed.columns().contains(STAR)) return SELECT + starFor(table, alias);
         Set<String> known = new HashSet<>(schemaInfo.getColumns(table));
-        if (access.enforced()) {
-            embed.columns().stream().filter(column -> !known.contains(column)).findFirst().ifPresent(column -> {
-                throw new IllegalArgumentException("Unknown column '" + column + "' on " + table);
-            });
-        }
+        requireKnownColumns(embed, table);
         List<String> safe = embed.columns().stream().filter(known::contains).map(c -> alias + DOT + dialect.quoteIdentifier(c)).toList();
         return safe.isEmpty() ? SELECT + starFor(table, alias) : SELECT + String.join(COMMA_SEP, safe);
     }
 
+    /**
+     * The one relationship an embed names. Several fitting it are ambiguous, never the first; a {@code !hint} that
+     * fits none of a relationship that exists is a mistake, never a silently dropped embed.
+     */
     private SchemaInfo.FkInfo findForwardFk(String table, String relName, String fkHint) {
         String tablePrefix = table + DOT;
+        List<SchemaInfo.FkInfo> fits = new ArrayList<>();
+        boolean fitsWithoutHint = false;
         for (var e : schemaInfo.getAllForwardFks().entrySet()) {
             SchemaInfo.FkInfo fk = e.getValue();
-            if (matchesFk(e.getKey(), tablePrefix, fk.fkColumn(), fkHint, fk.refTable(), relName)) {
-                return fk;
-            }
+            if (!matchesFk(e.getKey(), tablePrefix, fk.fkColumn(), null, fk.refTable(), relName)) continue;
+            fitsWithoutHint = true;
+            if (fkHint == null || fk.fkColumns().contains(fkHint)) fits.add(fk);
         }
-        return null;
+        return only(fits, fitsWithoutHint, relName, fkHint, SchemaInfo.FkInfo::refTable, SchemaInfo.FkInfo::fkColumns);
     }
 
     private SchemaInfo.ReverseFkInfo findReverseFk(String table, String relName, String fkHint) {
         String tablePrefix = table + DOT;
+        List<SchemaInfo.ReverseFkInfo> fits = new ArrayList<>();
+        boolean fitsWithoutHint = false;
         for (var e : schemaInfo.getAllReverseFks().entrySet()) {
             SchemaInfo.ReverseFkInfo rfk = e.getValue();
-            if (matchesFk(e.getKey(), tablePrefix, rfk.fkColumn(), fkHint, rfk.childTable(), relName)) {
-                return rfk;
-            }
+            if (!matchesFk(e.getKey(), tablePrefix, rfk.fkColumn(), null, rfk.childTable(), relName)) continue;
+            fitsWithoutHint = true;
+            if (fkHint == null || rfk.fkColumns().contains(fkHint)) fits.add(rfk);
         }
-        return null;
+        return only(fits, fitsWithoutHint, relName, fkHint, SchemaInfo.ReverseFkInfo::childTable,
+                SchemaInfo.ReverseFkInfo::fkColumns);
     }
 
-    /** True if the FK entry belongs to {@code tablePrefix}, matches the optional {@code fkHint}, and its target table equals {@code relName}. */
+    /**
+     * Embed names that each pick exactly one of {@code fits}: the table, schema-qualified, when it has one key, and
+     * the table with a column hint when it has several. Keys into one table are told apart by column alone.
+     */
+    private static <T> List<String> options(List<T> fits, String relName, Function<T, String> table,
+                                            Function<T, List<String>> columns) {
+        Function<T, String> column = fit -> hintColumn(fit, fits, table, columns);
+        if (fits.stream().map(table).distinct().count() == 1) {
+            return fits.stream().map(fit -> relName + "!" + column.apply(fit)).toList();
+        }
+        Map<String, Long> keysPerTable = fits.stream().collect(
+                java.util.stream.Collectors.groupingBy(table, LinkedHashMap::new, java.util.stream.Collectors.counting()));
+        return fits.stream().map(fit -> keysPerTable.get(table.apply(fit)) == 1 ? table.apply(fit)
+                : table.apply(fit) + "!" + column.apply(fit)).toList();
+    }
+
+    /**
+     * The column that names one key among the keys into its table: the first of its columns no other of them uses, so
+     * keys sharing a leading column are told apart by the one they differ in. A key with none keeps its first column.
+     */
+    private static <T> String hintColumn(T fit, List<T> fits, Function<T, String> table,
+                                         Function<T, List<String>> columns) {
+        return columns.apply(fit).stream()
+                .filter(column -> fits.stream().filter(other -> other != fit && table.apply(other).equals(table.apply(fit)))
+                        .noneMatch(other -> columns.apply(other).contains(column)))
+                .findFirst().orElse(columns.apply(fit).getFirst());
+    }
+
+    private static <T> T only(List<T> fits, boolean relationExists, String relName, String fkHint,
+                              Function<T, String> table, Function<T, List<String>> column) {
+        if (fits.isEmpty()) {
+            if (relationExists && fkHint != null) {
+                throw new DataErrorException(DataError.unknownRelationshipHint(relName, fkHint));
+            }
+            return null;
+        }
+        if (fits.size() > 1) {
+            throw new DataErrorException(DataError.ambiguousRelationship(relName, options(fits, relName, table, column)));
+        }
+        return fits.getFirst();
+    }
+
+    /** True if the FK entry belongs to {@code tablePrefix}, matches the optional {@code fkHint}, and its target is {@code relName}, bare or schema-qualified. */
     private static boolean matchesFk(String entryKey, String tablePrefix,
                                       String fkColumn, String fkHint,
                                       String targetTable, String relName) {
         if (!entryKey.startsWith(tablePrefix)) return false;
         if (fkHint != null && !fkColumn.equals(fkHint)) return false;
+        if (relName.contains(DOT)) return targetTable.equals(relName);
         String raw = targetTable.contains(DOT) ? targetTable.substring(targetTable.indexOf(DOT) + 1) : targetTable;
         return raw.equals(relName);
     }

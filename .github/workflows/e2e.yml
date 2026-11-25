@@ -22,6 +22,10 @@ on:
     - cron: '0 2 * * *' # nightly: the full native set
   workflow_dispatch: # Allow manual triggering
 
+env:
+  # these jobs test the GraphQL and REST surface; none serves the console, so its build is left out
+  MAVEN_ARGS: "-Dconsole.ui.skip=true"
+
 jobs:
   maven-warm:
     name: Warm Maven cache

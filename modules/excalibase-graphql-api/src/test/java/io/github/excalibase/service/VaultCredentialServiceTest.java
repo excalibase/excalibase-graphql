@@ -76,6 +76,11 @@ class VaultCredentialServiceTest {
         {"engine":"mongodb","host":"h","port":"27017","database":"app","username":"u","password":"p"}
         """);
 
+    // A paused project: provisioning answers 423.
+    mockVault.createContext("/api/vault/secrets/projects/napping/credentials/excalibase_app", exchange -> {
+      exchange.sendResponseHeaders(423, -1);
+      exchange.close();
+    });
     // A project created without a database: provisioning answers 409.
     mockVault.createContext("/api/vault/secrets/projects/apps-only/credentials/excalibase_app", exchange -> {
       byte[] body = "{\"error\":\"project has no database\"}".getBytes(StandardCharsets.UTF_8);
@@ -202,6 +207,13 @@ class VaultCredentialServiceTest {
   void fetchCredentials_conflict_isProjectWithoutDatabase() {
     assertThrows(ProjectWithoutDatabaseException.class,
         () -> service.fetchCredentials("org", "apps-only"));
+  }
+
+  @Test
+  @DisplayName("fetchCredentials reports a 423 as a paused project, not as a fault")
+  void fetchCredentials_locked_isProjectPaused() {
+    assertThrows(io.github.excalibase.security.ProjectPausedException.class,
+        () -> service.fetchCredentials("org", "napping"));
   }
 
   @Test

@@ -3,8 +3,7 @@ const path = require("node:path");
 const { test, expect } = require("@playwright/test");
 
 const SECRET = "e2e-admin-secret-0123456789-abcdefghijklmnop";
-const WRITABLE = "http://localhost:10001";
-const READ_ONLY = "http://localhost:10011";
+const { WRITABLE, READ_ONLY } = require("../ports");
 const HEADER = { "X-Excalibase-Admin-Secret": SECRET };
 const EXAMPLE = fs.readFileSync(path.join(__dirname, "..", "..", "deploy", "standalone", "metadata", "permissions.yaml"), "utf8");
 const MARKUP = `<img src=x onerror="window.__pwned=1"><script>window.__pwned=1</script>`;
@@ -105,6 +104,54 @@ test("an invalid document shows the engine's errors and saves nothing", async ({
   await page.locator("#candidate").fill("format: 1\nprojectId: elsewhere\n");
   await page.getByRole("button", { name: "Validate", exact: true }).click();
   await expect(page.getByRole("alert").filter({ hasText: "Not valid:" })).toBeVisible();
+});
+
+test("a rule for a table the database lacks saves and says what the engine will drop", async ({ page, request }) => {
+  await signIn(page);
+  const ghost = EXAMPLE + `  - table: public.ghosts
+    role: user
+    select:
+      filter: {}
+      columns: "*"
+`;
+  await page.getByRole("tab", { name: "Validate" }).click();
+  await page.locator("#candidate").fill(ghost);
+  await page.getByRole("button", { name: "Validate", exact: true }).click();
+  await expect(page.getByRole("status").filter({ hasText: "Valid:" })).toBeVisible();
+  await expect(page.locator("#warnings")).toContainText("Table `public.ghosts` does not exist in the database yet");
+  await expect(page.locator("#warnings")).toContainText("no access");
+
+  await page.getByRole("tab", { name: "Document" }).click();
+  await editDraft(page, ghost);
+  await page.locator("#save").click();
+  await page.locator("#rewrite-save").click();
+  await expect(page.getByText(/^Saved\. The engine now serves version/)).toBeVisible();
+  await expect(page.locator("#warnings")).toContainText("public.ghosts");
+  expect((await metadata(request)).document).toBe(ghost);
+});
+
+test("saving a document that still has a jwt: section says it is deprecated, apart from any database warning", async ({ page }) => {
+  await signIn(page);
+  await editDraft(page, EXAMPLE + "# note\n");
+  await page.locator("#save").click();
+  await expect(savedMessage(page)).toBeVisible();
+
+  await expect(page.locator("#token-notes")).toContainText("deprecated");
+  await expect(page.locator("#token-notes")).toContainText("About how tokens are checked");
+  await expect(page.locator("#warnings")).toHaveCount(0);
+});
+
+test("a document with rules and no jwt: section and no engine settings says every token is rejected, as an alert", async ({ page }) => {
+  await signIn(page);
+  await editDraft(page, EXAMPLE.replace(/^jwt:\n(?:  .*\n)+/m, "") + "# no jwt\n");
+  await page.locator("#save").click();
+  await page.locator("#rewrite-save").click();
+  await expect(savedMessage(page)).toBeVisible();
+
+  const outage = page.locator("#token-outage");
+  await expect(outage).toContainText("every token is rejected");
+  await expect(outage).toHaveAttribute("role", "alert");
+  await expect(page.locator("#token-notes")).toHaveCount(0);
 });
 
 test("markup in a served document is shown as text and never runs", async ({ page, request }) => {
@@ -598,6 +645,22 @@ test.describe("history", () => {
       const newest = await request.get(WRITABLE + "/_admin/v1/history/" + kept[0].id, { headers: HEADER });
       expect((await newest.json()).text.trimStart().startsWith("{")).toBe(true);
     });
+
+  test("restoring a version the database does not fit says what the engine will drop", async ({ page, request }) => {
+    const ghost = EXAMPLE + "  - table: public.ghosts\n    role: user\n    select:\n      filter: {}\n      columns: \"*\"\n";
+    await replaceDocument(request, ghost);
+    await replaceDocument(request, EXAMPLE);
+    await signIn(page);
+    await page.getByRole("tab", { name: "History" }).click();
+    await page.locator("#history-list tbody tr").first().getByRole("button", { name: "View" }).click();
+
+    await page.locator("#restore").click();
+    await page.locator("#restore-yes").click();
+
+    await expect(page.getByText(/^Restored\. The engine now serves version/)).toBeVisible();
+    await expect(page.locator("#warnings")).toContainText("public.ghosts");
+    expect((await metadata(request)).document).toBe(ghost);
+  });
 
   test("cancelling the confirm restores nothing", async ({ page, request }) => {
     await signIn(page);

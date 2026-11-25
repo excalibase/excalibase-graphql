@@ -59,6 +59,39 @@ class MultiSchemaLoaderTest {
         }
     }
 
+    /** A loader whose {@code public.items} has a key into {@code elsewhere.users}, a schema that was not loaded. */
+    private static final class KeyIntoAnUnloadedSchema implements SchemaLoader {
+
+        @Override
+        public void loadAll(JdbcTemplate jdbc, List<String> schemas, Map<String, SchemaInfo> perSchema) {
+            SchemaInfo info = new SchemaInfo();
+            for (String table : List.of("items", "users")) {
+                info.setTableSchema(table, "public");
+                info.addColumn(table, "id", "integer");
+            }
+            info.addForeignKey("items", "user_id", "elsewhere", "users", "id");
+            perSchema.put("public", info);
+        }
+
+        @Override public void loadColumns(JdbcTemplate jdbc, String schema, SchemaInfo info) { /* loadAll only */ }
+        @Override public void loadForeignKeys(JdbcTemplate jdbc, String schema, SchemaInfo info) { /* loadAll only */ }
+        @Override public void loadViews(JdbcTemplate jdbc, String schema, SchemaInfo info) { /* loadAll only */ }
+        @Override public void loadFunctions(JdbcTemplate jdbc, String schema, SchemaInfo info) { /* loadAll only */ }
+        @Override public void loadEnums(JdbcTemplate jdbc, String schema, SchemaInfo info) { /* loadAll only */ }
+        @Override public void loadCompositeTypes(JdbcTemplate jdbc, String schema, SchemaInfo info) { /* loadAll only */ }
+        @Override public void loadComputedFields(JdbcTemplate jdbc, String schema, SchemaInfo info) { /* loadAll only */ }
+    }
+
+    @Test
+    void aKeyIntoASchemaThatIsNotLoaded_isDropped_notBoundToASameNamedTableOfItsOwnSchema() {
+        SchemaInfo target = new SchemaInfo();
+
+        new MultiSchemaLoader(ReservedSchemas.fromConfig(null))
+                .load(target, List.of("public"), new KeyIntoAnUnloadedSchema(), null);
+
+        assertThat(target.getAllForwardFks()).isEmpty();
+    }
+
     private SchemaInfo merged() {
         SchemaInfo target = new SchemaInfo();
         new MultiSchemaLoader(ReservedSchemas.fromConfig(null))

@@ -307,4 +307,18 @@ class KnownProjectFilterTest {
         assertThat(response.code()).isEqualTo(409);
         assertThat(body(response)).contains("\"code\":\"project_has_no_database\"");
     }
+
+    @Test
+    @DisplayName("a paused project is a 503 naming that, apart from an outage")
+    void pausedProject_isServiceUnavailableWithItsOwnCode() {
+        KnownProjects paused = projectId -> {
+            throw new ProjectPausedException(projectId);
+        };
+
+        HttpResponse<?> response = call(paused, "/proj-x/graphql");
+
+        assertThat(response.code()).isEqualTo(503);
+        assertThat(body(response)).contains("\"code\":\"project_paused\"").contains("Project paused")
+                .doesNotContain("proj-x");
+    }
 }

@@ -4,6 +4,8 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
+import java.util.List;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 class SelectParserTest {
@@ -179,6 +181,142 @@ class SelectParserTest {
       assertEquals(2, parsed.columns().size());
       assertEquals("displayName", parsed.aliases().get("name"));
       assertNull(parsed.aliases().get("id"));
+    }
+  }
+
+  @Nested
+  @DisplayName("Strict names: checked as the select is parsed")
+  class StrictNames {
+
+    private SelectParser.SelectResult strict(String select) {
+      return SelectParser.parse(select, true);
+    }
+
+    private void refused(String select) {
+      var failure = assertThrows(IllegalArgumentException.class, () -> strict(select), select);
+      assertFalse(failure.getMessage().toLowerCase().contains("syntax"), failure.getMessage());
+    }
+
+    @Test @DisplayName("plain, underscore-led, schema-qualified, dollar, non-ASCII and 64-character names pass")
+    void identifiersPass() {
+      String longest = "a" + "b".repeat(63);
+      var parsed = strict("id,_x1,a$b,na\u00efve,tenant_a.users!a_user(name,orders(" + longest + "))");
+
+      assertEquals(List.of("id", "_x1", "a$b", "na\u00efve"), parsed.columns());
+      assertEquals("tenant_a.users", parsed.embeds().get(0).relationName());
+      assertEquals("a_user", parsed.embeds().get(0).fkHint());
+      assertEquals(List.of(longest), parsed.embeds().get(0).children().get(0).columns());
+    }
+
+    @Test @DisplayName("a column, alias, embed name or hint with anything else is refused")
+    void oddNamesRefused() {
+      for (String odd : List.of("x\\", "a'b", "1abc", "$sys", "a b", "a-b", "\\'||sleep(2)||'", "b".repeat(65))) {
+        refused(odd);
+        refused("id," + odd + ":name");
+        refused("id,name:" + odd);
+        refused("id,users(" + odd + ")");
+        refused("id,users(id,orders(" + odd + "))");
+        refused("id," + odd + "(id)");
+        refused("id,users!" + odd + "(id)");
+        refused("id,users(id,orders!" + odd + "(id))");
+        refused("id,users(id," + odd + "(id))");
+        refused("id,creator:" + odd + "(id)");
+        refused("id,creator:users!" + odd + "(id)");
+      }
+      refused("a.b");
+      refused("a.b:name");
+      refused("id,users!a.b(id)");
+      refused("id,users(a.b)");
+      refused("a.b.c(id)");
+      refused("a.(id)");
+    }
+
+    @Test @DisplayName("an empty item is refused")
+    void emptyItemRefused() {
+      refused("id,,name");
+      refused("id,users(id,,name)");
+    }
+
+    @Test @DisplayName("a double-quoted name carries spaces, dots, hashes and non-ASCII, and comes back unquoted")
+    void quotedNamesPass() {
+      var parsed = strict("\"first name\",full:\"na\u00efve col\",\"p.q\",\"c#1\",\"2fa\",\"x-y\",\"$sys\","
+          + "users!\"Owner Ref\"(\"zip code\")");
+
+      assertEquals(List.of("first name", "na\u00efve col", "p.q", "c#1", "2fa", "x-y", "$sys"), parsed.columns());
+      assertEquals("full", parsed.aliases().get("na\u00efve col"));
+      assertEquals("Owner Ref", parsed.embeds().get(0).fkHint());
+      assertEquals(List.of("zip code"), parsed.embeds().get(0).columns());
+    }
+
+    @Test @DisplayName("a quoted name cannot carry a quote, a backslash, a delimiter or a control character")
+    void quotedNamesStayPlain() {
+      for (String odd : List.of("\"a\\\"b\"", "\"a\\\\b\"", "\"a'b\"", "\"a;b\"", "\"a,b\"", "\"a(b\"",
+          "\"a)b\"", "\"a:b\"", "\"a!b\"", "\"\"", "\"a\tb\"")) {
+        refused(odd);
+        refused("id,users(" + odd + ")");
+        refused("id,users!" + odd + "(id)");
+      }
+    }
+  }
+
+  @Nested
+  @DisplayName("Lenient names (the default): odd names pass on to be filtered against the table's columns")
+  class LenientNames {
+
+    @Test @DisplayName("names outside the allowlist come through as written")
+    void oddNamesPass() {
+      var parsed = SelectParser.parse("id,x-y,2fa,a b,users!Owner Ref(c d,orders(e f))");
+
+      assertEquals(List.of("id", "x-y", "2fa", "a b"), parsed.columns());
+      assertEquals("Owner Ref", parsed.embeds().get(0).fkHint());
+      assertEquals(List.of("c d"), parsed.embeds().get(0).columns());
+      assertEquals(List.of("e f"), parsed.embeds().get(0).children().get(0).columns());
+    }
+
+    @Test @DisplayName("an empty item is ignored")
+    void emptyItemsIgnored() {
+      assertEquals(List.of("id", "name"), SelectParser.parse("id,,name").columns());
+      assertEquals(List.of("id", "name"), SelectParser.parse("users(id,,name)").embeds().get(0).columns());
+    }
+
+    @Test @DisplayName("a valid quoted name is unquoted, an invalid one is left as written")
+    void quotedNames() {
+      var parsed = SelectParser.parse("\"first name\",\"a\\\"b\"");
+
+      assertEquals(List.of("first name", "\"a\\\"b\""), parsed.columns());
+    }
+
+    @Test @DisplayName("an odd name warns once per kind and position, without naming the value")
+    void warnsOncePerKind() {
+      SelectParser.forgetWarnings();
+      var logger = (ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory.getLogger(SelectParser.class);
+      var appender = new ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent>();
+      appender.start();
+      logger.addAppender(appender);
+      try {
+        SelectParser.parse("secret-one,secret-two,users(secret-three),secret-embed(id)");
+        SelectParser.parse("secret-four");
+      } finally {
+        logger.detachAppender(appender);
+      }
+
+      var messages = appender.list.stream().map(ch.qos.logback.classic.spi.ILoggingEvent::getFormattedMessage).toList();
+      assertEquals(2, messages.size(), messages.toString());
+      assertTrue(messages.stream().noneMatch(message -> message.contains("secret")), messages.toString());
+    }
+
+    @Test @DisplayName("an aliased embed keeps its alias, and its name and hint are still read")
+    void aliasedEmbed() {
+      var embed = SelectParser.parse("creator:users!created_by(id)").embeds().get(0);
+
+      assertEquals("creator", embed.alias());
+      assertEquals("users", embed.relationName());
+      assertEquals("created_by", embed.fkHint());
+    }
+
+    @Test @DisplayName("the one-argument parse is the lenient one")
+    void defaultIsLenient() {
+      assertEquals(List.of("a b"), SelectParser.parse("a b").columns());
     }
   }
 }

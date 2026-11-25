@@ -88,6 +88,38 @@ as GraphQL's selection set:
 GET /api/v1/issues?select=id,title,status&limit=5
 ```
 
+Names in `select` (columns, aliases, embed names and `!hints`) are read against an allowlist: a letter (any script) or
+underscore, then letters, digits, `_` or `$`, up to 64 characters; an embed may also be `schema.table`. A name outside
+it is written in double quotes, which also take space, `.`, `#` and `-` (never a quote, backslash, comma, parenthesis,
+colon, `!` or control character): `?select="first name","p.q","2fa"`. A quoted name reaches the database only as a
+column checked against the table, so it names a column that exists or is dropped.
+
+By default a name outside the allowlist still passes, as before, and is dropped if the table has no such column; the
+engine logs one warning per kind of mismatch, never the name. An embed whose named columns the table has none of is a
+`400` in every mode, never the whole table.
+
+Set `app.rest.strict-select-names=true` (`APP_REST_STRICT_SELECT_NAMES`) to refuse them with a `400` instead.
+Breaking in strict mode: an unquoted name that starts with a digit or `$` (`2fa`, `$sys`) or holds a space, hyphen,
+dot or any other character outside the allowlist (`x-y`, `Owner Ref` as a hint), a name over 64 characters, an empty
+item (`id,,name`), and an embed written `a.b.c`. Quote the name to keep using it.
+
+## Embedding related rows
+
+`?select=id,users(name)` embeds the rows a foreign key leads to (or from). When more than one relationship fits
+the name, the answer is `300` with code `ambiguous_relationship`, and the message lists embed names that each
+pick one:
+
+- `users!created_by` picks the key by its column.
+- `tenant_b.users` names the table with its schema, for same-named tables in two schemas;
+  `tenant_a.users!created_by` does both when one table has several keys.
+
+An alias gives an embed its own key (`creator:users!created_by(name)` returns under `creator`), which is how two embeds of
+the same table sit in one select; two embeds that would share a key are `400 embed_key_collision`.
+
+A `!column` that names no key of an existing relationship is `400 unknown_relationship_hint`. An embed named with
+its schema comes back under the table name (`users`), unless another embed of the same select has that name, when it
+keeps the name as written (`tenant_b.users`).
+
 ## Worked example
 
 A complete read-path query — filter by enum + numeric range, order, paginate,

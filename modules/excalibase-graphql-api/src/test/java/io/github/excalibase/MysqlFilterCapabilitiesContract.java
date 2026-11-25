@@ -7,9 +7,15 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.testcontainers.containers.MySQLContainer;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CyclicBarrier;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 
 import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.hamcrest.Matchers.containsString;
@@ -141,16 +147,20 @@ abstract class MysqlFilterCapabilitiesContract extends EngineIntegrationTest {
                 .expect(jsonPath("$.data.testArticle", org.hamcrest.Matchers.hasSize(1)));
     }
 
-    /** Two requests upserting the same new key at once both succeed and write one row: a deadlock is retried. */
+    /** Requests racing for each new key, and rounds of them: enough that a retry which is too short or in lockstep fails. */
+    private static final List<String> CONTENDERS = List.of("one", "two", "three", "four");
+    private static final int STRESS_ROUNDS = 60;
+
+    /** Several requests upserting the same new key at once all succeed and write one row: a deadlock is retried. */
     @Test
-    void concurrentUpsertsOfTheSameNewKeyBothSucceed() throws Exception {
-        java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newFixedThreadPool(2);
+    void concurrentUpsertsOfTheSameNewKeyAllSucceed() throws Exception {
+        ExecutorService pool = Executors.newFixedThreadPool(CONTENDERS.size());
         try {
-            for (int key = 5000; key < 5030; key++) {
-                java.util.concurrent.CyclicBarrier start = new java.util.concurrent.CyclicBarrier(2);
+            for (int key = 5000; key < 5000 + STRESS_ROUNDS; key++) {
+                CyclicBarrier start = new CyclicBarrier(CONTENDERS.size());
                 int id = key;
-                List<java.util.concurrent.Future<?>> requests = new java.util.ArrayList<>();
-                for (String title : List.of("left", "right")) {
+                List<Future<?>> requests = new ArrayList<>();
+                for (String title : CONTENDERS) {
                     requests.add(pool.submit(() -> {
                         start.await();
                         graphql("mutation { createTestArticle(input: { id: " + id + ", title: \"" + title
@@ -161,8 +171,8 @@ abstract class MysqlFilterCapabilitiesContract extends EngineIntegrationTest {
                         return null;
                     }));
                 }
-                for (java.util.concurrent.Future<?> request : requests) {
-                    request.get(60, java.util.concurrent.TimeUnit.SECONDS);
+                for (Future<?> request : requests) {
+                    request.get(60, TimeUnit.SECONDS);
                 }
                 graphql("{ testArticle(where: { id: { eq: " + id + " } }) { id } }")
                         .expect(jsonPath("$.data.testArticle", org.hamcrest.Matchers.hasSize(1)));
@@ -174,14 +184,14 @@ abstract class MysqlFilterCapabilitiesContract extends EngineIntegrationTest {
 
     /** REST upserts of the same new key at once both succeed: the REST transaction is retried after a deadlock. */
     @Test
-    void concurrentRestMergeDuplicatesOfTheSameNewKeyBothSucceed() throws Exception {
-        java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newFixedThreadPool(2);
+    void concurrentRestMergeDuplicatesOfTheSameNewKeyAllSucceed() throws Exception {
+        ExecutorService pool = Executors.newFixedThreadPool(CONTENDERS.size());
         try {
-            for (int key = 6000; key < 6030; key++) {
-                java.util.concurrent.CyclicBarrier start = new java.util.concurrent.CyclicBarrier(2);
+            for (int key = 6000; key < 6000 + STRESS_ROUNDS; key++) {
+                CyclicBarrier start = new CyclicBarrier(CONTENDERS.size());
                 int id = key;
-                List<java.util.concurrent.Future<?>> requests = new java.util.ArrayList<>();
-                for (String title : List.of("left", "right")) {
+                List<Future<?>> requests = new ArrayList<>();
+                for (String title : CONTENDERS) {
                     requests.add(pool.submit(() -> {
                         start.await();
                         http.post("/test-proj/api/v1/article", "{\"id\":" + id + ",\"title\":\"" + title + "\"}",
@@ -191,8 +201,8 @@ abstract class MysqlFilterCapabilitiesContract extends EngineIntegrationTest {
                         return null;
                     }));
                 }
-                for (java.util.concurrent.Future<?> request : requests) {
-                    request.get(60, java.util.concurrent.TimeUnit.SECONDS);
+                for (Future<?> request : requests) {
+                    request.get(60, TimeUnit.SECONDS);
                 }
                 graphql("{ testArticle(where: { id: { eq: " + id + " } }) { id } }")
                         .expect(jsonPath("$.data.testArticle", org.hamcrest.Matchers.hasSize(1)));

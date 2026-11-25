@@ -2,6 +2,7 @@ package io.github.excalibase.config.ws;
 
 import io.github.excalibase.schema.AccessPlans;
 import io.github.excalibase.schema.SubscriptionsUnsupportedException;
+import io.github.excalibase.security.ProjectPausedException;
 import org.junit.jupiter.api.Test;
 
 import java.util.HashMap;
@@ -30,5 +31,20 @@ class RealtimeGateUnsupportedTest {
         assertThat(opening.delivery()).isNull();
         assertThat(opening.refusal()).isEqualTo("MySQL does not support subscriptions");
         assertThat(opening.unavailable()).isFalse();
+    }
+
+    @Test
+    void aPausedProjectIsUnavailableWithItsOwnCode() {
+        AccessPlans plans = mock(AccessPlans.class);
+        when(plans.realtime(any(), any(), any(), any())).thenThrow(new ProjectPausedException("proj_nap01"));
+        WsSession session = mock(WsSession.class);
+        Map<String, Object> attributes = new HashMap<>();
+        attributes.put(GraphQLWebSocketHandler.SESSION_PROJECT_KEY, "proj_nap01");
+        when(session.getAttributes()).thenReturn(attributes);
+
+        RealtimeGate.Opening opening = RealtimeGate.open(plans, session, "orders");
+
+        assertThat(opening.refusal()).isEqualTo("project_paused");
+        assertThat(opening.unavailable()).isTrue();
     }
 }

@@ -47,6 +47,20 @@ One limit to know: a view or function that *you* create can still read `excaliba
 runs requests as its own database role. See "The db source" in the folder README for how to close that with a
 separate read-only role.
 
+## Schema changes
+
+The engine notices DDL on its own. Every 5 seconds it runs one query over the database catalogs, and when a
+table, column, key, view, type or function has changed it reflects the schema again. A table you create with
+SQL shows up in GraphQL and REST a few seconds later, with no restart. Row writes, `ANALYZE` and vacuum change
+nothing the check looks at. A change of privileges (`GRANT`, `REVOKE`) counts, because it changes what the
+engine can see. `REINDEX CONCURRENTLY` on Postgres causes one extra reload; that is harmless. When the database cannot be read, the check waits longer after each failure, up to 5 minutes, so after a long outage a change can take that long to show.
+
+| Setting | Meaning |
+|---|---|
+| `APP_SCHEMA_POLL_SECONDS` | Seconds between checks. Default `5`. `0` turns the check off, and then only a restart picks up DDL. |
+
+The check runs only in this mode. With the platform's watcher and NATS, DDL events do the same job and nothing is polled.
+
 ## Tokens
 
 Put a `jwt:` section in the metadata document to accept tokens from Auth0, Cognito, Keycloak or any OIDC issuer.
@@ -71,6 +85,7 @@ The console is a page and a small API for editing the document. It is off by def
 | Setting | Meaning |
 |---|---|
 | `EXCALIBASE_CONSOLE_ENABLED` | `true` or `false`. Anything else refuses the start. Default `false`. |
+| `EXCALIBASE_CONSOLE_UI` | `next` or `legacy`: which console `/console` serves. Default `next`, the built console. `legacy` is the old plain-script console, kept as an escape hatch. With `next` the old one is also at `/console/legacy`. Anything else refuses the start, and so does `next` in a jar built without the console (`mvn -Dconsole.ui.skip=true`); such a jar serves `legacy` when nothing is set. |
 | `EXCALIBASE_ADMIN_PORT` | The admin listener. Default `10001`. Must differ from the public and management ports. |
 | `EXCALIBASE_ADMIN_SECRET` or `EXCALIBASE_ADMIN_SECRET_FILE` | Required when the console is on. At least 32 printable ASCII characters. Set one, not both. |
 | `EXCALIBASE_ADMIN_MAX_FAILURES` | Wrong or missing secrets allowed per client address. Default `10`. |
@@ -82,6 +97,22 @@ The console is a page and a small API for editing the document. It is off by def
 - Failed attempts are counted per TCP peer address. A blocked address gets `429` with `Retry-After`.
 - Hosted mode (a policy URL or a provisioning URL is set) refuses to start with the console on.
 - The engine refuses to start if the console is on and the secret is missing, too short, or the port clashes.
+
+### Warnings
+
+`POST /_admin/v1/validate`, `POST /_admin/v1/parse` and a successful save carry a `warnings` list when the document
+names a table or column the database does not have, or writes to a view. Each warning has a `code`, the `role`, the `table`, the `operation` and a `message`. The document is still valid and a save
+still goes through, because a table may be created after the document: but until it exists the engine drops that
+rule, so the role has no access to it. The codes are:
+
+| Code | Meaning |
+|---|---|
+| `unknown_table` | The table does not exist; every rule for it is dropped. |
+| `unknown_column` | A column in a column list, filter, check or preset does not exist; that operation is dropped. |
+| `needs_select` | An update or delete rule has no usable select rule beside it; it is dropped. |
+| `not_writable` | An insert, update or delete rule on a view; the engine does not write to views. |
+
+A restore from History carries the same list. There is no `warnings` key when everything fits or the schema is not loaded yet.
 
 ### Saving
 
@@ -163,10 +194,11 @@ Every save through the console or the admin API adds the text it replaces to `pe
 - **Saving from the grid or the sample-token form writes JSON and drops YAML comments and your own layout.** The
   console asks before such a save when the text it started from has comments or layout to lose: you confirm or
   cancel, and cancel writes nothing. The warning lists what the save changes. A save that gives a role an operation
-  (red), rewrites a rule or changes the token settings (amber) always asks first, comments or not, and "Don't ask
-  again" never hides that; a save that only removes access does not ask. Restore shows the same list. The text you replace stays in the history. To keep comments in the live file, edit it yourself
+  (red), rewrites a rule or changes the token settings (amber) always asks first, comments or not, and "Do not warn
+  me about comments again in this tab" never hides that; a save that only removes access does not ask. Restore shows the same list. The text you replace stays in the history. To keep comments in the live file, edit it yourself
   and let the engine pick it up.
-- **The explorer is not built yet.** The console has the rules grid, a sample token, the history of a file source
-  and export.
+- **The data browser, the API explorer and the row-rule builder are not built yet.** Their menu entries say so. The
+  console has the tables and their relationships, the permissions grid and YAML view, a sample token, the history of
+  a file source, replicas and export. Rules with a row filter show as "Some rows" and are edited as YAML.
 - **A change takes time to apply.** The engine applies a change after the poll that saw it and one more poll that
   reads the same content, so about two poll intervals.

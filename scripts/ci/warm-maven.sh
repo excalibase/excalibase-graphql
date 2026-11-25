@@ -5,8 +5,8 @@ set -euo pipefail
 cd "$(dirname "$0")/../.."
 source scripts/ci/mvn-retry.sh
 
-# one source of truth for the Sonar plugin version: the workflow that runs it
-sonar_plugin=$(grep -o 'sonar-maven-plugin:[0-9.]*' .github/workflows/sonar.yml | head -1)
+# one source of truth for the Sonar plugin version: the CI workflow that runs it
+sonar_plugin=$(grep -o 'sonar-maven-plugin:[0-9.]*' .github/workflows/ci.yml | head -1)
 # the reachability metadata is versioned with the native plugin, so it follows the pom
 graalvm_buildtools=$(sed -n 's|.*<native-maven-plugin.version>\(.*\)</native-maven-plugin.version>.*|\1|p' pom.xml)
 [[ -n $graalvm_buildtools ]] || { echo "native-maven-plugin.version not found in pom.xml"; exit 1; }
@@ -16,6 +16,8 @@ mvn_retry -Pnative dependency:go-offline
 mvn_retry clean verify -DskipTests
 # the surefire provider is only resolved when a test actually runs
 mvn_retry verify -pl modules/excalibase-rls-core
+# the new console's build: the frontend plugin, and the Node and npm it installs (kept in the local repository)
+mvn_retry -Pconsole-ui -pl modules/excalibase-graphql-api frontend:install-node-and-npm@install-node-and-npm
 # native: the micronaut-graal annotation processor and the reachability metadata
 mvn_retry -Pnative -pl modules/excalibase-graphql-api -am compile
 mvn_retry dependency:get -Dartifact=org.graalvm.buildtools:graalvm-reachability-metadata:"${graalvm_buildtools}":zip:repository
