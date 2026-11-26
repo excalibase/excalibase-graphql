@@ -199,6 +199,19 @@ public interface SqlDialect {
         // a server database locks the rows a write touches, as it reads them
     }
 
+    /**
+     * Whether a keyed upsert tries its INSERT before looking for the existing row, updating only after a duplicate
+     * key. A database whose lookup of a missing key locks a gap (MySQL under REPEATABLE READ) says true.
+     */
+    default boolean insertsBeforeLookup() {
+        return false;
+    }
+
+    /** Whether {@code failure}, or a cause of it, is this database's duplicate-key error. */
+    default boolean isDuplicateKey(Throwable failure) {
+        return false;
+    }
+
     /** The row values {@code (a, b) IN <list>} compares against, one parenthesised tuple per entry. */
     default String rowValueList(List<String> tuples) {
         return "(" + String.join(", ", tuples) + ")";

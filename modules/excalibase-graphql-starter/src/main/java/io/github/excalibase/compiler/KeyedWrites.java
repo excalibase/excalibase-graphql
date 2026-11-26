@@ -13,6 +13,8 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import java.util.function.Function;
 
 import static io.github.excalibase.compiler.SqlKeywords.*;
 
@@ -123,11 +125,12 @@ public final class KeyedWrites {
     /**
      * An upsert of a row whose key is sent: an INSERT when no row holds the key, else an UPDATE of that row
      * alone, so a collision on any other unique key, however its columns were filled, fails as the database's
-     * own duplicate error rather than updating a row the caller never addressed. The key is locked first
-     * ({@code FOR UPDATE}). Under REPEATABLE READ that locks the gap a missing key falls in, so two requests
-     * upserting the same new key can deadlock: one is aborted with error 1213, and the transaction's owner runs it
-     * again, a bounded number of times after a random pause ({@link WriteRetry}). Under READ COMMITTED a concurrent insert of the same key would instead make
-     * the INSERT fail as a duplicate. Either way the key is never written twice.
+     * own duplicate error rather than updating a row the caller never addressed. A dialect that
+     * {@linkplain SqlDialect#insertsBeforeLookup inserts first} (MySQL) tries the INSERT and updates only after a
+     * duplicate key, so no gap lock is held for a missing key. Otherwise the key is locked first ({@code FOR UPDATE}),
+     * which under REPEATABLE READ locks the gap a missing key falls in: two requests upserting the same new key can
+     * deadlock, one is aborted with error 1213, and the transaction's owner runs it again, a bounded number of
+     * times after a random pause ({@link WriteRetry}). Either way the key is never written twice.
      *
      * @param set       the UPDATE's assignments, null for DO NOTHING
      * @param updatable which existing rows the update may overwrite, its condition empty when every row: an
@@ -140,12 +143,35 @@ public final class KeyedWrites {
     private KeyedWrite upsertOnKey(Insert insert, Condition set, Condition updatable) {
         KeyedWrite write = insert(List.of(insert), false, true);
         List<Object> key = keys.stream().map(insert.values()::get).toList();
-        return (jdbc, represent) -> {
+        Function<NamedParameterJdbcTemplate, Optional<List<Object>>> existing = jdbc -> {
             Map<String, Object> params = new LinkedHashMap<>();
-            if (jdbc.queryForList(existsSql(key, params, null), params, Integer.class).isEmpty()) {
-                return write.run(jdbc, represent);
+            return jdbc.queryForList(existsSql(key, params, null), params, Integer.class).isEmpty()
+                    ? Optional.empty() : Optional.of(key);
+        };
+        return upsertWith(write, existing, dialect.insertsBeforeLookup(), set, updatable);
+    }
+
+    /**
+     * Looks for the existing row first, or, when {@code insertFirst}, inserts first and looks only after a
+     * duplicate key: the gap lock a missing key's lookup takes is then never held, so two upserts of one new key
+     * cannot deadlock on it. A duplicate key with no row found by {@code existing} was another unique key's, and
+     * is the database's own error.
+     */
+    private KeyedWrite upsertWith(KeyedWrite write, Function<NamedParameterJdbcTemplate, Optional<List<Object>>> existing,
+                                  boolean insertFirst, Condition set, Condition updatable) {
+        return (jdbc, represent) -> {
+            if (!insertFirst) {
+                Optional<List<Object>> found = existing.apply(jdbc);
+                return found.isPresent() ? updateExisting(jdbc, found.get(), set, updatable, represent)
+                        : write.run(jdbc, represent);
             }
-            return updateExisting(jdbc, key, set, updatable, represent);
+            try {
+                return write.run(jdbc, represent);
+            } catch (RuntimeException failure) {
+                if (!dialect.isDuplicateKey(failure)) throw failure;
+                List<Object> key = existing.apply(jdbc).orElseThrow(() -> failure);
+                return updateExisting(jdbc, key, set, updatable, represent);
+            }
         };
     }
 
@@ -160,23 +186,25 @@ public final class KeyedWrites {
 
     private KeyedWrite upsertOnUnique(List<String> conflict, Insert insert, Condition set, Condition updatable) {
         KeyedWrite write = insert(List.of(insert), false, true);
-        return (jdbc, represent) -> {
-            requireKeys();
-            Map<String, Object> params = new LinkedHashMap<>();
-            List<String> matches = new ArrayList<>();
-            for (int i = 0; i < conflict.size(); i++) {
-                params.put(CONFLICT_PARAM + i, insert.values().get(conflict.get(i)));
-                matches.add(column(conflict.get(i)) + ASSIGN + PARAM_PREFIX + CONFLICT_PARAM + i);
-            }
-            List<List<Object>> found = jdbc.query(lockedKeysSql(String.join(AND, matches)), params,
-                    (rs, rowNum) -> keyOf(rs));
-            if (found.isEmpty()) return write.run(jdbc, represent);
-            if (found.size() > 1) {
-                throw new IllegalArgumentException("on_conflict " + String.join(",", conflict) + " is not a unique key of "
-                        + table);
-            }
-            return updateExisting(jdbc, found.getFirst(), set, updatable, represent);
-        };
+        // Lookup first: a row addressed by another unique key may not send the primary key, and its INSERT would fail on that.
+        return upsertWith(write, jdbc -> findByConflict(jdbc, conflict, insert), false, set, updatable);
+    }
+
+    private Optional<List<Object>> findByConflict(NamedParameterJdbcTemplate jdbc, List<String> conflict, Insert insert) {
+        requireKeys();
+        Map<String, Object> params = new LinkedHashMap<>();
+        List<String> matches = new ArrayList<>();
+        for (int i = 0; i < conflict.size(); i++) {
+            params.put(CONFLICT_PARAM + i, insert.values().get(conflict.get(i)));
+            matches.add(column(conflict.get(i)) + ASSIGN + PARAM_PREFIX + CONFLICT_PARAM + i);
+        }
+        List<List<Object>> found = jdbc.query(lockedKeysSql(String.join(AND, matches)), params,
+                (rs, rowNum) -> keyOf(rs));
+        if (found.size() > 1) {
+            throw new IllegalArgumentException("on_conflict " + String.join(",", conflict) + " is not a unique key of "
+                    + table);
+        }
+        return found.stream().findFirst();
     }
 
     private String updateExisting(NamedParameterJdbcTemplate jdbc, List<Object> key, Condition set,
