@@ -648,6 +648,27 @@ class RestControllerIntegrationTest extends EngineIntegrationTest {
     }
 
     @Test
+    @DisplayName("GET embedded orders take their own order and limit: ?orders.order=id.desc&orders.limit=1 (EXC-698)")
+    void embeddedList_takesItsOwnOrderAndLimit() throws Exception {
+      http.get(BASE + "/users?select=id,name,orders(id)&order=id.asc&orders.limit=1")
+          .expect(status().isOk())
+          .expect(jsonPath("$.data[0].name", is("Alice")))
+          .expect(jsonPath("$.data[0].orders", hasSize(1)))
+          .expect(jsonPath("$.data[1].name", is("Bob")))
+          .expect(jsonPath("$.data[1].orders", hasSize(1)));
+      long lowest = http.get(BASE + "/users?select=id,name,orders(id)&order=id.asc&orders.order=id.asc&orders.limit=1")
+          .json().at("/data/0/orders/0/id").asLong();
+      long highest = http.get(BASE + "/users?select=id,name,orders(id)&order=id.asc&orders.order=id.desc&orders.limit=1")
+          .json().at("/data/0/orders/0/id").asLong();
+      Assertions.assertTrue(highest > lowest, "descending must lead with the larger id");
+      var unlimited = http.get(BASE + "/users?select=id,name,orders(id)&order=id.asc&orders.order=id.desc")
+          .json().at("/data/0/orders");
+      Assertions.assertEquals(2, unlimited.size());
+      Assertions.assertTrue(unlimited.get(0).get("id").asLong() > unlimited.get(1).get("id").asLong(),
+          "an order with no limit orders the whole list");
+    }
+
+    @Test
     @DisplayName("GET users with deep embed: ?select=id,name,orders(*,products(id,name)) — 3-level chain")
     void deepEmbed_twoLevels() throws Exception {
       http.get(BASE + "/users?select=id,name,orders(id,total,products(id,name))&order=id.asc")

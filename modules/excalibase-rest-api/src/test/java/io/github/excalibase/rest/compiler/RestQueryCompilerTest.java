@@ -217,11 +217,14 @@ class RestQueryCompilerTest {
     }
 
     @Test
-    @DisplayName("unknown columns in orderBy are ignored")
-    void orderUnknownColumnIgnored() {
+    @DisplayName("unknown columns in orderBy are refused, never injected or silently dropped")
+    void orderUnknownColumnRefused() {
       var order = List.of(new RestQueryCompiler.OrderBySpec("hacked", "ASC", null));
-      var result = compiler.compileSelect("public.products", List.of(), List.of(), order, 30, 0, false);
-      assertFalse(result.sql().contains("hacked"));
+      List<String> noCols = List.of();
+      List<RestQueryCompiler.FilterSpec> noFilters = List.of();
+      var refused = assertThrows(IllegalArgumentException.class,
+              () -> compiler.compileSelect("public.products", noCols, noFilters, order, 30, 0, false));
+      assertTrue(refused.getMessage().contains("hacked"));
     }
 
     @Test
