@@ -348,12 +348,14 @@ public class PostgresSchemaLoader implements SchemaLoader {
         if (!Arrays.asList(loadedSchemas).contains(node.path("to_schema").asText())) {
             return;
         }
-        String constraintKey = schema + "." + node.get("constraint_name").asText();
         String fromTable = node.get(COL_TABLE_NAME).asText();
+        // A constraint name is unique per table, not per schema.
+        String constraintKey = schema + "." + fromTable + "." + node.get("constraint_name").asText();
         String fromCol = node.get("from_column").asText();
         String toTable = node.get("to_table").asText();
         String toCol = node.get("to_column").asText();
-        fkTables.putIfAbsent(constraintKey, new String[]{fromTable, toTable, schema, node.get("to_schema").asText()});
+        fkTables.putIfAbsent(constraintKey, new String[]{fromTable, toTable, schema, node.get("to_schema").asText(),
+                node.get("constraint_name").asText()});
         fkColumns.computeIfAbsent(constraintKey, k -> new ArrayList<>())
                 .add(new String[]{fromCol, toCol});
     }
@@ -406,15 +408,16 @@ public class PostgresSchemaLoader implements SchemaLoader {
             String toTable = tables[1];
             String fkSchema = tables[2];
             String toSchema = tables[3];
+            String constraintName = tables[4];
             SchemaInfo info = perSchema.get(fkSchema);
             if (info == null) continue;
             List<String[]> colPairs = entry.getValue();
             if (colPairs.size() == 1) {
-                info.addForeignKey(fromTable, colPairs.get(0)[0], toSchema, toTable, colPairs.get(0)[1]);
+                info.addForeignKey(fromTable, colPairs.get(0)[0], toSchema, toTable, colPairs.get(0)[1], constraintName);
             } else {
                 List<String> fkCols = colPairs.stream().map(p -> p[0]).toList();
                 List<String> refCols = colPairs.stream().map(p -> p[1]).toList();
-                info.addCompositeForeignKey(fromTable, fkCols, toSchema, toTable, refCols);
+                info.addCompositeForeignKey(fromTable, fkCols, toSchema, toTable, refCols, constraintName);
             }
         }
     }
@@ -489,8 +492,10 @@ public class PostgresSchemaLoader implements SchemaLoader {
             String fromCol = rs.getString("from_column");
             String toTable = rs.getString("to_table");
             String toCol = rs.getString("to_column");
-            constraintTables.putIfAbsent(constraintName, new String[]{fromTable, toTable});
-            constraintColumns.computeIfAbsent(constraintName, k -> new ArrayList<>())
+            // A constraint name is unique per table, not per schema.
+            String constraintKey = fromTable + "." + constraintName;
+            constraintTables.putIfAbsent(constraintKey, new String[]{fromTable, toTable, constraintName});
+            constraintColumns.computeIfAbsent(constraintKey, k -> new ArrayList<>())
                     .add(new String[]{fromCol, toCol});
         }, schema);
 
@@ -498,14 +503,15 @@ public class PostgresSchemaLoader implements SchemaLoader {
             String[] tables = constraintTables.get(entry.getKey());
             String fromTable = tables[0];
             String toTable = tables[1];
+            String constraintName = tables[2];
             List<String[]> colPairs = entry.getValue();
 
             if (colPairs.size() == 1) {
-                info.addForeignKey(fromTable, colPairs.get(0)[0], toTable, colPairs.get(0)[1]);
+                info.addForeignKey(fromTable, colPairs.get(0)[0], null, toTable, colPairs.get(0)[1], constraintName);
             } else {
                 List<String> fkCols = colPairs.stream().map(p -> p[0]).toList();
                 List<String> refCols = colPairs.stream().map(p -> p[1]).toList();
-                info.addCompositeForeignKey(fromTable, fkCols, toTable, refCols);
+                info.addCompositeForeignKey(fromTable, fkCols, null, toTable, refCols, constraintName);
             }
         }
     }

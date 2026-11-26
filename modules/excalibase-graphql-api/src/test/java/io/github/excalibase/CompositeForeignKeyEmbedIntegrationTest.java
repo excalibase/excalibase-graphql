@@ -120,6 +120,68 @@ class CompositeForeignKeyEmbedIntegrationTest extends EngineIntegrationTest {
     }
 
     @Test
+    void rest_keysOverTheSameColumns_areToldApartByConstraintName() {
+        http.get(REST + "/gchild?select=id,gparent(name)")
+                .expect(status().is(300))
+                .expect(jsonPath("$.message", containsString("gparent!gchild_by_pk")))
+                .expect(jsonPath("$.message", containsString("gparent!gchild_by_alt")));
+        http.get(REST + "/gchild?select=id,gparent!gchild_by_pk(name)&order=id.asc")
+                .expect(status().isOk())
+                .expect(jsonPath("$.data[*].gparent.name", contains("one", "two")));
+        http.get(REST + "/gchild?select=id,gparent!gchild_by_alt(name)&order=id.asc")
+                .expect(status().isOk())
+                .expect(jsonPath("$.data[*].gparent.name", contains("two", "one")));
+    }
+
+    @Test
+    void rest_reverseKeysOverTheSameColumns_areToldApartByConstraintName() {
+        http.get(REST + "/gparent?select=a,gchild(id)&a=eq.1")
+                .expect(status().is(300))
+                .expect(jsonPath("$.message", containsString("gchild!gchild_by_alt")));
+        http.get(REST + "/gparent?select=a,gchild!gchild_by_alt(id)&a=eq.1")
+                .expect(status().isOk())
+                .expect(jsonPath("$.data[0].gchild[*].id", contains(2)));
+    }
+
+    @Test
+    void rest_aConstraintNameHint_alsoPicksASingleCompositeKey() {
+        http.get(REST + "/transfer?select=id,parent!transfer_to_a_to_b_fkey(name)")
+                .expect(status().isOk())
+                .expect(jsonPath("$.data[0].parent.name", is("p21")));
+    }
+
+    @Test
+    void rest_theSameKeyDeclaredTwice_isOneRelationship_notAmbiguous() {
+        http.get(REST + "/sparent?select=id,schild(id)")
+                .expect(status().isOk())
+                .expect(jsonPath("$.data[0].schild[*].id", contains(1)));
+        http.get(REST + "/parent?select=a,b,dupchild(id)&a=eq.1&b=eq.2")
+                .expect(status().isOk())
+                .expect(jsonPath("$.data[0].dupchild[*].id", contains(1)));
+        http.get(REST + "/dupchild?select=id,parent(name)")
+                .expect(status().isOk())
+                .expect(jsonPath("$.data[0].parent.name", is("p12")));
+    }
+
+    @Test
+    void rest_twoTablesWithTheSameConstraintName_eachKeepTheirOwnKey() {
+        http.get(REST + "/fk_a?select=id,ua_parent(label)")
+                .expect(status().isOk())
+                .expect(jsonPath("$.data[0].ua_parent.label", is("from a")));
+        http.get(REST + "/fk_b?select=id,ub_parent(label)")
+                .expect(status().isOk())
+                .expect(jsonPath("$.data[0].ub_parent.label", is("from b")));
+    }
+
+    @Test
+    void graphql_aDuplicatedKeyKeepsItsPlainFieldName() throws Exception {
+        http.post("/test-proj/graphql", mapper.writeValueAsString(Map.of("query",
+                        "{ publicSparent { id publicSchild { id } } }")), "Content-Type", "application/json")
+                .expect(status().isOk())
+                .expect(jsonPath("$.data.publicSparent[0].publicSchild[0].id", is(1)));
+    }
+
+    @Test
     void graphql_compositeKeyRelation_joinsOnEveryColumn() throws Exception {
         http.post("/test-proj/graphql", mapper.writeValueAsString(Map.of("query",
                         "{ publicLine(orderBy: { id: ASC }) { id publicParent { name } } }")), "Content-Type", "application/json")
