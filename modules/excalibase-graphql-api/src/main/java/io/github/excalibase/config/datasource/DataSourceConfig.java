@@ -4,6 +4,7 @@ import com.zaxxer.hikari.HikariDataSource;
 import com.zaxxer.hikari.metrics.micrometer.MicrometerMetricsTrackerFactory;
 import io.github.excalibase.config.EngineAvailabilityGuard;
 import io.github.excalibase.service.DatabaseEngine;
+import io.github.excalibase.spi.QueryEngineFactory;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micronaut.context.annotation.Context;
 import io.micronaut.context.annotation.Factory;
@@ -46,8 +47,13 @@ public class DataSourceConfig {
     DataSource dataSource(DataSourceSettings properties,
                           @Value("${app.security.multi-tenant.provisioning-url:}") String tenantProvisioningUrl,
                           @Nullable DynamicDataSourceManager dataSourceManager, MeterRegistry meters,
-                          EngineAvailabilityGuard engineGuard) {
+                          EngineAvailabilityGuard engineGuard,
+                          @Value("${app.database-type:postgres}") String databaseType) {
         engineGuard.check();
+        if (QueryEngineFactory.serves(databaseType)) {
+            log.info("Document database mode ({}): no JDBC pool", databaseType);
+            return new DynamicRoutingDataSource(dataSourceManager, null);
+        }
         boolean multiTenant = tenantProvisioningUrl != null && !tenantProvisioningUrl.isBlank();
         DataSource configured = null;
         if (registersDefault(properties.url(), properties.username(), properties.password(), multiTenant)) {

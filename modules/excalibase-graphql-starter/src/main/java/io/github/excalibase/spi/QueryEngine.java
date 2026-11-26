@@ -16,6 +16,11 @@ public interface QueryEngine extends AutoCloseable {
      */
     Map<String, Object> execute(String query, Map<String, Object> variables, UserContext caller);
 
+    /** Whether the database behind the engine answers now; an engine with nothing to ask is healthy. */
+    default boolean healthy() {
+        return true;
+    }
+
     @Override
     void close();
 }

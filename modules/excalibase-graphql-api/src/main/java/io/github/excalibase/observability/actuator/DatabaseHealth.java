@@ -1,7 +1,10 @@
 package io.github.excalibase.observability.actuator;
 
 import io.github.excalibase.config.datasource.DynamicRoutingDataSource;
+import io.github.excalibase.document.DocumentEngines;
 import io.micronaut.context.annotation.Value;
+import io.micronaut.core.annotation.Nullable;
+import jakarta.inject.Inject;
 import jakarta.inject.Singleton;
 import java.sql.Connection;
 import java.sql.SQLException;
@@ -21,13 +24,20 @@ public class DatabaseHealth {
     private static final int VALIDATION_SECONDS = 2;
 
     private final Optional<DataSource> database;
+    private final DocumentEngines documents;
 
-    DatabaseHealth(DataSource dataSource, @Value("${management.health.db.enabled:true}") boolean enabled) {
+    @Inject
+    DatabaseHealth(DataSource dataSource, @Value("${management.health.db.enabled:true}") boolean enabled,
+                   @Nullable DocumentEngines documents) {
         this.database = enabled && dataSource instanceof DynamicRoutingDataSource routing
                 ? routing.configured() : Optional.empty();
+        this.documents = enabled ? documents : null;
     }
 
     public HealthStatus status() {
+        if (documents != null) {
+            return documents.healthy() ? HealthStatus.UP : HealthStatus.DOWN;
+        }
         return database.map(DatabaseHealth::check).orElse(HealthStatus.UP);
     }
 

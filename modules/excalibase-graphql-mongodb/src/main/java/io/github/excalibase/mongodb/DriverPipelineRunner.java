@@ -11,6 +11,8 @@ import org.bson.codecs.DocumentCodec;
 import org.bson.codecs.configuration.CodecRegistries;
 import org.bson.codecs.configuration.CodecRegistry;
 import org.bson.UuidRepresentation;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import javax.net.ssl.SSLContext;
 
@@ -23,16 +25,24 @@ import java.util.concurrent.TimeUnit;
 /** The official MongoDB sync driver; DocumentDB is reached over the same wire protocol. */
 final class DriverPipelineRunner implements PipelineRunner {
 
+    private static final Logger log = LoggerFactory.getLogger(DriverPipelineRunner.class);
+    private static final long DEFAULT_SELECTION_MILLIS = 5_000;
+
     private final MongoClient client;
     private final String database;
     private final long maxTimeMillis;
 
     /** @param sslContext trust for a server whose CA is not in the JVM's store, or null for the default */
     DriverPipelineRunner(String uri, String database, long maxTimeMillis, SSLContext sslContext) {
+        ConnectionString connection = new ConnectionString(uri);
         MongoClientSettings.Builder settings = MongoClientSettings.builder()
-                .applyConnectionString(new ConnectionString(uri))
+                .applyConnectionString(connection)
                 .uuidRepresentation(UuidRepresentation.STANDARD)
                 .codecRegistry(withInstantDates());
+        if (connection.getServerSelectionTimeout() == null) {
+            settings.applyToClusterSettings(cluster ->
+                    cluster.serverSelectionTimeout(Math.max(maxTimeMillis, DEFAULT_SELECTION_MILLIS), TimeUnit.MILLISECONDS));
+        }
         if (sslContext != null) {
             settings.applyToSslSettings(ssl -> ssl.enabled(true).context(sslContext));
         }
@@ -54,6 +64,17 @@ final class DriverPipelineRunner implements PipelineRunner {
                 .aggregate(pipeline)
                 .maxTime(maxTimeMillis, TimeUnit.MILLISECONDS)
                 .into(new ArrayList<>());
+    }
+
+    @Override
+    public boolean ping() {
+        try {
+            client.getDatabase(database).runCommand(new Document("ping", 1));
+            return true;
+        } catch (RuntimeException e) {
+            log.warn("MongoDB does not answer a ping: {}", e.getClass().getSimpleName());
+            return false;
+        }
     }
 
     @Override

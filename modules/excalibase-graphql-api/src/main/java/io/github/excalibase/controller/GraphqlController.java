@@ -14,6 +14,7 @@ import io.github.excalibase.errors.DataError;
 import io.github.excalibase.errors.DataErrors;
 import io.github.excalibase.observability.requests.RequestMetrics;
 import io.github.excalibase.config.GraphQLObservabilityInstrumentation;
+import io.github.excalibase.document.DocumentEngines;
 import io.github.excalibase.permissions.PermissionEvaluationException;
 import io.github.excalibase.permissions.PermissionsUnavailableException;
 import io.github.excalibase.schema.GraphqlSchemaManager;
@@ -23,6 +24,7 @@ import io.github.excalibase.security.PermissionCheckFailedException;
 import io.github.excalibase.security.PermissionErrors;
 import io.github.excalibase.security.Principal;
 import io.github.excalibase.security.SecurityConstants;
+import io.github.excalibase.security.UnknownProjectException;
 import io.github.excalibase.service.QueryExecutionService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -39,6 +41,7 @@ import io.micronaut.http.annotation.Post;
 import io.micronaut.http.annotation.Produces;
 import io.micronaut.scheduling.TaskExecutors;
 import io.micronaut.scheduling.annotation.ExecuteOn;
+import jakarta.inject.Inject;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 
 import java.sql.SQLException;
@@ -70,12 +73,24 @@ public class GraphqlController {
     private final GraphQLObservabilityInstrumentation observability;
     private final boolean requestMetricsOn;
     private final ParsedQueries parsedQueries;
+    private final DocumentEngines documentEngines;
 
     public GraphqlController(GraphqlSchemaManager schemaManager,
                              QueryExecutionService queryExecutor,
                              GraphQLObservabilityInstrumentation observability,
                              @Nullable RequestMetrics requestMetrics,
                              ParsedQueries parsedQueries) {
+        this(schemaManager, queryExecutor, observability, requestMetrics, parsedQueries, null);
+    }
+
+    @Inject
+    public GraphqlController(GraphqlSchemaManager schemaManager,
+                             QueryExecutionService queryExecutor,
+                             GraphQLObservabilityInstrumentation observability,
+                             @Nullable RequestMetrics requestMetrics,
+                             ParsedQueries parsedQueries,
+                             @Nullable DocumentEngines documentEngines) {
+        this.documentEngines = documentEngines;
         this.schemaManager = schemaManager;
         this.queryExecutor = queryExecutor;
         this.observability = observability;
@@ -113,6 +128,10 @@ public class GraphqlController {
         Map<String, Object> variables = request.containsKey(VARIABLES_KEY) && request.get(VARIABLES_KEY) instanceof Map
                 ? (Map<String, Object>) request.get(VARIABLES_KEY) : Map.of();
 
+        if (documentEngines != null) {
+            return observability.observe(query, null, () -> documentAnswer(documentEngines, projectId, principal, query, variables));
+        }
+
         final String finalUserId = userId;
         final JwtClaims finalClaims = jwtClaims;
         final String finalQuery = query;
@@ -146,6 +165,24 @@ public class GraphqlController {
             httpRequest.getAttributes().put(RequestMetrics.GRAPHQL_ERRORS_ATTR, Boolean.TRUE);
         }
         return answer;
+    }
+
+    /** A document database's answer: its engine enforces the permission document itself, for every role. */
+    private HttpResponse<Object> documentAnswer(DocumentEngines engines, String projectId, Principal principal,
+                                                String query, Map<String, Object> variables) {
+        Principal caller = principal == null ? Principal.anonymous() : principal;
+        if (caller.bypass()) {
+            return Reply.status(HttpStatus.FORBIDDEN).body(Map.of(ERRORS_KEY, List.of(PermissionErrors.graphqlError(
+                    "service_role_unsupported", "The service role is not served on this database yet"))));
+        }
+        try {
+            return Reply.ok(engines.execute(projectId, query, variables, caller));
+        } catch (UnknownProjectException _) {
+            return Reply.status(HttpStatus.NOT_FOUND).body(Map.of(ERRORS_KEY, List.of(
+                    PermissionErrors.graphqlError("project_not_found", "Project not found"))));
+        } catch (Exception e) {
+            return errorResponse(e, null);
+        }
     }
 
     /**

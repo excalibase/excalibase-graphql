@@ -10,6 +10,7 @@ import io.github.excalibase.permissions.PermissionsUnavailableException;
 import io.github.excalibase.schema.AccessPlans;
 import io.github.excalibase.schema.SchemaUnavailableException;
 import io.github.excalibase.schema.SubscriptionsUnsupportedException;
+import io.github.excalibase.schema.SurfaceNotServedException;
 import io.github.excalibase.security.Principal;
 import io.github.excalibase.security.ProjectPausedException;
 
@@ -109,6 +110,8 @@ final class RealtimeGate {
                     .orElseGet(() -> Opening.refused("Unknown subscription: " + subscriptionKey));
         } catch (PermissionsUnavailableException e) {
             return new Opening(null, PermissionsUnavailableException.CODE, true);
+        } catch (SurfaceNotServedException _) {
+            return Opening.refused(SurfaceNotServedException.CODE);
         } catch (SubscriptionsUnsupportedException e) {
             return Opening.refused(e.getMessage());
         } catch (ProjectPausedException _) {

@@ -58,6 +58,8 @@
         <micronaut.runtime>netty</micronaut.runtime>
         <!-- Spring Framework is used as plain libraries (JdbcTemplate, TransactionTemplate), on its current line -->
         <spring.framework.version>7.0.10</spring.framework.version>
+        <!-- The MongoDB driver line the plugin is tested on; the platform BOM would otherwise pick an older one for the app module -->
+        <mongodb.driver.version>5.15.0</mongodb.driver.version>
         <micronaut.platform.version>4.10.24</micronaut.platform.version>
         <!-- Pinned to patch Snyk HIGH CVEs in jackson-core 2.19.4 -->
         <jackson.version>2.21.7</jackson.version>
@@ -225,6 +227,26 @@
                 <groupId>io.github.excalibase</groupId>
                 <artifactId>excalibase-graphql-sqlite</artifactId>
                 <version>${excalibase.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.github.excalibase</groupId>
+                <artifactId>excalibase-graphql-mongodb</artifactId>
+                <version>${excalibase.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.mongodb</groupId>
+                <artifactId>mongodb-driver-sync</artifactId>
+                <version>${mongodb.driver.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.mongodb</groupId>
+                <artifactId>mongodb-driver-core</artifactId>
+                <version>${mongodb.driver.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.mongodb</groupId>
+                <artifactId>bson</artifactId>
+                <version>${mongodb.driver.version}</version>
             </dependency>
             <dependency>
                 <groupId>io.github.excalibase</groupId>

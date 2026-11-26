@@ -79,6 +79,11 @@ final class MongoQueryEngine implements QueryEngine {
     }
 
     @Override
+    public boolean healthy() {
+        return runner.ping();
+    }
+
+    @Override
     public void close() {
         runner.close();
     }
@@ -194,6 +199,9 @@ final class MongoQueryEngine implements QueryEngine {
             String message = "Internal server error";
             if (cause instanceof RequestException) {
                 message = cause.getMessage();
+            } else if (cause instanceof IllegalArgumentException && String.valueOf(cause.getMessage()).startsWith("Unknown variable")) {
+                // a rule needs a session variable the request lacks: the request's fault, not the server's
+                log.warn("MongoDB request refused: {}", cause.getMessage());
             } else {
                 log.error("MongoDB request failed", cause);
             }

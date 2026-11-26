@@ -56,14 +56,25 @@ abstract class AbstractEngineTest {
 
     QueryEngine engineOver(List<Document> documents, List<Policy> policies, List<ColumnPolicy> columnPolicies,
                            List<String> open) {
+        Map<String, Object> rules = new HashMap<>();
+        rules.put("policies", policies);
+        rules.put("columnPolicies", columnPolicies);
+        rules.put("openCollections", open);
+        return engineWith(documents, rules);
+    }
+
+    /** The seeded orders collection served under {@code rules}, which are the engine's rule settings. */
+    QueryEngine engineWith(Map<String, Object> rules) {
+        return engineWith(orders(), rules);
+    }
+
+    private QueryEngine engineWith(List<Document> documents, Map<String, Object> rules) {
         backend().seed(database(), "orders", documents);
         Map<String, Object> settings = new HashMap<>();
         settings.put("uri", backend().uri());
         settings.put("database", database());
         settings.put("collections", List.of(Map.of("name", "orders", "id", idKind(), "fields", orderFields())));
-        settings.put("policies", policies);
-        settings.put("columnPolicies", columnPolicies);
-        settings.put("openCollections", open);
+        settings.putAll(rules);
         if (backend().sslContext() != null) {
             settings.put("sslContext", backend().sslContext());
         }

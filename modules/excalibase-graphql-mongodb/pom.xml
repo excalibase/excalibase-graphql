@@ -13,7 +13,6 @@
     <artifactId>excalibase-graphql-mongodb</artifactId>
 
     <properties>
-        <mongodb.driver.version>5.9.2</mongodb.driver.version>
         <maven.compiler.source>25</maven.compiler.source>
         <maven.compiler.target>25</maven.compiler.target>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>

@@ -18,6 +18,7 @@ import io.github.excalibase.permissions.RolePermissions;
 import io.github.excalibase.rls.ProjectCacheEvictor;
 import io.github.excalibase.security.Principal;
 import io.github.excalibase.spi.MutationExecutor;
+import io.github.excalibase.spi.QueryEngineFactory;
 import io.github.excalibase.spi.SchemaLoader;
 import io.github.excalibase.spi.SqlEngine;
 import io.github.excalibase.spi.SqlEngineFactory;
@@ -66,6 +67,7 @@ public class GraphqlSchemaManager implements SchemaProvider, AccessPlans, Projec
     private final int maxRows;
     private final boolean capNestedLists;
     private final String databaseType;
+    private final boolean documentMode;
     private final int maxQueryDepth;
     private final ReservedSchemas reservedSchemas;
     private final DynamicDataSourceManager dataSourceManager;
@@ -152,6 +154,7 @@ public class GraphqlSchemaManager implements SchemaProvider, AccessPlans, Projec
         this.jdbcTemplate = jdbcTemplate;
         this.maxRows = maxRows;
         this.databaseType = databaseType;
+        this.documentMode = QueryEngineFactory.serves(databaseType);
         this.maxQueryDepth = maxQueryDepth;
         this.reservedSchemas = ReservedSchemas.fromConfig(reservedSchemasConfig);
         this.dataSourceManager = dataSourceManager;
@@ -185,6 +188,9 @@ public class GraphqlSchemaManager implements SchemaProvider, AccessPlans, Projec
      * means only the service role reaches tables.
      */
     private void requireSupportedPermissions() {
+        if (documentMode()) {
+            return; // a document database enforces the permission document itself, not as SQL
+        }
         boolean sourced = permissionProvider != null && permissionProvider.configured();
         if (jwtEnabled && sourced) {
             try {
@@ -200,9 +206,18 @@ public class GraphqlSchemaManager implements SchemaProvider, AccessPlans, Projec
         }
     }
 
+    /** True when the configured database is a document database: it has no SQL schema, plan or compiler. */
+    public boolean documentMode() {
+        return documentMode;
+    }
+
     /** Reflects the configured database at start. One that cannot be read is served as an empty schema. */
     @PostConstruct
     public void init() {
+        if (documentMode()) {
+            log.info("Document database ({}): no SQL schema is reflected", databaseType);
+            return;
+        }
         SqlEngine engine = SqlEngineFactory.create(databaseType);
         // Taken before the load, so DDL that lands while it runs is seen by the next poll.
         String fingerprintBeforeLoad = fingerprintOrNull(engine);
@@ -422,6 +437,9 @@ public class GraphqlSchemaManager implements SchemaProvider, AccessPlans, Projec
 
     @Override
     public AccessPlan planFor(Principal principal, MutablePropagatedContext request) {
+        if (documentMode()) {
+            return null; // the document engine enforces permissions itself, on every request
+        }
         EngineState state = resolveEngineState(principal);
         if (state != null && principal != null) {
             request.add(new ResolvedEngine(principal, TenantContext.getTenantId(), state));
@@ -432,6 +450,9 @@ public class GraphqlSchemaManager implements SchemaProvider, AccessPlans, Projec
     @Override
     public Optional<RealtimeAccess> realtime(String orgSlug, String projectId, Principal principal,
                                              String subscriptionKey) {
+        if (documentMode) {
+            throw new SurfaceNotServedException("Realtime is not served for " + databaseType + " databases yet");
+        }
         EngineState state = resolveEngineState(orgSlug, projectId, principal);
         if (state == null) {
             return Optional.empty();
@@ -506,6 +527,9 @@ public class GraphqlSchemaManager implements SchemaProvider, AccessPlans, Projec
      * so beats a NullPointerException from the dereference that follows.
      */
     private EngineState requireEngineState(Principal principal) {
+        if (documentMode()) {
+            throw new SurfaceNotServedException("This surface is not served for " + databaseType + " databases yet");
+        }
         EngineState state = resolveEngineState(principal);
         if (state == null) {
             throw new IllegalStateException(

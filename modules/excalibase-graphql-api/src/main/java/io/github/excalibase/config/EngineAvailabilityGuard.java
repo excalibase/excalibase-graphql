@@ -1,6 +1,7 @@
 package io.github.excalibase.config;
 
 import io.github.excalibase.SqlEngineProvider;
+import io.github.excalibase.spi.QueryEngineFactory;
 import io.github.excalibase.spi.SqlEngineFactory;
 import io.micronaut.context.annotation.Value;
 import jakarta.inject.Inject;
@@ -54,8 +55,16 @@ public class EngineAvailabilityGuard {
             // The db rule source keeps its document in PostgreSQL, whichever database is served.
             require("postgres", "METADATA_SOURCE=db (its document is kept in PostgreSQL)", providers);
         }
+        if (multiTenant && QueryEngineFactory.serves(databaseType)) {
+            throw new IllegalStateException("Refusing to start with APP_DATABASE_TYPE=" + databaseType + " in multi-tenant mode "
+                    + "(app.security.multi-tenant.provisioning-url): a document database serves one project, "
+                    + "per-project document databases are not supported yet");
+        }
         if (multiTenant) {
             return;
+        }
+        if (QueryEngineFactory.serves(databaseType)) {
+            return; // a document database: its plugin is on the classpath, and there is no JDBC url to judge
         }
         require(databaseType, "APP_DATABASE_TYPE=" + databaseType, providers);
         if (datasourceUrl == null) {
