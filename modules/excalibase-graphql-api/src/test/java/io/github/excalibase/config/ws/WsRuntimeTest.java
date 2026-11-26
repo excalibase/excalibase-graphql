@@ -181,14 +181,14 @@ class WsRuntimeTest {
 
     @Test
     void projectsWithSockets_listsOnlyProjectsWithAnOpenSocket() throws Exception {
-        WsRuntime runtime = runtime(limits(5, 5, Duration.ofSeconds(5)));
+        WsRuntime wsRuntime = runtime(limits(5, 5, Duration.ofSeconds(5)));
         WsSession opened = session("proj-open", "10.0.0.1");
-        runtime.admit(opened);
+        wsRuntime.admit(opened);
 
-        org.assertj.core.api.Assertions.assertThat(runtime.projectsWithSockets()).containsExactly("proj-open");
+        assertThat(wsRuntime.projectsWithSockets()).containsExactly("proj-open");
 
-        runtime.release(opened);
+        wsRuntime.release(opened);
 
-        org.assertj.core.api.Assertions.assertThat(runtime.projectsWithSockets()).isEmpty();
+        assertThat(wsRuntime.projectsWithSockets()).isEmpty();
     }
 }

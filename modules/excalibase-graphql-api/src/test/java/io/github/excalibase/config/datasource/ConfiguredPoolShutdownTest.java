@@ -55,7 +55,7 @@ class ConfiguredPoolShutdownTest {
     @Test
     void aPoolThatIsSlowToClose_doesNotHoldShutdownUp() {
         CountDownLatch release = new CountDownLatch(1);
-        try (Release _ = new Release(release)) {
+        try (var _ = new Release(release)) {
             AutoCloseablePool slow = new AutoCloseablePool(release);
             long begun = System.nanoTime();
 
