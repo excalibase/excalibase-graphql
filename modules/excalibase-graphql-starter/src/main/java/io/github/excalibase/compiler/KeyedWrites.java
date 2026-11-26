@@ -2,6 +2,7 @@ package io.github.excalibase.compiler;
 
 import io.github.excalibase.SqlDialect;
 import io.github.excalibase.security.PermissionCheckFailedException;
+import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.jdbc.support.GeneratedKeyHolder;
@@ -154,8 +155,7 @@ public final class KeyedWrites {
     /**
      * Looks for the existing row first, or, when {@code insertFirst}, inserts first and looks only after a
      * duplicate key: the gap lock a missing key's lookup takes is then never held, so two upserts of one new key
-     * cannot deadlock on it. A duplicate key with no row found by {@code existing} was another unique key's, and
-     * is the database's own error.
+     * cannot deadlock on it.
      */
     private KeyedWrite upsertWith(KeyedWrite write, Function<NamedParameterJdbcTemplate, Optional<List<Object>>> existing,
                                   boolean insertFirst, Condition set, Condition updatable) {
@@ -167,12 +167,31 @@ public final class KeyedWrites {
             }
             try {
                 return write.run(jdbc, represent);
-            } catch (RuntimeException failure) {
-                if (!dialect.isDuplicateKey(failure)) throw failure;
-                List<Object> key = existing.apply(jdbc).orElseThrow(() -> failure);
-                return updateExisting(jdbc, key, set, updatable, represent);
+            } catch (DataAccessException failure) {
+                return afterRefusedInsert(failure, write, existing, new Update(set, updatable), jdbc, represent);
             }
         };
+    }
+
+    private record Update(Condition set, Condition updatable) {}
+
+    /**
+     * The database refused the INSERT. A row that exists is the one the caller addressed, so it is updated: the
+     * refusal may be a partial row's own (a NOT NULL column with no default) that the existing row already
+     * satisfies. With no row, a duplicate means it was deleted since, so the INSERT runs once more; anything else
+     * is the database's own error.
+     */
+    private String afterRefusedInsert(DataAccessException failure, KeyedWrite write,
+                                      Function<NamedParameterJdbcTemplate, Optional<List<Object>>> existing,
+                                      Update update, NamedParameterJdbcTemplate jdbc, boolean represent) {
+        Optional<List<Object>> found = existing.apply(jdbc);
+        if (found.isPresent()) {
+            return updateExisting(jdbc, found.get(), update.set(), update.updatable(), represent);
+        }
+        if (dialect.isDuplicateKey(failure)) {
+            return write.run(jdbc, represent);
+        }
+        throw failure;
     }
 
     /**
