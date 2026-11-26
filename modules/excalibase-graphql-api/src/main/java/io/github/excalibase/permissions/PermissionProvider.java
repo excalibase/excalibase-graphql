@@ -24,6 +24,10 @@ public interface PermissionProvider extends ProjectCacheEvictor {
     default void onChange(ObjLongConsumer<String> listener) {
     }
 
+    /** Forgets every project's held document, as {@link #evict} does one's. */
+    default void evictAll() {
+    }
+
     /** False only for the stand-in used when no control plane is configured. */
     default boolean configured() {
         return true;

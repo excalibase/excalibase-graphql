@@ -347,7 +347,12 @@ public class AppConfig {
             @Value("${app.nats.inbox-prefix:}") String natsInboxPrefix) {
         permissionProvider.onChange(webSockets::permissionsAre);
         PolicyChangeSubscriber subscriber = new PolicyChangeSubscriber(List.of(permissionProvider, schemaManager::evict),
-                new PermissionVersions(permissionProvider), webSockets, natsEnabled, natsUrl, natsUsername, natsPassword, natsInboxPrefix);
+                new PermissionVersions(permissionProvider), webSockets,
+                new PolicyChangeSubscriber.NatsSettings(natsEnabled, natsUrl, natsUsername, natsPassword, natsInboxPrefix),
+                () -> {
+                    permissionProvider.evictAll();
+                    schemaManager.evictAll();
+                });
         subscriber.start();   // Micronaut runs no @PostConstruct on a factory-built bean
         return subscriber;
     }
