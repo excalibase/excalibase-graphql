@@ -25,6 +25,8 @@ public record DataError(int status, String code, String message, String constrai
     public static final String PERMISSION_DENIED = "permission_denied";
     /** The answer is bigger than the database can hand back as one value; a narrower select or a lower limit fits. */
     public static final String RESULT_TOO_LARGE = "result_too_large";
+    /** An embed's {@code !hint} names no foreign key column of the relationship it is on. */
+    public static final String UNKNOWN_RELATIONSHIP_HINT = "unknown_relationship_hint";
     private static final int PAYLOAD_TOO_LARGE = 413;
 
     private static final int BAD_REQUEST = 400;
@@ -50,6 +52,12 @@ public record DataError(int status, String code, String message, String constrai
 
     public static DataError badRequest(String code, String message, String constraint, String column) {
         return new DataError(BAD_REQUEST, code, message, constraint, column);
+    }
+
+    /** An embed's {@code !hint} names no foreign key column of the relationship it is on. */
+    public static DataError unknownRelationshipHint(String relation, String hint) {
+        return badRequest(UNKNOWN_RELATIONSHIP_HINT,
+                "No foreign key column '" + hint + "' leads to '" + relation + "'");
     }
 
     /** A read whose rows the database could not return as one value (MySQL's max_allowed_packet). */
