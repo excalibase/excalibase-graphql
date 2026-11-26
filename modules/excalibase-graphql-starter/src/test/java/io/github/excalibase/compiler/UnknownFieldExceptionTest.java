@@ -25,7 +25,9 @@ class UnknownFieldExceptionTest {
     void anAnonRequest_isToldItRunsAsAnon() {
         String message = new UnknownFieldException(PUBLIC_TODOS).messageFor(Principal.anonymous());
 
-        assertThat(message).startsWith("Unknown field(s): publicTodos").contains("'anon'").contains("no token");
+        assertThat(message).startsWith("Unknown field(s): publicTodos")
+                .contains("The request runs as role 'anon' (what a request with no token gets)")
+                .doesNotContain("A request with no token runs as");
     }
 
     @Test
