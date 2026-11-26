@@ -458,7 +458,7 @@ mutation {
 
 ---
 
-## Row-Level Security (PostgreSQL)
+## Row-Level Security
 
 Send a JWT in the `Authorization` header. Excalibase verifies the token and evaluates the caller's role permissions inside the engine; no PostgreSQL session variable is set for you.
 
@@ -468,14 +468,15 @@ Authorization: Bearer eyJhbGciOiJFUzI1NiJ9...
 Content-Type: application/json
 ```
 
-A permission filter refers to the caller with the `X-Excalibase-User-Id` session variable, which is filled from the token's `sub` claim:
+A permission filter refers to the caller with the `X-Excalibase-User-Id` session variable, which is filled from the token's `userId` claim, or `sub` when it has none:
 
 ```yaml
-- table: rls_orders
-  role: user
-  select:
-    filter: {"user_id": {"_eq": "X-Excalibase-User-Id"}}
-    columns: "*"
+tables:
+  - table: public.rls_orders
+    role: user
+    select:
+      filter: {"user_id": {"_eq": "X-Excalibase-User-Id"}}
+      columns: "*"
 ```
 
 Each user sees only their own rows, with no application-level filtering needed. Requires `jwt-enabled: true` and a configured `auth.jwks-url` or public key.
