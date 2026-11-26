@@ -16,9 +16,8 @@ import {
   setOperation,
   validRole,
   widens,
-  withJwt,
+  withoutJwt,
   type Change,
-  type JwtSection,
   type Operation,
   type PermissionsDoc,
 } from './lib/docmodel';
@@ -98,7 +97,8 @@ export interface Workbench extends State {
   edit: (text: string) => void;
   toggle: (table: string, role: string, operation: Operation, on: boolean) => boolean;
   addRole: (name: string, known: string[]) => string | null;
-  applyToken: (section: JwtSection) => void;
+  /** Takes the `jwt:` section out of the draft: the engine's own settings say how tokens are checked now. */
+  removeJwt: () => void;
   save: () => Promise<void>;
   confirmSave: (remember: boolean) => void;
   cancelConfirm: () => void;
@@ -280,7 +280,7 @@ export function WorkbenchProvider({ onSignedOut, children }: { onSignedOut: () =
   );
 
   /**
-   * The grid and the token form change the document. A YAML text gets just those changes patched in, so its comments
+   * The grid and the removal of a `jwt:` section change the document. A YAML text gets just those changes patched in, so its comments
    * stay, and the engine's reading of the result is checked before a save. JSON, or a text that cannot be patched, is
    * written anew, and a comment lost that way counts, also when it was typed between two rewrites.
    */
@@ -332,15 +332,12 @@ export function WorkbenchProvider({ onSignedOut, children }: { onSignedOut: () =
     [patch],
   );
 
-  const applyToken = useCallback(
-    (section: JwtSection) => {
-      const { tree, treeFor, draft, busy } = latest.current;
-      if (tree && treeFor === draft && !busy) {
-        rewriteFrom(withJwt(tree, Object.keys(section).length > 0 ? section : null));
-      }
-    },
-    [rewriteFrom],
-  );
+  const removeJwt = useCallback(() => {
+    const { tree, treeFor, draft, busy } = latest.current;
+    if (tree && treeFor === draft && !busy) {
+      rewriteFrom(withoutJwt(tree));
+    }
+  }, [rewriteFrom]);
 
   const commitSave = useCallback(async (text?: string) => {
     const { draft: held, meta } = latest.current;
@@ -527,7 +524,7 @@ export function WorkbenchProvider({ onSignedOut, children }: { onSignedOut: () =
     edit,
     toggle,
     addRole,
-    applyToken,
+    removeJwt,
     save,
     confirmSave,
     cancelConfirm,

@@ -82,6 +82,7 @@ export function healthy(overrides: Routes = {}): Routes {
     'GET /schema': { body: SCHEMA },
     'POST /parse': { body: { valid: true, tree: DOC } },
     'GET /history': { body: { available: true, entries: [] } },
+    'GET /auth': { status: 404, body: { error: 'Not Found' } },
     ...overrides,
   };
 }

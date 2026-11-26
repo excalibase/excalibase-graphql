@@ -88,6 +88,7 @@ public class JwtService {
 
     /** HMAC mode — verifies HS256 tokens using the given secret. */
     public JwtService(String hmacSecret) {
+        PublicSecret.refuse(hmacSecret);
         if (hmacSecret == null || hmacSecret.length() < 32) {
             throw new IllegalStateException("app.security.auth.hmac-secret must be at least 32 characters");
         }

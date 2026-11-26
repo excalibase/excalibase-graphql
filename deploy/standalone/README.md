@@ -30,7 +30,7 @@ one-database image refuses to start on the other one and names the image to use.
 > the `main` tag (set `ENGINE_IMAGE` in compose to pin another). Use the first release that includes it once
 > there is one.
 
-1. `docker compose -f docker-compose.file.yml up`
+1. `export APP_AUTH_SECRET=$(openssl rand -base64 48) DB_PASSWORD=$(openssl rand -hex 16)`, then `docker compose -f docker-compose.file.yml up`. Compose refuses to start without them.
 2. Open `http://localhost:10000/my-app/graphql` with a token whose `role` claim is `user`.
 3. Edit `metadata/permissions.yaml`. The engine re-reads it every `METADATA_FILE_POLL_INTERVAL_MS`
    (default 5000) and swaps it in when the content changed.
@@ -58,7 +58,7 @@ one-database image refuses to start on the other one and names the image to use.
 The document is served by your own service (or a static host, a git raw URL, an object store's public or
 presigned URL). The engine fetches it and polls. It is read-only: change the document where it is served.
 
-1. `docker compose -f docker-compose.url.yml up` (it serves `metadata/permissions.yaml` from a small nginx).
+1. Export `APP_AUTH_SECRET` and `DB_PASSWORD` as above, then `docker compose -f docker-compose.url.yml up` (it serves `metadata/permissions.yaml` from a small nginx).
 2. Open `http://localhost:10000/my-app/graphql` with a token whose `role` claim is `user`.
 
 - **Version.** The hash of the body. Every poll is a plain full GET (the 1 MiB cap keeps it cheap); `ETag`
@@ -190,7 +190,38 @@ the logs say `metadata_jwt_identical`, then remove `jwt:` from the document. Rem
 runs the new version leaves the old replicas with no verifier, so every token is rejected there. With no
 verifier at all the engine starts, warns `no_token_verifier`, and rejects every token.
 
-The `jwt:` section below still works when no engine settings are set, and is deprecated.
+The `jwt:` section below still works when no engine settings are set, and is deprecated. The default
+`metadata/permissions.yaml` no longer has one, and the compose and Kubernetes examples set `APP_AUTH_*`.
+
+### Upgrading an older compose file or manifest
+
+An older example set only `JWT_SECRET` and kept a `jwt:` section in `permissions.yaml` that read it
+(`secret: env:JWT_SECRET`). Two cases:
+
+- **You take the new default file (no `jwt:`) and keep the old compose file.** The engine **starts but rejects every
+  token**: with no `APP_AUTH_*` and no `jwt:` there is no verifier, so it fails closed and logs `no_token_verifier`
+  (`validate` and the console's save say the same when the document has rules for a role other than `anon`). Set
+  `APP_AUTH_SECRET` (the value `JWT_SECRET` had, 32 bytes or more) and `APP_AUTH_AUDIENCE` (the audience your tokens
+  carry, `my-app-api` in the old file).
+- **You keep a document that still has `jwt:`.** Do not swap `JWT_SECRET` for `APP_AUTH_SECRET` in one step: the
+  document's `env:JWT_SECRET` then cannot be read, the engine refuses the document, and it serves nothing. Go in this
+  order, and keep `JWT_SECRET` until the last step:
+  1. Add `APP_AUTH_*` with exactly the values of the `jwt:` section (every field: secret bytes, issuer, audience,
+     algorithms, clock skew and the claim names; the Auth page's snippet writes them), and keep `JWT_SECRET`.
+  2. Restart every replica and check the logs say `metadata_jwt_identical`.
+  3. Remove `jwt:` from the document.
+  4. Only then drop `JWT_SECRET`.
+
+### The Auth page
+
+With the console on, `CONSOLE_AUTH_PAGE_ENABLED=true` adds Settings, then Auth: a read-only view of how the engine
+checks tokens (the source of the settings, algorithm, audience and the two claim names; never the secret), a "Test a
+token" box that says why a token passes or fails, and a generator for the `APP_AUTH_*` lines and the Kubernetes `env:`
+block. It does not change the engine's settings. The pasted token is sent to the engine over the admin port, checked
+and dropped: not logged, stored or kept in the browser. The calls are `GET /_admin/v1/auth` and
+`POST /_admin/v1/auth/check`; the second is limited per address, apart from the admin secret's own limit
+(`EXCALIBASE_ADMIN_TOKEN_CHECK_LIMIT` per `EXCALIBASE_ADMIN_TOKEN_CHECK_WINDOW_SECONDS`, default 30 per 60). Off by
+default; without the console the setting refuses start.
 
 Put a `jwt:` section in the document. It applies only when `METADATA_SOURCE` is set; without it the engine
 verifies tokens from its own settings (`APP_SECURITY_AUTH_*`), exactly as before. Do not set both: a document

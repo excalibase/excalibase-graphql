@@ -11,7 +11,13 @@ const WORK = path.join(__dirname, ".work");
 // The same engine three times: one with a writable file source and one with a read-only url source, both pinned to the
 // old console (EXCALIBASE_CONSOLE_UI=legacy), and one with nothing set, so it serves the default console, from its own
 // copy of the document. Each runs on its own ports.
-function engine({ name, port, adminPort, managementPort, source, ui }) {
+// The default console's engine also has the engine's own token settings (APP_AUTH_*) and the Auth page on; E2E_JWT_SECRET
+// holds the same secret, so a document jwt: section that names it says exactly what the engine says. The old-console
+// engines have no engine settings, as the document-only setup the deprecated flow still serves.
+const AUTH_SECRET = "e2e-token-secret-0123456789-abcdefghijklmnop";
+const AUTH = { APP_AUTH_SECRET: AUTH_SECRET, APP_AUTH_AUDIENCE: "my-app-api", CONSOLE_AUTH_PAGE_ENABLED: "true" };
+
+function engine({ name, port, adminPort, managementPort, source, ui, auth = {} }) {
   return {
     name,
     command: `java -jar ${JAR}`,
@@ -33,6 +39,7 @@ function engine({ name, port, adminPort, managementPort, source, ui }) {
       ...(ui ? { EXCALIBASE_CONSOLE_UI: ui } : {}),
       JWT_SECRET: "e2e-token-secret-0123456789-abcdefghijklmnop",
       E2E_JWT_SECRET: "e2e-token-secret-0123456789-abcdefghijklmnop",
+      ...auth,
       ...source
     }
   };
@@ -57,6 +64,7 @@ module.exports = defineConfig({
       managementPort: ports.readOnly.management, ui: "legacy",
       source: { METADATA_SOURCE: "url", METADATA_URL_LOCATION: `http://localhost:${ports.staticPort}/permissions.yaml` } }),
     engine({ name: "default-console", port: ports.next.port, adminPort: ports.next.admin, managementPort: ports.next.management,
+      auth: AUTH,
       source: { METADATA_SOURCE: "file", METADATA_FILE_PATH: path.join(WORK, "permissions-next.yaml"),
         METADATA_FILE_POLL_INTERVAL_MS: "200" } })
   ]

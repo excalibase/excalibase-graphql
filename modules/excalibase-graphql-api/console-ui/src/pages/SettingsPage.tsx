@@ -1,19 +1,13 @@
 import { useState } from 'react';
 import { ApiError, validateText, type ValidateReply } from '../api';
 import { ThemeChoice } from '../components/ThemeToggle';
-import { ErrorList, PageHeader, Warnings } from '../components/ui';
+import { ErrorList, Fact, PageHeader, Warnings } from '../components/ui';
 import { describe, shortTime, UNREACHABLE } from '../lib/outcome';
+import { hrefOf } from '../router';
 import { useSession } from '../session';
 import { useWorkbench } from '../workbench';
-
-function Fact({ label, value }: { label: string; value: string | number | null }) {
-  return (
-    <div className="field">
-      <dt className="label">{label}</dt>
-      <dd className="mono">{value ?? 'none'}</dd>
-    </div>
-  );
-}
+import { AuthPage } from './auth/AuthPage';
+import { useAuthSettings } from './auth/useAuthSettings';
 
 export function CheckResult({ reply }: { reply: ValidateReply }) {
   if (reply.valid) {
@@ -72,39 +66,69 @@ function CheckText() {
   );
 }
 
-export function SettingsPage() {
+function Tabs({ view, auth }: { view: 'general' | 'auth'; auth: boolean }) {
+  if (!auth) {
+    return null;
+  }
+  return (
+    <nav aria-label="Settings views" className="tabs">
+      <a className="tab" href={hrefOf('settings')} aria-current={view === 'general' ? 'page' : undefined}>
+        General
+      </a>
+      <a className="tab" href={hrefOf('settings', 'auth')} aria-current={view === 'auth' ? 'page' : undefined}>
+        Auth
+      </a>
+    </nav>
+  );
+}
+
+function General() {
   const { meta } = useWorkbench();
-  const { signOut } = useSession();
   return (
     <>
-      <PageHeader trail={['Settings']}>
+      <section className="card" aria-labelledby="engine-title">
+        <h2 id="engine-title">This engine</h2>
+        {meta ? (
+          <dl className="facts">
+            <Fact label="Permissions come from" value={meta.source} />
+            <Fact label="Version in use" value={meta.version} />
+            <Fact label="Saved version" value={meta.sourceVersion} />
+            <Fact label="Can be changed here" value={meta.writable ? 'Yes' : 'No, read-only'} />
+            <Fact label="Last refused text" value={meta.lastRefusal ? `${meta.lastRefusal} (${meta.lastRefusalAt ? shortTime(meta.lastRefusalAt) : ''})` : null} />
+          </dl>
+        ) : (
+          <p className="hint" role="status">Loading…</p>
+        )}
+      </section>
+      <section className="card">
+        <ThemeChoice />
+      </section>
+      <CheckText />
+    </>
+  );
+}
+
+export function SettingsPage({ arg = '' }: { arg?: string }) {
+  const { signOut } = useSession();
+  const auth = useAuthSettings();
+  const settings = auth.data;
+  const view = arg === 'auth' && settings ? 'auth' : 'general';
+  return (
+    <>
+      <PageHeader trail={view === 'auth' ? ['Settings', 'Auth'] : ['Settings']}>
         <button type="button" className="btn" onClick={signOut}>
           Sign out
         </button>
       </PageHeader>
       <div className="content">
         <div>
-          <h1>Settings</h1>
-          <p className="muted">Where the permissions come from and how this console looks.</p>
+          <h1>{view === 'auth' ? 'Auth' : 'Settings'}</h1>
+          <p className="muted">
+            {view === 'auth' ? 'How the engine checks tokens, and a way to try one.' : 'Where the permissions come from and how this console looks.'}
+          </p>
         </div>
-        <section className="card" aria-labelledby="engine-title">
-          <h2 id="engine-title">This engine</h2>
-          {meta ? (
-            <dl className="facts">
-              <Fact label="Permissions come from" value={meta.source} />
-              <Fact label="Version in use" value={meta.version} />
-              <Fact label="Saved version" value={meta.sourceVersion} />
-              <Fact label="Can be changed here" value={meta.writable ? 'Yes' : 'No, read-only'} />
-              <Fact label="Last refused text" value={meta.lastRefusal ? `${meta.lastRefusal} (${meta.lastRefusalAt ? shortTime(meta.lastRefusalAt) : ''})` : null} />
-            </dl>
-          ) : (
-            <p className="hint" role="status">Loading…</p>
-          )}
-        </section>
-        <section className="card">
-          <ThemeChoice />
-        </section>
-        <CheckText />
+        <Tabs view={view} auth={settings !== null} />
+        {view === 'auth' && settings ? <AuthPage settings={settings} reload={auth.reload} /> : <General />}
       </div>
     </>
   );

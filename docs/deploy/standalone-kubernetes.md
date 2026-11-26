@@ -39,11 +39,6 @@ GRANT SELECT, INSERT ON excalibase_meta.metadata_documents TO excalibase_meta_rw
 INSERT INTO excalibase_meta.metadata_documents (version, document) VALUES (1, $doc$
 format: 1
 projectId: my-app
-jwt:
-  secret: env:JWT_SECRET
-  algorithms: [HS256]
-  audience: my-app-api
-  claims: {role: role, userId: sub}
 tables:
   - table: public.todos
     role: user
@@ -102,23 +97,30 @@ nothing needs allowing. It has an effect only when your CNI enforces NetworkPoli
 
 ## Tokens
 
-The example document reads `JWT_SECRET` from the Secret. For Auth0, Cognito, Keycloak or OIDC, save a document
-whose `jwt:` section has an `issuer` and remove `JWT_SECRET` from the Deployment:
+The Deployment sets the engine's own token settings: `APP_AUTH_SECRET` (from the `jwt-secret` key of the Secret) and
+`APP_AUTH_AUDIENCE`. The document holds rules only. For Auth0, Cognito, Keycloak or OIDC, set an issuer in the
+Deployment and drop the secret:
 
 ```yaml
-jwt:
-  issuer: https://tenant.eu.auth0.com/     # keep the trailing slash for Auth0
-  audience: https://api.my-app
-  claims:
-    role: https://my-app/role
+- {name: APP_AUTH_ISSUER, value: "https://tenant.eu.auth0.com/"}   # keep the trailing slash for Auth0
+- {name: APP_AUTH_AUDIENCE, value: "https://api.my-app"}
+- {name: APP_AUTH_CLAIMS_ROLE, value: "https://my-app/role"}
 ```
 
 Provider notes:
 
 - **Cognito.** Use the ID token. The access token has no `aud`, which the engine refuses. Groups arrive in
   `cognito:groups`.
-- **Keycloak.** Roles are in `realm_access.roles`. Set a `defaultRole`.
-- Do not set `APP_SECURITY_AUTH_JWKS_URL` or `APP_SECURITY_AUTH_HMAC_SECRET` together with a `jwt:` section.
+- **Keycloak.** Roles are in `realm_access.roles`. Set `APP_AUTH_CLAIMS_DEFAULT_ROLE`.
+- Do not set `APP_SECURITY_AUTH_JWKS_URL` or `APP_SECURITY_AUTH_HMAC_SECRET` together with `APP_AUTH_*`: the engine
+  refuses to start.
+- **Upgrading.** A Deployment that only sets `JWT_SECRET`, with a new document that has no `jwt:` section, starts but
+  rejects every token and logs `no_token_verifier`: set `APP_AUTH_SECRET` (same value) and `APP_AUTH_AUDIENCE`. If the
+  document still has `jwt:` (with `secret: env:JWT_SECRET`), do not swap the variable in one step, or the engine cannot
+  read the secret, refuses the document and serves nothing. In order, keeping `JWT_SECRET` until the end: (1) add
+  `APP_AUTH_*` with the section's exact values; (2) roll every replica and check for `metadata_jwt_identical`;
+  (3) remove `jwt:` from the document (a replica still on the old image loses its verifier when it goes); (4) drop
+  `JWT_SECRET`.
 
 ## Reach the console
 

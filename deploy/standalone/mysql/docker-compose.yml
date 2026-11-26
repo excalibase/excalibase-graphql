@@ -7,8 +7,8 @@ services:
     environment:
       MYSQL_DATABASE: app
       MYSQL_USER: app
-      MYSQL_PASSWORD: change-me
-      MYSQL_ROOT_PASSWORD: change-me-too
+      MYSQL_PASSWORD: ${DB_PASSWORD:?set a database password, e.g. openssl rand -hex 16}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?set a root password, e.g. openssl rand -hex 16}
     volumes:
       - mysql_data:/var/lib/mysql
       - ./init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
@@ -31,11 +31,13 @@ services:
       SERVER_PORT: 10000
       SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/app
       SPRING_DATASOURCE_USERNAME: app
-      SPRING_DATASOURCE_PASSWORD: change-me
+      SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD:?set a database password, e.g. openssl rand -hex 16}
       SPRING_DATASOURCE_DRIVER_CLASS_NAME: com.mysql.cj.jdbc.Driver
       APP_DATABASE_TYPE: mysql
       APP_PROJECT_ID: my-app
-      JWT_SECRET: change-me-to-a-long-random-secret-of-32-bytes-or-more
+      # How tokens are checked: HS256 with this shared secret and this audience.
+      APP_AUTH_SECRET: ${APP_AUTH_SECRET:?set a random secret of 32 bytes or more, e.g. openssl rand -base64 48}
+      APP_AUTH_AUDIENCE: my-app-api
       METADATA_SOURCE: file
       METADATA_FILE_PATH: /etc/excalibase
       MANAGEMENT_ENDPOINT_HEALTH_PROBES_ENABLED: "true"

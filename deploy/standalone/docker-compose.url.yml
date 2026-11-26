@@ -8,7 +8,7 @@ services:
     environment:
       POSTGRES_DB: app
       POSTGRES_USER: app
-      POSTGRES_PASSWORD: change-me
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?set a database password, e.g. openssl rand -hex 16}
     volumes:
       - ./init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
     healthcheck:
@@ -36,18 +36,21 @@ services:
       SERVER_PORT: 10000
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/app
       SPRING_DATASOURCE_USERNAME: app
-      SPRING_DATASOURCE_PASSWORD: change-me
+      SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD:?set a database password, e.g. openssl rand -hex 16}
       APP_DATABASE_TYPE: postgres
       APP_PROJECT_ID: my-app
-      # The metadata document's `jwt:` section reads this shared secret (HS256). Use a long random value.
+      # How tokens are checked: the engine's own settings, not the permissions file. HS256 with this shared secret
+      # (a long random value) and this audience. For Auth0, Cognito, Keycloak or any OIDC issuer use
+      # APP_AUTH_ISSUER (and APP_AUTH_JWKS_URL) instead of the secret; see the folder README.
       APP_SECURITY_JWT_ENABLED: "true"
-      JWT_SECRET: change-me-to-a-long-random-secret-of-32-bytes-or-more
+      APP_AUTH_SECRET: ${APP_AUTH_SECRET:?set a random secret of 32 bytes or more, e.g. openssl rand -base64 48}
+      APP_AUTH_AUDIENCE: my-app-api
       # The permission source: this URL. Plain http is only accepted for localhost and *.svc / *.cluster.local
       # names; this compose service name is none of those, so it is accepted explicitly. Use https in real life.
       METADATA_SOURCE: url
       METADATA_URL_LOCATION: http://documents/permissions.yaml
       METADATA_URL_ALLOW_INSECURE: "true"
-      # METADATA_URL_TOKEN: change-me
+      # METADATA_URL_TOKEN: a-token-your-documents-server-checks
       METADATA_URL_POLL_INTERVAL_MS: 5000
       # Readiness reports not ready while no valid permissions file is loaded.
       MANAGEMENT_ENDPOINT_HEALTH_PROBES_ENABLED: "true"

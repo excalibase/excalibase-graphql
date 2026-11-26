@@ -122,7 +122,8 @@ public class AdminPortFilter implements Ordered {
         return path != null && (path.equals(CONSOLE) || path.startsWith(CONSOLE + "/"));
     }
 
-    private static String peer(HttpRequest<?> request) {
+    /** The TCP peer, grouped as the failure counter groups it; never a forwarded header. */
+    public static String peer(HttpRequest<?> request) {
         InetAddress address = request.getRemoteAddress().getAddress();
         return address == null ? "unknown" : ClientAddress.byPrefix(address.getHostAddress());
     }

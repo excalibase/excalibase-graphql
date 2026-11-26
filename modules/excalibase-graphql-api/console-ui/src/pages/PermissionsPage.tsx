@@ -6,19 +6,17 @@ import { hrefOf } from '../router';
 import { useDocument } from '../workbench';
 import { AccessGrid } from './permissions/AccessGrid';
 import { HistoryView } from './permissions/HistoryView';
-import { TokenView } from './permissions/TokenView';
 import { YamlView } from './permissions/YamlView';
 
-type View = 'access' | 'yaml' | 'token' | 'history';
+type View = 'access' | 'yaml' | 'history';
 const TABS: Array<{ view: View; arg: string; label: string }> = [
   { view: 'access', arg: '', label: 'Access' },
   { view: 'yaml', arg: 'yaml', label: 'YAML' },
-  { view: 'token', arg: 'token', label: 'Sample token' },
   { view: 'history', arg: 'history', label: 'History' },
 ];
 
 function viewOf(arg: string): View {
-  return arg === 'yaml' || arg === 'token' || arg === 'history' ? arg : 'access';
+  return arg === 'yaml' || arg === 'history' ? arg : 'access';
 }
 
 function unsavedText(count: number | null): string {
@@ -97,7 +95,6 @@ export function PermissionsPage({ arg }: { arg: string }) {
         <OutcomeView outcome={workbench.outcome} theirs={workbench.theirs} handlers={{ onTakeTheirs: () => void workbench.takeTheirs(), onOverwrite: workbench.overwrite }} />
         {view === 'access' ? <AccessGrid key={role} role={role} /> : null}
         {view === 'yaml' ? <YamlView /> : null}
-        {view === 'token' ? <TokenView /> : null}
         {view === 'history' ? <HistoryView /> : null}
       </div>
       <Confirmations />

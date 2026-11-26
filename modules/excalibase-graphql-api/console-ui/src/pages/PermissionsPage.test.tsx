@@ -236,30 +236,6 @@ describe('the YAML view', () => {
   });
 });
 
-describe('the sample token', () => {
-  const token = `${btoa('{"alg":"none"}')}.${btoa('{"sub":"u1","app":{"role":"admin"}}').replace(/=+$/, '')}.sig`;
-
-  it('reads the claims, lets a click choose the role, and writes the settings into the document', async () => {
-    const { user } = await openConsole('#/permissions/token');
-
-    await user.type(await screen.findByLabelText('A sample token'), token);
-    await user.click(screen.getByRole('button', { name: 'Read claims' }));
-    await user.click(await screen.findByRole('button', { name: 'Use app.role as the role' }));
-
-    expect(screen.getByLabelText('Role claim')).toHaveValue('app.role');
-    expect(screen.getByLabelText('A sample token')).toHaveValue('');
-  });
-
-  it('says in plain words when the token cannot be read', async () => {
-    const { user } = await openConsole('#/permissions/token');
-
-    await user.type(await screen.findByLabelText('A sample token'), 'not-a-token');
-    await user.click(screen.getByRole('button', { name: 'Read claims' }));
-
-    expect(await screen.findByRole('alert')).toHaveTextContent('A token has three parts separated by dots.');
-  });
-});
-
 describe('the version history', () => {
   const entries = [{ id: 'h1', at: '2026-11-20T10:00:00Z', hash: 'abcdef0123456789', size: 120 }];
   const old = { ...entries[0], text: 'format: 1\nprojectId: my-app\ntables: []\n' };

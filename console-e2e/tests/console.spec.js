@@ -130,10 +130,20 @@ test("a rule for a table the database lacks saves and says what the engine will 
   expect((await metadata(request)).document).toBe(ghost);
 });
 
+const WITH_JWT = EXAMPLE.replace("tables:", `jwt:
+  secret: env:JWT_SECRET
+  algorithms: [HS256]
+  audience: my-app-api
+  claims:
+    role: role
+    userId: sub
+tables:`);
+
 test("saving a document that still has a jwt: section says it is deprecated, apart from any database warning", async ({ page }) => {
   await signIn(page);
-  await editDraft(page, EXAMPLE + "# note\n");
+  await editDraft(page, WITH_JWT + "# note\n");
   await page.locator("#save").click();
+  await page.locator("#rewrite-save").click();
   await expect(savedMessage(page)).toBeVisible();
 
   await expect(page.locator("#token-notes")).toContainText("deprecated");
@@ -143,9 +153,8 @@ test("saving a document that still has a jwt: section says it is deprecated, apa
 
 test("a document with rules and no jwt: section and no engine settings says every token is rejected, as an alert", async ({ page }) => {
   await signIn(page);
-  await editDraft(page, EXAMPLE.replace(/^jwt:\n(?:  .*\n)+/m, "") + "# no jwt\n");
+  await editDraft(page, EXAMPLE + "# no jwt\n");
   await page.locator("#save").click();
-  await page.locator("#rewrite-save").click();
   await expect(savedMessage(page)).toBeVisible();
 
   const outage = page.locator("#token-outage");
@@ -691,7 +700,7 @@ test.describe("history", () => {
     await page.locator("#restore").click();
     await page.locator("#restore-yes").click();
 
-    await expect(page.getByRole("alert")).toContainText("surprise");
+    await expect(page.getByRole("alert").filter({ hasText: "surprise" })).toBeVisible();
     expect((await metadata(request)).document).toBe(EXAMPLE + "# note one\n");
   });
 
@@ -738,7 +747,8 @@ test.describe("the list of what a save changes", () => {
     await expect(loss).not.toHaveCSS("color", "rgb(180, 35, 24)");
   });
 
-  test("a sample-token edit says the token settings change", async ({ page }) => {
+  test("a sample-token edit says the token settings change", async ({ page, request }) => {
+    await replaceDocument(request, WITH_JWT);
     await signIn(page);
     await page.getByRole("tab", { name: "Sample token" }).click();
     await page.locator("#jwt-audience").fill("another-api");
@@ -953,7 +963,7 @@ test.describe("the change list fails closed", () => {
 
     await page.locator("#save").click();
 
-    await expect(page.getByRole("alert")).toContainText("surprise");
+    await expect(page.getByRole("alert").filter({ hasText: "surprise" })).toBeVisible();
     await expect(page.locator("dialog")).toHaveCount(0);
   });
 });
