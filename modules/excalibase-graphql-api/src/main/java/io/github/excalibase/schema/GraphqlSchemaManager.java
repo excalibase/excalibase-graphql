@@ -650,10 +650,19 @@ public class GraphqlSchemaManager implements SchemaProvider, AccessPlans, Projec
         log.info("reflected_tenant tenant={}/{} engine={} tables={}", orgSlug, projectId, type,
                 schemaInfo.getTableNames().size());
         return new Reflection(schemaInfo, resolveDefaultSchema(tenantSchemas, schemaInfo), type, engine,
-                SqlEngineFactory.createMutationExecutor(type), probesOn(tenantJdbc));
+                SqlEngineFactory.createMutationExecutor(type), tenantProbes(orgSlug, projectId));
     }
 
-    /** Realtime's database probes run on the project's own database. */
+    /**
+     * Realtime's database probes run on the project's own database, on the pool it has when a probe runs: the schema
+     * outlives the pool it was read through, which is retired and closed when it ages out.
+     */
+    ProbeRunner tenantProbes(String orgSlug, String projectId) {
+        return (sql, params) -> Boolean.TRUE.equals(new NamedParameterJdbcTemplate(
+                dataSourceManager.getDatabase(orgSlug, projectId).dataSource()).queryForObject(sql, params, Boolean.class));
+    }
+
+    /** The configured database's probes. */
     private static ProbeRunner probesOn(JdbcTemplate jdbc) {
         if (jdbc == null) {
             return (sql, params) -> false;
