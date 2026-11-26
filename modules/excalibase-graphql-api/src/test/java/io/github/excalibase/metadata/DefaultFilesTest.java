@@ -31,7 +31,8 @@ class DefaultFilesTest {
     private static final Path CONFIGMAP = STANDALONE.resolve("kubernetes/configmap-file-source.yaml");
     private static final Path DB_SOURCE = STANDALONE.resolve("kubernetes/db-source.yaml");
     private static final List<Path> COMPOSE = List.of(STANDALONE.resolve("docker-compose.file.yml"),
-            STANDALONE.resolve("docker-compose.url.yml"), STANDALONE.resolve("sqlite/docker-compose.yml"));
+            STANDALONE.resolve("docker-compose.url.yml"), STANDALONE.resolve("sqlite/docker-compose.yml"),
+            STANDALONE.resolve("mysql/docker-compose.yml"));
     private static final String SECRET_NAME = "APP_AUTH_SECRET";
     private static final String AUDIENCE_NAME = "APP_AUTH_AUDIENCE";
     private static final String ENV_PREFIX = "APP_AUTH_";
@@ -156,6 +157,19 @@ class DefaultFilesTest {
             }
         }
         return found;
+    }
+
+    @Test
+    @DisplayName("no compose example or doc ships a public token secret: the compose file requires one from the environment")
+    void noPublicSecretInExamples() {
+        for (Path file : COMPOSE) {
+            assertThat(composeEnvironment(file).get(SECRET_NAME)).as(file.toString()).startsWith("${APP_AUTH_SECRET:?");
+            assertThat(read(file)).as(file.toString()).doesNotContain("change-me");
+        }
+        for (String doc : List.of("standalone-docker.md", "standalone-mysql-sqlite.md")) {
+            assertThat(read(root().resolve("docs/deploy").resolve(doc))).as(doc).doesNotContain("change-me-to-a-long")
+                    .contains("openssl rand -base64 48");
+        }
     }
 
     @Test

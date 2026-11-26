@@ -7,7 +7,7 @@ services:
     environment:
       POSTGRES_DB: app
       POSTGRES_USER: app
-      POSTGRES_PASSWORD: change-me
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?set a database password, e.g. openssl rand -hex 16}
     volumes:
       - ./init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
     healthcheck:
@@ -28,14 +28,14 @@ services:
       SERVER_PORT: 10000
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/app
       SPRING_DATASOURCE_USERNAME: app
-      SPRING_DATASOURCE_PASSWORD: change-me
+      SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD:?set a database password, e.g. openssl rand -hex 16}
       APP_DATABASE_TYPE: postgres
       APP_PROJECT_ID: my-app
       # How tokens are checked: the engine's own settings, not the permissions file. HS256 with this shared secret
       # (a long random value) and this audience. For Auth0, Cognito, Keycloak or any OIDC issuer use
       # APP_AUTH_ISSUER (and APP_AUTH_JWKS_URL) instead of the secret; see the folder README.
       APP_SECURITY_JWT_ENABLED: "true"
-      APP_AUTH_SECRET: change-me-to-a-long-random-secret-of-32-bytes-or-more
+      APP_AUTH_SECRET: ${APP_AUTH_SECRET:?set a random secret of 32 bytes or more, e.g. openssl rand -base64 48}
       APP_AUTH_AUDIENCE: my-app-api
       # The permission source: this file. Mount the folder, not the single file, so edits made with an
       # editor that replaces the file are seen too.

@@ -35,7 +35,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  */
 class NoVerifierWithShippedDefaultTest {
 
-    private static final String SECRET = "change-me-to-a-long-random-secret-of-32-bytes-or-more";
+    private static final String SECRET = "unit-test-secret-0123456789-abcdefghijklmnop";
     private static final String AUDIENCE = "my-app-api";
 
     private static Path shipped() {

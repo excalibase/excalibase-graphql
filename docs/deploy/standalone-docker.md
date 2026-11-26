@@ -27,8 +27,15 @@ Everything is in [`deploy/standalone`](https://github.com/excalibase/excalibase-
 
 ```bash
 cd deploy/standalone
+export APP_AUTH_SECRET=$(openssl rand -base64 48)
+export DB_PASSWORD=$(openssl rand -hex 16)
 docker compose -f docker-compose.file.yml up -d
 ```
+
+The compose file refuses to start until `APP_AUTH_SECRET` (the token secret) and `DB_PASSWORD` are set, so no
+example runs with a public secret. Keep the same `APP_AUTH_SECRET` in your shell or a `.env` file next to the
+compose file: you need it to make tokens. The engine itself also refuses to start with a secret that contains
+`change-me`.
 
 The engine serves `http://localhost:10000/my-app/graphql`. The project id (`my-app`) is in the URL and must
 equal `APP_PROJECT_ID` and the `projectId` in the document.
@@ -43,10 +50,10 @@ engine:
     SERVER_PORT: 10000
     SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/app
     SPRING_DATASOURCE_USERNAME: app
-    SPRING_DATASOURCE_PASSWORD: change-me
+    SPRING_DATASOURCE_PASSWORD: ${DB_PASSWORD:?set a database password}
     APP_DATABASE_TYPE: postgres
     APP_PROJECT_ID: my-app
-    APP_AUTH_SECRET: change-me-to-a-long-random-secret-of-32-bytes-or-more
+    APP_AUTH_SECRET: ${APP_AUTH_SECRET:?set a random secret of 32 bytes or more, e.g. openssl rand -base64 48}
     APP_AUTH_AUDIENCE: my-app-api
     METADATA_SOURCE: file
     METADATA_FILE_PATH: /etc/excalibase
@@ -55,7 +62,7 @@ engine:
     - ./metadata:/etc/excalibase:ro
 ```
 
-Change the passwords and the secret before you use this for anything real. Mount the folder, not the single
+The passwords and the secret come from your environment, so none is public. Mount the folder, not the single
 file, so an editor that replaces the file is still seen.
 
 ## Rules the engine always applies
@@ -70,7 +77,7 @@ The engine checks tokens with its own settings (`APP_AUTH_*`), set in the compos
 file. The example uses a shared secret (HS256):
 
 ```yaml
-APP_AUTH_SECRET: change-me-to-a-long-random-secret-of-32-bytes-or-more
+APP_AUTH_SECRET: ${APP_AUTH_SECRET:?set a random secret of 32 bytes or more, e.g. openssl rand -base64 48}
 APP_AUTH_AUDIENCE: my-app-api
 ```
 
@@ -112,23 +119,23 @@ java -jar excalibase-graphql-api.jar validate metadata/permissions.yaml --projec
 ## Try it: a token and your first queries
 
 The engine checks every token, so you need one to try a query. In the sample setup a token is a JWT signed
-(HS256) with `JWT_SECRET`, with the claims `aud` (`my-app-api`), `role` and `sub`. You can make one in the
+(HS256) with `APP_AUTH_SECRET`, with the claims `aud` (`my-app-api`), `role` and `sub`. You can make one in the
 console (the sample token form), or with this script. It needs only `bash` and `openssl`. It reads the secret
-from the `JWT_SECRET` environment variable, so the secret never shows up in the process list or your shell history.
-To make a secret, run `openssl rand -base64 48` and put the result in `JWT_SECRET` in the compose file:
+from the `APP_AUTH_SECRET` environment variable, so the secret never shows up in the process list or your shell history.
+Use the same value you exported before `docker compose up` (`export APP_AUTH_SECRET=$(openssl rand -base64 48)`):
 
 ```bash
 #!/usr/bin/env bash
-# usage: JWT_SECRET=... ./mktoken.sh <audience> <user id> <role>
+# usage: APP_AUTH_SECRET=... ./mktoken.sh <audience> <user id> <role>
 b64() { openssl base64 -A | tr '+/' '-_' | tr -d '='; }
 header=$(printf '{"alg":"HS256","typ":"JWT"}' | b64)
 payload=$(printf '{"sub":"%s","role":"%s","aud":"%s","exp":%s}' "$2" "$3" "$1" "$(( $(date +%s) + 3600 ))" | b64)
-sig=$(printf '%s.%s' "$header" "$payload" | openssl dgst -sha256 -hmac "${JWT_SECRET:?set JWT_SECRET}" -binary | b64)
+sig=$(printf '%s.%s' "$header" "$payload" | openssl dgst -sha256 -hmac "${APP_AUTH_SECRET:?set APP_AUTH_SECRET}" -binary | b64)
 printf '%s.%s.%s\n' "$header" "$payload" "$sig"
 ```
 
 ```bash
-export JWT_SECRET=change-me-to-a-long-random-secret-of-32-bytes-or-more   # the value in your compose file
+# APP_AUTH_SECRET is still exported from the step above
 TOKEN=$(./mktoken.sh my-app-api alice user)
 ```
 
@@ -236,7 +243,7 @@ healthcheck. `/actuator/info` shows the version of the document being served.
 
 - Keep the admin port private. Turn the console off when you are not using it.
 - Use a random admin secret of at least 32 characters, from a file.
-- Replace every `change-me` value.
+- Keep the token secret and the database password out of git: export them or keep them in a `.env` file.
 - Put TLS in front of port `10000`. The engine does not terminate TLS.
 
 MySQL or a SQLite file instead of Postgres? See [MySQL and SQLite](standalone-mysql-sqlite.md).

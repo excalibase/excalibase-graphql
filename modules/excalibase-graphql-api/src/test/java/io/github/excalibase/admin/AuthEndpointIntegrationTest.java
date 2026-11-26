@@ -63,7 +63,7 @@ class AuthEndpointIntegrationTest extends EngineIntegrationTest {
     @Test
     @DisplayName("a good token says who it is and which variables a rule can use")
     void goodToken() {
-        HttpAnswer answer = check(AuthTokens.sign(c -> { }));
+        HttpAnswer answer = check(AuthTokens.sign(claims -> { }));
 
         assertThat(answer.status()).isEqualTo(200);
         assertThat(answer.<Boolean>jsonPath("$.valid")).isTrue();
@@ -75,8 +75,8 @@ class AuthEndpointIntegrationTest extends EngineIntegrationTest {
     @Test
     @DisplayName("each refusal is a 200 with its reason, and the token never comes back")
     void refusals() {
-        String expired = AuthTokens.sign(c -> c.expirationTime(Date.from(Instant.now().minusSeconds(3600))));
-        String audience = AuthTokens.sign(c -> c.audience("another-api"));
+        String expired = AuthTokens.sign(claims -> claims.expirationTime(Date.from(Instant.now().minusSeconds(3600))));
+        String audience = AuthTokens.sign(claims -> claims.audience("another-api"));
         String malformed = "canary-not-a-token";
 
         assertThat(check(expired).<String>jsonPath(REASON)).isEqualTo("expired");

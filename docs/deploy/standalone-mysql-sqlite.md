@@ -12,8 +12,14 @@ The examples are in
 
 ```bash
 cd deploy/standalone/mysql
+export APP_AUTH_SECRET=$(openssl rand -base64 48)
+export DB_PASSWORD=$(openssl rand -hex 16)
+export MYSQL_ROOT_PASSWORD=$(openssl rand -hex 16)
 docker compose up -d
 ```
+
+The compose file refuses to start until all three are set, so no example runs with a public secret. Keep
+`APP_AUTH_SECRET`: you need it to [make tokens](standalone-docker.md#try-it-a-token-and-your-first-queries).
 
 The engine serves `http://localhost:10000/my-app/graphql`. MySQL starts first, creates the `app` database
 and the `todos` table from `init.sql`, and the engine waits until MySQL answers.
@@ -36,10 +42,11 @@ What is different from Postgres:
 cd deploy/standalone/sqlite
 mkdir -p data
 sqlite3 data/app.db < init.sql        # or: python3 -c "import sqlite3; sqlite3.connect('data/app.db').executescript(open('init.sql').read())"
+export APP_AUTH_SECRET=$(openssl rand -base64 48)
 docker compose up -d
 ```
 
-There is no database server: the engine opens one file. The file must exist, with its tables, before the
+The compose file refuses to start until `APP_AUTH_SECRET` is set. There is no database server: the engine opens one file. The file must exist, with its tables, before the
 engine starts.
 
 - **One schema, `main`.** The table key is `main.todos` and the GraphQL name is `mainTodos`.

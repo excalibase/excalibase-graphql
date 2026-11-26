@@ -9,6 +9,7 @@ import com.nimbusds.jose.jwk.JWKSet;
 import com.nimbusds.jose.jwk.KeyUse;
 import com.nimbusds.jose.jwk.RSAKey;
 import io.github.excalibase.security.JwksKeys;
+import io.github.excalibase.security.PublicSecret;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -180,6 +181,7 @@ final class JwtKeyLoader {
         } else {
             value = readSecretFile(Path.of(reference.substring("file:".length())));
         }
+        PublicSecret.refuse(value);
         byte[] secret = value == null ? new byte[0] : value.strip().getBytes(StandardCharsets.UTF_8);
         if (secret.length < MIN_SECRET_BYTES) {
             throw new IllegalStateException("the jwt secret is missing or shorter than " + MIN_SECRET_BYTES + " bytes");
@@ -189,6 +191,7 @@ final class JwtKeyLoader {
 
     /** A secret held as a value (the engine's environment), checked as a referenced one is. */
     static byte[] secretValue(String value) {
+        PublicSecret.refuse(value);
         byte[] secret = value == null ? new byte[0] : value.strip().getBytes(StandardCharsets.UTF_8);
         if (secret.length < MIN_SECRET_BYTES) {
             throw new IllegalStateException("the jwt secret is missing or shorter than " + MIN_SECRET_BYTES + " bytes");

@@ -3,6 +3,7 @@ package io.github.excalibase.metadata;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import io.github.excalibase.security.PublicSecret;
 
 import java.util.Collection;
 import java.util.LinkedHashMap;
@@ -201,6 +202,8 @@ public final class AuthSettingsReader {
     private static byte[] secret(Supplier<byte[]> read, String name) {
         try {
             return read.get();
+        } catch (PublicSecret.Refused e) {
+            throw new IllegalStateException("app.auth: " + name + ": " + e.getMessage(), e);
         } catch (IllegalStateException e) {
             throw new IllegalStateException("app.auth: " + name + " must hold a secret of at least 32 bytes", e);
         }

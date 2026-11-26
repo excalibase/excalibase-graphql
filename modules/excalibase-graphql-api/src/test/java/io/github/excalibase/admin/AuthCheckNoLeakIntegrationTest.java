@@ -75,8 +75,8 @@ class AuthCheckNoLeakIntegrationTest extends EngineIntegrationTest {
         ListAppender<ILoggingEvent> logs = new ListAppender<>();
         logs.start();
         root.addAppender(logs);
-        String good = AuthTokens.sign(c -> c.claim("note", CANARY));
-        String expired = AuthTokens.sign(c -> c.claim("note", CANARY).expirationTime(new Date(1000)));
+        String good = AuthTokens.sign(claims -> claims.claim("note", CANARY));
+        String expired = AuthTokens.sign(claims -> claims.claim("note", CANARY).expirationTime(new Date(1000)));
         String wrongKey = AuthTokens.sign(AuthTokens.good().claim("note", CANARY), JWSAlgorithm.HS256,
                 AuthTokens.OTHER_SECRET);
         List<HttpAnswer> answers = new ArrayList<>();

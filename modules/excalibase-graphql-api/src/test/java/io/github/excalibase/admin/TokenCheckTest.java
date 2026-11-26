@@ -41,18 +41,18 @@ class TokenCheckTest {
         long past = Instant.now().minusSeconds(3600).toEpochMilli();
         long future = Instant.now().plusSeconds(3600).toEpochMilli();
         return Stream.of(
-                Arguments.of("expired", AuthTokens.sign(c -> c.expirationTime(new Date(past)))),
-                Arguments.of("not_yet_valid", AuthTokens.sign(c -> c.notBeforeTime(new Date(future)))),
+                Arguments.of("expired", AuthTokens.sign(claims -> claims.expirationTime(new Date(past)))),
+                Arguments.of("not_yet_valid", AuthTokens.sign(claims -> claims.notBeforeTime(new Date(future)))),
                 Arguments.of("bad_signature", AuthTokens.sign(AuthTokens.good(), JWSAlgorithm.HS256, OTHER_SECRET)),
                 Arguments.of("algorithm", AuthTokens.unsigned()),
                 Arguments.of("algorithm", AuthTokens.sign(AuthTokens.good(), JWSAlgorithm.HS512, SECRET.repeat(2))),
-                Arguments.of("issuer", AuthTokens.sign(c -> c.issuer("https://elsewhere.example/"))),
-                Arguments.of("audience", AuthTokens.sign(c -> c.audience("another-api"))),
-                Arguments.of("role_claim", AuthTokens.sign(c -> c.claim("role", null))),
-                Arguments.of("missing_user_id", AuthTokens.sign(c -> c.subject(null))),
+                Arguments.of("issuer", AuthTokens.sign(claims -> claims.issuer("https://elsewhere.example/"))),
+                Arguments.of("audience", AuthTokens.sign(claims -> claims.audience("another-api"))),
+                Arguments.of("role_claim", AuthTokens.sign(claims -> claims.claim("role", null))),
+                Arguments.of("missing_user_id", AuthTokens.sign(claims -> claims.subject(null))),
                 Arguments.of(MALFORMED, "not-a-token"),
                 Arguments.of(MALFORMED, "a.b.c"),
-                Arguments.of("unsupported_token_type", AuthTokens.sign(c -> c.claim("token_use", "refresh"))));
+                Arguments.of("unsupported_token_type", AuthTokens.sign(claims -> claims.claim("token_use", "refresh"))));
     }
 
     @ParameterizedTest(name = "{0}")
@@ -69,7 +69,7 @@ class TokenCheckTest {
     @Test
     @DisplayName("a good token with a single role: role, user id and variables")
     void acceptedSingleRole() {
-        Map<String, Object> answer = check(AuthTokens.sign(c -> { }));
+        Map<String, Object> answer = check(AuthTokens.sign(claims -> { }));
 
         assertThat(answer).containsEntry(VALID, true).containsEntry(REASON, null).containsEntry("role", "user")
                 .containsEntry("userId", "u-1")
@@ -125,7 +125,7 @@ class TokenCheckTest {
     @Test
     @DisplayName("whitespace around the token is not part of it")
     void trimmed() {
-        assertThat(check("  " + AuthTokens.sign(c -> { }) + "\n")).containsEntry(VALID, true);
+        assertThat(check("  " + AuthTokens.sign(claims -> { }) + "\n")).containsEntry(VALID, true);
     }
 
     @Test

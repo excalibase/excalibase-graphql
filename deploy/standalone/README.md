@@ -30,7 +30,7 @@ one-database image refuses to start on the other one and names the image to use.
 > the `main` tag (set `ENGINE_IMAGE` in compose to pin another). Use the first release that includes it once
 > there is one.
 
-1. `docker compose -f docker-compose.file.yml up`
+1. `export APP_AUTH_SECRET=$(openssl rand -base64 48) DB_PASSWORD=$(openssl rand -hex 16)`, then `docker compose -f docker-compose.file.yml up`. Compose refuses to start without them.
 2. Open `http://localhost:10000/my-app/graphql` with a token whose `role` claim is `user`.
 3. Edit `metadata/permissions.yaml`. The engine re-reads it every `METADATA_FILE_POLL_INTERVAL_MS`
    (default 5000) and swaps it in when the content changed.
@@ -58,7 +58,7 @@ one-database image refuses to start on the other one and names the image to use.
 The document is served by your own service (or a static host, a git raw URL, an object store's public or
 presigned URL). The engine fetches it and polls. It is read-only: change the document where it is served.
 
-1. `docker compose -f docker-compose.url.yml up` (it serves `metadata/permissions.yaml` from a small nginx).
+1. Export `APP_AUTH_SECRET` and `DB_PASSWORD` as above, then `docker compose -f docker-compose.url.yml up` (it serves `metadata/permissions.yaml` from a small nginx).
 2. Open `http://localhost:10000/my-app/graphql` with a token whose `role` claim is `user`.
 
 - **Version.** The hash of the body. Every poll is a plain full GET (the 1 MiB cap keeps it cheap); `ETag`
