@@ -1,7 +1,9 @@
 package io.github.excalibase.rls;
 
 import io.github.excalibase.permissions.PermissionVersions;
+import io.nats.client.Connection;
 import io.nats.client.ConnectionListener.Events;
+import io.nats.client.Options;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -60,5 +62,15 @@ class PolicyChangeReconnectTest {
 
         assertThat(catchUps).hasValue(0);
         verify(sockets, never()).permissionsAre(anyString(), anyLong());
+    }
+
+    @Test
+    void theDialOptions_carryTheListenerThatCatchesUp() {
+        Options options = subscriber().options();
+
+        assertThat(options.getConnectionListener()).isNotNull();
+        options.getConnectionListener().connectionEvent(mock(Connection.class), Events.RECONNECTED);
+
+        assertThat(catchUps).hasValue(1);
     }
 }

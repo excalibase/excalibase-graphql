@@ -102,10 +102,7 @@ public class PolicyChangeSubscriber {
             return;
         }
         try {
-            Options options = NatsOptionsFactory
-                    .builder(natsUrl, natsUsername, natsPassword, natsInboxPrefix)
-                    .connectionListener((conn, event) -> connectionEvent(event))
-                    .build();
+            Options options = options();
             connection = Nats.connect(options);
             dispatcher = connection.createDispatcher(this::handleMessage);
             dispatcher.subscribe(SUBJECT);
@@ -117,6 +114,14 @@ public class PolicyChangeSubscriber {
         } catch (Exception e) {
             log.error("Failed to start policy-change subscriber", e);
         }
+    }
+
+    /** The dial options, with the listener that catches up after a reconnect. */
+    Options options() {
+        return NatsOptionsFactory
+                .builder(natsUrl, natsUsername, natsPassword, natsInboxPrefix)
+                .connectionListener((conn, event) -> connectionEvent(event))
+                .build();
     }
 
     /** A reconnect missed every signal sent while the bus was unreachable: evict what is held and settle the sockets. */
