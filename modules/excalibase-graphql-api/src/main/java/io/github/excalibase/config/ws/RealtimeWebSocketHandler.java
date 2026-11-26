@@ -43,7 +43,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * <p>Subscription key is {@code "{schema|public}.{collection}"}, matching the
  * sink key {@link SubscriptionService} publishes under.
  *
- * <p>Filter matching (v1): equality on a single top-level field. Empty/null
+ * <p>Filter matching (v1): equality on top-level fields; an UPDATE matches on its old or new image. Empty/null
  * filter means "all events for this collection".
  */
 @Singleton
@@ -322,7 +322,7 @@ public class RealtimeWebSocketHandler extends TextWsHandler {
         Object visible = delivery.render(event, doc).orElse(null);
         if (visible == null) return;
         JsonNode payloadDoc = changeWriter.valueToTree(visible);
-        if (!matchesFilter(payloadDoc, filter)) return;
+        if (!matchesFilter(payloadDoc, filter, "update".equals(op))) return;
 
         try {
             var payload = new LinkedHashMap<String, Object>();
@@ -338,10 +338,19 @@ public class RealtimeWebSocketHandler extends TextWsHandler {
         }
     }
 
-    private boolean matchesFilter(JsonNode doc, Map<String, Object> filter) {
+    /**
+     * An UPDATE carries the row as {@code {old, new}}, so its filter reads the images, not the envelope: it
+     * matches when either image does, so a subscriber also hears of a row that leaves its filter.
+     */
+    private boolean matchesFilter(JsonNode doc, Map<String, Object> filter, boolean update) {
         if (filter == null || filter.isEmpty()) return true;
+        if (!update) return matchesRow(doc, filter);
+        return matchesRow(doc.path("new"), filter) || matchesRow(doc.path("old"), filter);
+    }
+
+    private static boolean matchesRow(JsonNode row, Map<String, Object> filter) {
         for (var entry : filter.entrySet()) {
-            JsonNode value = doc.get(entry.getKey());
+            JsonNode value = row.get(entry.getKey());
             if (value == null || value.isNull()) return false;
             if (!value.asText().equals(String.valueOf(entry.getValue()))) return false;
         }

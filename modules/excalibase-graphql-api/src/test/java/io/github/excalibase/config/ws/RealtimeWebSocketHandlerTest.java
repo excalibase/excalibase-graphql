@@ -150,6 +150,28 @@ class RealtimeWebSocketHandlerTest {
     }
 
     @Test
+    @DisplayName("filter judges an UPDATE by its images: delivered when the row now matches, or matched before (EXC-515)")
+    void filter_judgesAnUpdateByItsImages() throws Exception {
+        var sent = new ArrayList<String>();
+        WsSession session = session(sent);
+        handler.afterConnectionEstablished(session);
+        handler.handleTextMessage(session, new TextMessage(mapper.writeValueAsString(Map.of(
+                "type", "subscribe", "id", "s1", "collection", "orders", "filter", Map.of("status", "active")))));
+
+        subscriptionService.publish(null, new CDCEvent("UPDATE", "public", "orders",
+                "{\"old\":{\"id\":1,\"status\":\"pending\"},\"new\":{\"id\":1,\"status\":\"cancelled\"}}", 0L));
+        subscriptionService.publish(null, new CDCEvent("UPDATE", "public", "orders",
+                "{\"old\":{\"id\":2,\"status\":\"pending\"},\"new\":{\"id\":2,\"status\":\"active\"}}", 0L));
+        subscriptionService.publish(null, new CDCEvent("UPDATE", "public", "orders",
+                "{\"old\":{\"id\":3,\"status\":\"active\"},\"new\":{\"id\":3,\"status\":\"cancelled\"}}", 0L));
+
+        await().atMost(Duration.ofSeconds(2)).until(() -> sent.size() >= 2);
+        assertThat(sent).hasSize(2);
+        assertThat(sent).extracting(message -> mapper.readTree(message).get("doc").get("new").get("id").asInt())
+                .containsExactly(2, 3);
+    }
+
+    @Test
     @DisplayName("DDL and HEARTBEAT events are filtered out")
     void ddlAndHeartbeat_skipped() throws Exception {
         var sent = new ArrayList<String>();
