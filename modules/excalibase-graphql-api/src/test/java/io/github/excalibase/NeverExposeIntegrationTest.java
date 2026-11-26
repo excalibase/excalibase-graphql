@@ -111,7 +111,7 @@ class NeverExposeIntegrationTest extends EngineIntegrationTest {
     @Override
     public Map<String, String> getProperties() {
         Map<String, String> properties = new HashMap<>(EngineProperties.postgres(postgres, PROJECT));
-        properties.put("app.nats.enabled", "false");
+        properties.put("app.nats.enabled", "true");
         properties.put("app.security.jwt-enabled", "true");
         properties.put("app.security.insecure-dev-mode", "false");
         properties.put("app.security.auth.jwks-url", controlPlane.url("/.well-known/jwks.json"));

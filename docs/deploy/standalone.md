@@ -187,6 +187,9 @@ Every save through the console or the admin API adds the text it replaces to `pe
 
 ## Known limits
 
+- **No subscriptions.** Realtime changes come from the watcher over NATS, and a standalone engine has neither. A
+  subscription is refused with `realtime_unavailable: realtime needs NATS` rather than accepted and left silent.
+
 - **File saves are not safe across replicas.** The check and the rename happen under a lock in one process.
   Two replicas sharing a writable file can overwrite each other. Use `db` or `s3` with more than one replica.
 - **No IRSA or AWS role credentials yet.** The s3 source takes static keys only. On AWS, use an IAM user with a

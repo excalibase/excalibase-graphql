@@ -23,7 +23,7 @@ class RealtimeGateNoProjectTest {
         Map<String, Object> attributes = new HashMap<>();
         when(session.getAttributes()).thenReturn(attributes);
 
-        RealtimeGate.Opening opening = RealtimeGate.open(plans, session, "orders");
+        RealtimeGate.Opening opening = RealtimeGate.open(plans, session, "orders", true);
 
         assertThat(opening.delivery()).isNull();
         assertThat(opening.refusal()).isNotBlank();

@@ -70,14 +70,14 @@ class PermissionChangeWiringTest {
     }
 
     private RealtimeWebSocketHandler realtime(AccessPlans plans) {
-        return new RealtimeWebSocketHandler(new SubscriptionService(), mapper, null,
-                new WebSocketHeartbeat(0), plans, null, runtime);
+        return withNats(new RealtimeWebSocketHandler(new SubscriptionService(), mapper, null,
+                new WebSocketHeartbeat(0), plans, null, runtime));
     }
 
     private GraphQLWebSocketHandler graphql(AccessPlans plans) {
-        return new GraphQLWebSocketHandler(new SubscriptionService(), mapper, null,
+        return withNats(new GraphQLWebSocketHandler(new SubscriptionService(), mapper, null,
                 new WebSocketHeartbeat(0), plans, null,
-                new ParsedQueries(1_000, Parser::parse), runtime);
+                new ParsedQueries(1_000, Parser::parse), runtime));
     }
 
     private static void subscribeRealtime(RealtimeWebSocketHandler handler, WsSession session) throws Exception {
@@ -201,5 +201,15 @@ class PermissionChangeWiringTest {
     @DisplayName("graphql: an event that finds the same document while the plan is being resolved leaves the new socket open")
     void graphqlOpeningRacingANoOpEvent() throws Exception {
         raceAnnouncementAgainstSubscribe(false, 7, false);
+    }
+
+    private static RealtimeWebSocketHandler withNats(RealtimeWebSocketHandler handler) {
+        handler.natsEnabled(true);
+        return handler;
+    }
+
+    private static GraphQLWebSocketHandler withNats(GraphQLWebSocketHandler handler) {
+        handler.natsEnabled(true);
+        return handler;
     }
 }

@@ -26,7 +26,7 @@ class RealtimeGateUnsupportedTest {
         attributes.put(GraphQLWebSocketHandler.SESSION_PROJECT_KEY, "proj_mysql01");
         when(session.getAttributes()).thenReturn(attributes);
 
-        RealtimeGate.Opening opening = RealtimeGate.open(plans, session, "orders");
+        RealtimeGate.Opening opening = RealtimeGate.open(plans, session, "orders", true);
 
         assertThat(opening.delivery()).isNull();
         assertThat(opening.refusal()).isEqualTo("MySQL does not support subscriptions");
@@ -42,7 +42,7 @@ class RealtimeGateUnsupportedTest {
         attributes.put(GraphQLWebSocketHandler.SESSION_PROJECT_KEY, "proj_nap01");
         when(session.getAttributes()).thenReturn(attributes);
 
-        RealtimeGate.Opening opening = RealtimeGate.open(plans, session, "orders");
+        RealtimeGate.Opening opening = RealtimeGate.open(plans, session, "orders", true);
 
         assertThat(opening.refusal()).isEqualTo("project_paused");
         assertThat(opening.unavailable()).isTrue();
