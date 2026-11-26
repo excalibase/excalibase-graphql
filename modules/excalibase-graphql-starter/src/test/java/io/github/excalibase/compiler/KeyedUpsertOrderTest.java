@@ -4,6 +4,7 @@ import io.github.excalibase.SqlDialect;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentMatchers;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.JdbcOperations;
 import org.springframework.jdbc.core.RowMapper;
@@ -26,6 +27,7 @@ import static org.mockito.Mockito.CALLS_REAL_METHODS;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -103,7 +105,20 @@ class KeyedUpsertOrderTest {
     }
 
     @Test
-    void aDuplicateOfAnotherUniqueKey_isTheDatabasesOwnError() {
+    void aDuplicateWhoseRowIsGoneByTheLookup_triesTheInsertOnceMore() throws Exception {
+        insertsFirst(true);
+        when(jdbc.update(eq(INSERT_SQL), any(SqlParameterSource.class), any(KeyHolder.class)))
+                .thenThrow(duplicate()).thenReturn(1);
+        lookupFinds(false);
+
+        writes.upsert(insert, set, everyRow).run(jdbc, false);
+
+        verify(jdbc, times(2)).update(eq(INSERT_SQL), any(SqlParameterSource.class), any(KeyHolder.class));
+        verify(jdbc, never()).update(contains(UPDATE_PREFIX), anyMap());
+    }
+
+    @Test
+    void aDuplicateThatKeepsHappeningWithNoRow_isTheDatabasesOwnError() {
         DuplicateKeyException failure = duplicate();
         insertsFirst(true);
         insertRaises(failure);
@@ -115,8 +130,31 @@ class KeyedUpsertOrderTest {
     }
 
     @Test
-    void anyOtherFailure_isNotTurnedIntoAnUpdate() {
-        IllegalStateException failure = new IllegalStateException("not a duplicate");
+    void aPartialRowTheDatabaseRefusesOnItsOwn_isStillUpdatedWhenTheRowExists() throws Exception {
+        insertsFirst(true);
+        insertRaises(new DataIntegrityViolationException("Field 'name' doesn't have a default value"));
+        lookupFinds(true);
+
+        writes.upsert(insert, set, everyRow).run(jdbc, false);
+
+        verify(jdbc).update(contains(UPDATE_PREFIX), anyMap());
+    }
+
+    @Test
+    void aRefusedInsertWithNoRowToUpdate_isTheRefusal() {
+        DataIntegrityViolationException failure = new DataIntegrityViolationException("not null");
+        insertsFirst(true);
+        insertRaises(failure);
+        lookupFinds(false);
+        KeyedWrite write = writes.upsert(insert, set, everyRow);
+
+        assertThatThrownBy(() -> write.run(jdbc, false)).isSameAs(failure);
+        verify(jdbc, times(1)).update(eq(INSERT_SQL), any(SqlParameterSource.class), any(KeyHolder.class));
+    }
+
+    @Test
+    void aFailureThatIsNotTheDatabases_isNotTurnedIntoALookup() {
+        IllegalStateException failure = new IllegalStateException("not a data access failure");
         insertsFirst(true);
         insertRaises(failure);
         KeyedWrite write = writes.upsert(insert, set, everyRow);
