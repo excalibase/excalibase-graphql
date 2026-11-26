@@ -5,7 +5,7 @@ from a **metadata document** that you keep where you like. This folder holds a g
 Today there are four: a file, an HTTP(S) URL, a database table, and an object in S3 or an S3-compatible store. More are added as they ship.
 
 Step-by-step guides, with the admin console, the security checklist and the known limits, are in the docs:
-[Docker and compose](../../docs/deploy/standalone-docker.md) and [Kubernetes](../../docs/deploy/standalone-kubernetes.md).
+[Docker and compose](../../docs/deploy/standalone-docker.md), [MySQL and SQLite](../../docs/deploy/standalone-mysql-sqlite.md) and [Kubernetes](../../docs/deploy/standalone-kubernetes.md).
 
 ## Which engine image?
 
@@ -14,9 +14,10 @@ one-database image refuses to start on the other one and names the image to use.
 
 | Image tag (`excalibase/excalibase-graphql:`) | Serves | Pick it when |
 |---|---|---|
-| `<tag>` | PostgreSQL and MySQL | You run both, or the `db` source on a MySQL project. The default. |
+| `<tag>` | PostgreSQL, MySQL and SQLite | You run more than one, or the `db` source on a MySQL project. The default. |
 | `<tag>-postgres` | PostgreSQL | You run PostgreSQL only (every example in this folder). |
 | `<tag>-mysql` | MySQL | You run MySQL only. Not with `METADATA_SOURCE=db`, which keeps its document in PostgreSQL. |
+| `<tag>-sqlite` | SQLite | You run a SQLite file only. Mount its folder at `/data`, writable by user id 1000. |
 | `<tag>-native`, `<tag>-postgres-native`, `<tag>-mysql-native` | As above | The same images as a native binary: faster start, less memory. |
 
 `<tag>` is `main` or `main-<sha7>` for a build of the main branch. More in the docs:

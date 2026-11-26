@@ -1,0 +1,51 @@
+# The engine on MySQL, with its permissions in a file: MySQL + engine, no control plane, no Vault.
+#   docker compose up
+# Edit ./metadata/permissions.yaml; the engine picks the change up within a few seconds.
+services:
+  mysql:
+    image: mysql:8.4
+    environment:
+      MYSQL_DATABASE: app
+      MYSQL_USER: app
+      MYSQL_PASSWORD: change-me
+      MYSQL_ROOT_PASSWORD: change-me-too
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "MYSQL_PWD=\"$$MYSQL_PASSWORD\" mysqladmin ping -h 127.0.0.1 -u app --silent"]
+      interval: 5s
+      retries: 30
+      start_period: 20s
+
+  engine:
+    # The all-in-one image serves MySQL. The slim `-mysql` image works too: then drop the two lines
+    # APP_DATABASE_TYPE and SPRING_DATASOURCE_DRIVER_CLASS_NAME. See "Which engine image?" in the docs.
+    image: ${ENGINE_IMAGE:-excalibase/excalibase-graphql:main}
+    depends_on:
+      mysql:
+        condition: service_healthy
+    ports:
+      - "10000:10000"
+    environment:
+      SERVER_PORT: 10000
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/app
+      SPRING_DATASOURCE_USERNAME: app
+      SPRING_DATASOURCE_PASSWORD: change-me
+      SPRING_DATASOURCE_DRIVER_CLASS_NAME: com.mysql.cj.jdbc.Driver
+      APP_DATABASE_TYPE: mysql
+      APP_PROJECT_ID: my-app
+      JWT_SECRET: change-me-to-a-long-random-secret-of-32-bytes-or-more
+      METADATA_SOURCE: file
+      METADATA_FILE_PATH: /etc/excalibase
+      MANAGEMENT_ENDPOINT_HEALTH_PROBES_ENABLED: "true"
+    volumes:
+      - ./metadata:/etc/excalibase:ro
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8081/actuator/health/readiness && curl -fsS http://localhost:8081/actuator/health"]
+      interval: 10s
+      retries: 6
+      start_period: 30s
+
+volumes:
+  mysql_data:

@@ -224,4 +224,6 @@ healthcheck. `/actuator/info` shows the version of the document being served.
 - Replace every `change-me` value.
 - Put TLS in front of port `10000`. The engine does not terminate TLS.
 
+MySQL or a SQLite file instead of Postgres? See [MySQL and SQLite](standalone-mysql-sqlite.md).
+
 The full checklist and the known limits are on the [overview page](standalone.md).

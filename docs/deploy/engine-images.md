@@ -5,15 +5,16 @@ database's plugin and driver, so it is smaller and has less code to patch. Pick 
 
 | Image tag | Serves | Pick it when |
 |---|---|---|
-| `excalibase/excalibase-graphql:<tag>` | PostgreSQL and MySQL | You run both, you switch databases often, or you use the `db` rule source on a MySQL project. The default. |
+| `excalibase/excalibase-graphql:<tag>` | PostgreSQL, MySQL and SQLite | You run more than one, you switch databases often, or you use the `db` rule source on a MySQL project. The default. |
 | `excalibase/excalibase-graphql:<tag>-postgres` | PostgreSQL | You run PostgreSQL only. |
 | `excalibase/excalibase-graphql:<tag>-mysql` | MySQL | You run MySQL only. |
-| `excalibase/excalibase-graphql:<tag>-native` | PostgreSQL and MySQL | The all-in-one image, as a native binary: faster start, less memory. |
+| `excalibase/excalibase-graphql:<tag>-sqlite` | SQLite | You run a SQLite file only. Mount its folder at `/data`, writable by user id 1000. |
+| `excalibase/excalibase-graphql:<tag>-native` | PostgreSQL, MySQL and SQLite | The all-in-one image, as a native binary: faster start, less memory. |
 | `excalibase/excalibase-graphql:<tag>-postgres-native` | PostgreSQL | The PostgreSQL image, as a native binary. |
 | `excalibase/excalibase-graphql:<tag>-mysql-native` | MySQL | The MySQL image, as a native binary. |
 
 `<tag>` is `main` or `main-<sha7>` for a build of the main branch. The all-in-one image keeps its existing tags.
-The `-postgres` and `-mysql` images are published with every main build. The native one-database images are built
+The `-postgres`, `-mysql` and `-sqlite` images are published with every main build. The native one-database images are built
 nightly, so a recent commit may not have its `-postgres-native` or `-mysql-native` tag yet.
 
 ## What a one-database image does
