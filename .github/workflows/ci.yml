@@ -27,6 +27,14 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
+  # EXC-881: Docker Hub rate-limits CI, so third-party images come from the mirror the platform
+  # repository's Mirror images workflow keeps in GHCR (ci/mirror-images.txt lists the ones used here).
+  # Empty on a fork PR (no login there): everything then pulls Docker Hub as before.
+  # HUB_MIRROR: compose files and Dockerfiles. IMAGE_MIRROR: scripts (ci/mirror-images.sh).
+  # TESTCONTAINERS_HUB_IMAGE_NAME_PREFIX: Testcontainers, for every container the Java tests start.
+  HUB_MIRROR: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && 'ghcr.io/excalibase/mirror/' || '' }}
+  IMAGE_MIRROR: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && 'ghcr.io/excalibase/mirror' || '' }}
+  TESTCONTAINERS_HUB_IMAGE_NAME_PREFIX: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && 'ghcr.io/excalibase/mirror/' || '' }}
   MAVEN_OPTS: "-Djava.awt.headless=true"
   MAVEN_CLI_OPTS: "--batch-mode --errors --fail-at-end --show-version"
 
@@ -76,6 +84,12 @@ jobs:
     - name: Check the warm-once cache layout
       run: scripts/ci/test-maven-warm-once.sh
 
+    # EXC-881: every Docker Hub image CI names is on the mirror's list, and the mirror's scripts work.
+    - name: Docker Hub images are mirrored
+      run: |
+        sh ci/tests/mirror-images-test.sh
+        sh ci/mirror-images.sh guard
+
   # The suite runs in parallel shards (EXC-885). scripts/ci/test-shards.sh picks each shard's classes from
   # scripts/ci/test-shards.txt (the slow ones, balanced by measured time; any other class by a checksum of its name).
   test-shard:
@@ -84,6 +98,9 @@ jobs:
     runs-on: ubuntu-24.04
     needs: maven-warm
     if: ${{ !cancelled() }}
+    permissions:
+      contents: read
+      packages: read
     strategy:
       fail-fast: false
       matrix:
@@ -99,6 +116,9 @@ jobs:
     steps:
     - name: Checkout code
       uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+    - name: Log in to the image mirror
+      uses: ./.github/actions/mirror-login
 
     - name: Log in to Docker Hub
       if: env.DOCKERHUB_USERNAME != ''
@@ -313,6 +333,9 @@ jobs:
     needs: [maven-warm, test]
     if: ${{ !cancelled() && needs.test.result == 'success' }}
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: read
     # the jar ships the console, so it is built here; its lint and Vitest run in the Console browser test job
     env:
       MAVEN_ARGS: "-Dconsole.ui.skipTests=true -Dconsole.ui.skipLint=true"
@@ -321,6 +344,9 @@ jobs:
     steps:
     - name: Checkout code
       uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+    - name: Log in to the image mirror
+      uses: ./.github/actions/mirror-login
 
     - name: Log in to Docker Hub
       if: env.DOCKERHUB_USERNAME != ''

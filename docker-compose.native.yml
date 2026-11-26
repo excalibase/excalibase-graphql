@@ -1,6 +1,6 @@
 services:
   postgres:
-    image: pgvector/pgvector:pg15
+    image: ${HUB_MIRROR:-}pgvector/pgvector:pg15
     container_name: excalibase-postgres-native
     environment:
       POSTGRES_DB: hana
@@ -107,7 +107,7 @@ services:
           cpus: '0.25'
 
   nats:
-    image: nats:2.10
+    image: ${HUB_MIRROR:-}nats:2.10
     container_name: excalibase-nats-native
     command: ["-js", "-m", "8222"]
     ports:
@@ -123,7 +123,7 @@ services:
     restart: unless-stopped
 
   excalibase-watcher:
-    image: excalibase/excalibase-watcher
+    image: ${HUB_MIRROR:-}excalibase/excalibase-watcher:latest@sha256:176b7ba4f5ee0ba42c911ad4e3a10cb5cf4222876d965b5ea6baa57bdbb6b3ef
     container_name: excalibase-watcher-native
     environment:
       APP_CDC_POSTGRES_URL: jdbc:postgresql://postgres:5432/hana
@@ -154,7 +154,7 @@ services:
     restart: unless-stopped
 
   mock-vault:
-    image: wiremock/wiremock:3.10.0
+    image: ${HUB_MIRROR:-}wiremock/wiremock:3.10.0
     container_name: excalibase-mock-vault-native
     volumes:
       - ./e2e/wiremock:/home/wiremock
@@ -171,7 +171,7 @@ services:
 
   excalibase-auth:
     # Pinned: this fails closed when it cannot read project info, so a moving tag breaks CI unannounced (EXC-867).
-    image: excalibase/excalibase-auth:1.7.5@sha256:267e907108c405d45be6e8d3acad749ed863cb442ec088c6c4e29b411049c28c
+    image: ${HUB_MIRROR:-}excalibase/excalibase-auth:1.7.5@sha256:267e907108c405d45be6e8d3acad749ed863cb442ec088c6c4e29b411049c28c
     container_name: excalibase-auth-native
     environment:
       PROVISIONING_URL: http://mock-vault:8080/api

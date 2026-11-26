@@ -323,16 +323,19 @@ build-native: ## Build native image (requires GraalVM JDK 25, ~10 min)
 # NATIVE_PREBUILT=1 packages the binary already in target/ (CI downloads the one native-build compiled).
 NATIVE_IMAGE = excalibase/excalibase-graphql:native
 
+# EXC-881: CI sets HUB_MIRROR (ghcr.io/excalibase/mirror/) so image builds pull Docker Hub bases from the mirror.
+HUB_MIRROR_ARG = $(if $(HUB_MIRROR),--build-arg HUB_MIRROR=$(HUB_MIRROR))
+
 .PHONY: build-native-image
 build-native-image: $(if $(NATIVE_PREBUILT),,build-native) ## Build native Docker image
 	@echo "$(BLUE)🐳 Building native Docker image...$(NC)"
-	@docker build --no-cache -f Dockerfile.native -t $(NATIVE_IMAGE) .
+	@docker build $(HUB_MIRROR_ARG) --no-cache -f Dockerfile.native -t $(NATIVE_IMAGE) .
 	@echo "$(GREEN)✓ Native Docker image built$(NC)"
 
 .PHONY: build-image
 build-image: build ## Build Docker image locally for e2e testing
 	@echo "$(BLUE)🐳 Building Docker image...$(NC)"
-	@docker build -t excalibase/excalibase-graphql .
+	@docker build $(HUB_MIRROR_ARG) -t excalibase/excalibase-graphql .
 	@echo "$(GREEN)✓ Docker image built$(NC)"
 
 .PHONY: watcher-go-build

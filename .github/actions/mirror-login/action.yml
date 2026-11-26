@@ -1,0 +1,15 @@
+name: Log in to the image mirror
+description: >-
+  EXC-881: CI pulls Docker Hub images from ghcr.io/excalibase/mirror/. The mirror packages must be
+  public (or this repository granted read access in their package settings) for the engine to pull
+  them. A fork PR skips the login and its workflow sets no mirror prefix, so it uses Docker Hub.
+runs:
+  using: composite
+  steps:
+    - name: Log in to ghcr.io
+      if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+      uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+      with:
+        registry: ghcr.io
+        username: ${{ github.actor }}
+        password: ${{ github.token }}

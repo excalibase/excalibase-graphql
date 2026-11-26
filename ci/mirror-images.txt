@@ -1,0 +1,47 @@
+# EXC-881: the Docker Hub images the engine's CI uses. The platform repository's Mirror images
+# workflow copies each line into ghcr.io/excalibase/mirror/<line> once a day (it reads this file from main);
+# CI pulls them from there.
+#
+# One image per line: the Docker Hub path without docker.io/ or library/, then :tag, then
+# @sha256:digest when the code pins one. `sh ci/mirror-images.sh guard` fails CI when a file names a
+# Docker Hub image missing here. The platform repository keeps its own list.
+#
+# Adding an image: put its line here, then run the 'Mirror images' workflow in excalibase/excalibase
+# (Actions, Run workflow) with engine_ref=<your branch>, so the mirror holds it before this PR merges.
+# After the merge the daily run keeps it fresh. Until the image is mirrored, CI cannot pull it.
+# Pinned: a line with @sha256 is copied by digest, and the compose files and Dockerfiles name the same digest.
+
+# Java tests (Testcontainers)
+mongo:7
+mysql:8.0
+mysql:8.4
+nats:2.10
+pgsty/minio:RELEASE.2026-08-04T00-00-00Z@sha256:b6bfe7239bfc83fb90d31612d9704d86039dd714f7904b3f1ad68f211e602372
+pgvector/pgvector:pg16
+postgres:16-alpine
+testcontainers/ryuk:0.12.0
+
+# Compose stacks of the end-to-end suites
+alpine:3.20
+excalibase/excalibase-auth:1.7.5@sha256:267e907108c405d45be6e8d3acad749ed863cb442ec088c6c4e29b411049c28c
+excalibase/excalibase-watcher-go:1.7.5@sha256:e31bbddc0753189510be1f536fb70535f68b706795b7bf049da0a8af612f1069
+excalibase/excalibase-watcher:latest@sha256:176b7ba4f5ee0ba42c911ad4e3a10cb5cf4222876d965b5ea6baa57bdbb6b3ef
+excalibase/graphiql:latest@sha256:d45bdde0e28eb21561be507aa81bc555c25bc95a27f72b8378f34bd78a90abf6
+natsio/nats-box:0.14.5@sha256:0784ab710aefaf6ef037ed797ee7dcde613c6ad208c4dbff1945fc7c1b5b5375
+otel/opentelemetry-collector-contrib:0.119.0
+pgvector/pgvector:pg15
+wiremock/wiremock:3.10.0
+
+# Observability stack that `make up` starts
+grafana/grafana:11.6.0
+grafana/loki:3.4.2
+grafana/promtail:3.4.2
+grafana/tempo:2.7.2
+prom/prometheus:v3.3.0
+
+# Dockerfile base images
+debian:bookworm-slim
+eclipse-temurin:25-jre-alpine
+
+# Dockerfile.native copies busybox from this image (COPY --from); release builds pull it from Docker Hub directly
+busybox:stable-glibc@sha256:7e567dff0fbaa48cddc5f52ae5201a7f417436aa20e70c8750814692043dfa38

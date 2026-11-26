@@ -3,8 +3,10 @@
 #   docker build --build-arg ENGINE=mysql . the MySQL-only image (sqlite: the SQLite-only image)
 # The slim jars come from `mvn -Pslim-<engine> package`; the all-in-one jar from a plain `mvn package`.
 ARG ENGINE=all
+# EXC-881: CI builds from the mirror of Docker Hub (--build-arg HUB_MIRROR=ghcr.io/excalibase/mirror/); empty pulls Docker Hub.
+ARG HUB_MIRROR=
 
-FROM eclipse-temurin:25-jre-alpine AS runtime
+FROM ${HUB_MIRROR}eclipse-temurin:25-jre-alpine AS runtime
 
 # Non-root runtime user so the pod can run under runAsNonRoot (SEC-H4). The
 # app listens on a non-privileged port and only writes to /tmp.

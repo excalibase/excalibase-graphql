@@ -27,12 +27,28 @@ on:
 permissions:
   contents: read
 
+env:
+  # EXC-881: Docker Hub rate-limits CI, so third-party images come from the mirror the platform
+  # repository's Mirror images workflow keeps in GHCR (ci/mirror-images.txt lists the ones used here).
+  # Empty on a fork PR (no login there): everything then pulls Docker Hub as before.
+  # HUB_MIRROR: compose files and Dockerfiles. IMAGE_MIRROR: scripts (ci/mirror-images.sh).
+  # TESTCONTAINERS_HUB_IMAGE_NAME_PREFIX: Testcontainers, for every container the Java tests start.
+  HUB_MIRROR: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && 'ghcr.io/excalibase/mirror/' || '' }}
+  IMAGE_MIRROR: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && 'ghcr.io/excalibase/mirror' || '' }}
+  TESTCONTAINERS_HUB_IMAGE_NAME_PREFIX: ${{ (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) && 'ghcr.io/excalibase/mirror/' || '' }}
+
 jobs:
   quickstart:
     name: README quickstart on a fresh clone
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: read
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: Log in to the image mirror
+        uses: ./.github/actions/mirror-login
+
       - name: Run the README quickstart
         run: ./scripts/quickstart-smoke.sh
