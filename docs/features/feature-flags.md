@@ -10,7 +10,7 @@ Excalibase GraphQL supports feature flags for flexible configuration and deploym
 **Type:** `boolean`
 **Default:** `false`
 
-Controls whether excalibase-graphql connects to NATS JetStream to receive CDC events from [excalibase-watcher](https://github.com/excalibase/excalibase-watcher). When enabled, real-time GraphQL subscriptions are powered by watcher events. When disabled, subscription resolvers still exist in the schema but will not emit data events (only heartbeats).
+Controls whether excalibase-graphql connects to NATS JetStream to receive CDC events from [excalibase-watcher](https://github.com/excalibase/excalibase-watcher). When enabled, real-time GraphQL subscriptions are powered by watcher events. When disabled, a subscription is refused with `realtime_unavailable: realtime needs NATS`: the engine never accepts a subscription it cannot deliver. The resolvers still exist in the schema.
 
 ```yaml
 app:

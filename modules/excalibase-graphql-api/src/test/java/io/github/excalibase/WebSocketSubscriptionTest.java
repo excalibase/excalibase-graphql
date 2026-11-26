@@ -35,7 +35,7 @@ class WebSocketSubscriptionTest extends EngineIntegrationTest {
     @Override
     public Map<String, String> getProperties() {
         Map<String, String> properties = new HashMap<>(EngineProperties.postgres(postgres, "test-proj"));
-        properties.put("app.nats.enabled", "false");
+        properties.put("app.nats.enabled", "true");
         return properties;
     }
 
