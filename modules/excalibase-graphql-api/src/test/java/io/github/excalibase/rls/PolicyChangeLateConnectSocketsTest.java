@@ -83,7 +83,8 @@ class PolicyChangeLateConnectSocketsTest {
 
     private static Connection natsThatAnswers() {
         Connection connection = mock(Connection.class);
-        when(connection.createDispatcher(any())).thenReturn(mock(Dispatcher.class));
+        Dispatcher dispatcher = mock(Dispatcher.class);
+        when(connection.createDispatcher(any())).thenReturn(dispatcher);
         return connection;
     }
 

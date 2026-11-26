@@ -94,7 +94,9 @@ class RestEmbedOrderLimitTest {
     void anOrderColumnTheTableLacks_isRefused() {
         var order = List.of(new RestQueryCompiler.OrderBySpec("nope", "ASC", null));
 
-        assertThatThrownBy(() -> sql(USERS, posts(order, null)))
+        var embed = posts(order, null);
+
+        assertThatThrownBy(() -> sql(USERS, embed))
                 .isInstanceOf(IllegalArgumentException.class).hasMessageContaining("nope");
     }
 

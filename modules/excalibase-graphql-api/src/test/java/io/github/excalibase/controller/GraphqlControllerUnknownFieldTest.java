@@ -53,7 +53,7 @@ class GraphqlControllerUnknownFieldTest {
     void anAnonRequest_getsUnknownFieldNamingAnon() {
         Map<String, Object> error = firstError(Principal.anonymous());
 
-        assertThat(((Map<String, Object>) error.get("extensions")).get("code")).isEqualTo("unknown_field");
+        assertThat((Map<String, Object>) error.get("extensions")).containsEntry("code", "unknown_field");
         assertThat((String) error.get("message")).contains("publicTodos", "'anon'");
     }
 
@@ -68,6 +68,6 @@ class GraphqlControllerUnknownFieldTest {
     void aRequestWithNoPrincipal_keepsThePlainMessage() {
         Map<String, Object> error = firstError(null);
 
-        assertThat(error.get("message")).isEqualTo("Unknown field(s): publicTodos");
+        assertThat(error).containsEntry("message", "Unknown field(s): publicTodos");
     }
 }

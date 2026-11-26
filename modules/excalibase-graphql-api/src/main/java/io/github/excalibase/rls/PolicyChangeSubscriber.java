@@ -219,7 +219,7 @@ public class PolicyChangeSubscriber {
         }
         try {
             open.close();
-        } catch (InterruptedException e) {
+        } catch (InterruptedException _) {
             Thread.currentThread().interrupt();
         } catch (RuntimeException e) {
             log.debug("Closing an unsubscribed NATS connection failed: {}", e.getMessage());

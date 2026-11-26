@@ -33,7 +33,9 @@ final class ProbeFailureWarning {
         if ((last != null && now.isBefore(last.plus(INTERVAL))) || !lastReported.compareAndSet(last, now)) {
             return false;
         }
-        log.warn("realtime_probe_failed table={} reason={}", table, reason(failure));
+        if (log.isWarnEnabled()) {
+            log.warn("realtime_probe_failed table={} reason={}", table, reason(failure));
+        }
         return true;
     }
 

@@ -273,9 +273,16 @@ public class SchemaInfo {
     }
 
     private static List<String> forwardKeys(String baseKey, List<FkInfo> group) {
-        List<String> candidates = group.stream().map(key -> group.size() < 2 ? baseKey : columnsName(baseKey,
-                key.fkColumns(), sharesColumns(key, group, FkInfo::fkColumns) ? key.constraintName() : null)).toList();
+        List<String> candidates = group.stream().map(key -> forwardKey(baseKey, key, group)).toList();
         return distinct(candidates, group.stream().map(FkInfo::constraintName).toList());
+    }
+
+    private static String forwardKey(String baseKey, FkInfo key, List<FkInfo> group) {
+        if (group.size() < 2) {
+            return baseKey;
+        }
+        String constraint = sharesColumns(key, group, FkInfo::fkColumns) ? key.constraintName() : null;
+        return columnsName(baseKey, key.fkColumns(), constraint);
     }
 
     private static <T> boolean sharesColumns(T key, List<T> group, Function<T, List<String>> columns) {
@@ -307,7 +314,7 @@ public class SchemaInfo {
         StringBuilder named = new StringBuilder(baseKey);
         columns.forEach(column -> named.append(NamingUtils.capitalize(NamingUtils.toLowerCamelCase(column))));
         if (constraintName != null) {
-            named.append(NamingUtils.capitalize(NamingUtils.toLowerCamelCase(constraintName.replaceAll("[^A-Za-z0-9_]", "_"))));
+            named.append(NamingUtils.capitalize(NamingUtils.toLowerCamelCase(constraintName.replaceAll("\\W", "_"))));
         }
         return named.toString();
     }
@@ -332,10 +339,16 @@ public class SchemaInfo {
     }
 
     private static List<String> reverseKeys(String baseKey, List<ReverseFkInfo> group) {
-        List<String> candidates = group.stream().map(relation -> group.size() < 2 ? baseKey : columnsName(baseKey,
-                relation.fkColumns(),
-                sharesColumns(relation, group, ReverseFkInfo::fkColumns) ? relation.constraintName() : null)).toList();
+        List<String> candidates = group.stream().map(relation -> reverseKey(baseKey, relation, group)).toList();
         return distinct(candidates, group.stream().map(ReverseFkInfo::constraintName).toList());
+    }
+
+    private static String reverseKey(String baseKey, ReverseFkInfo relation, List<ReverseFkInfo> group) {
+        if (group.size() < 2) {
+            return baseKey;
+        }
+        String constraint = sharesColumns(relation, group, ReverseFkInfo::fkColumns) ? relation.constraintName() : null;
+        return columnsName(baseKey, relation.fkColumns(), constraint);
     }
 
     /**

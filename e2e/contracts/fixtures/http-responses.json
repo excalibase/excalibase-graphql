@@ -431,7 +431,10 @@
     "body": {
       "errors": [
         {
-          "message": "Unknown field(s): nope"
+          "message": "Unknown field(s): nope",
+          "extensions": {
+            "code": "unknown_field"
+          }
         }
       ]
     }

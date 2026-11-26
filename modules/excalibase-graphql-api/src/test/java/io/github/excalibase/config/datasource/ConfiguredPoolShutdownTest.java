@@ -53,17 +53,23 @@ class ConfiguredPoolShutdownTest {
     }
 
     @Test
-    void aPoolThatIsSlowToClose_doesNotHoldShutdownUp() throws Exception {
+    void aPoolThatIsSlowToClose_doesNotHoldShutdownUp() {
         CountDownLatch release = new CountDownLatch(1);
-        try {
+        try (Release _ = new Release(release)) {
             AutoCloseablePool slow = new AutoCloseablePool(release);
             long begun = System.nanoTime();
 
             new DynamicRoutingDataSource(null, slow).close();
 
             assertThat(Duration.ofNanos(System.nanoTime() - begun)).isLessThan(Duration.ofSeconds(2));
-        } finally {
-            release.countDown();
+        }
+    }
+
+    /** Lets the slow pool finish closing when the test is done. */
+    private record Release(CountDownLatch latch) implements AutoCloseable {
+        @Override
+        public void close() {
+            latch.countDown();
         }
     }
 
