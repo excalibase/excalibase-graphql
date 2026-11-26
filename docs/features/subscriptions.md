@@ -146,6 +146,16 @@ Updated row is nested under `new`. With PostgreSQL `REPLICA IDENTITY DEFAULT`, o
     ALTER TABLE customer REPLICA IDENTITY FULL;
     ```
 
+### Filtering an UPDATE (`/api/v1/realtime`)
+
+On the realtime WebSocket (`{"type":"subscribe","collection":"orders","filter":{"status":"active"}}`) an UPDATE
+event carries both images, `doc.old` and `doc.new`. The filter is matched against each image, and the event is
+delivered if **either** matches. A subscriber therefore also hears when a row leaves its filter (old matched, new
+does not) and can keep a filtered list correct. This needs `REPLICA IDENTITY FULL` on the table: with the default,
+the old image holds only the primary key, so a row that leaves the filter is not heard (see above). A filter is a convenience, not a security boundary: row-level
+permissions are applied before it, so it never reveals a row the caller may not read. GraphQL subscriptions take no
+filter.
+
 ### DELETE Events
 
 With `REPLICA IDENTITY DEFAULT`, only the primary key is included:
