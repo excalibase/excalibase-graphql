@@ -15,6 +15,11 @@ public interface KnownProjects {
     /** Returns normally for a known project; throws {@link UnknownProjectException} otherwise. */
     void require(String projectId);
 
+    /** As above, for a request from {@code client}; a deployment that limits lookups by client counts it there. */
+    default void require(String projectId, String client) {
+        require(projectId);
+    }
+
     /** Single-database mode: the one configured project and nothing else. */
     static KnownProjects pinned(String projectId) {
         return requested -> {
@@ -41,18 +46,34 @@ public interface KnownProjects {
      */
     static KnownProjects tenants(DynamicDataSourceManager dataSourceManager, UnknownProjectCache unknown,
                                  LookupLimiter lookups) {
-        return projectId -> {
-            if (!PROJECT_ID.matcher(projectId).matches() || unknown.isKnownMissing(projectId)) {
-                throw new UnknownProjectException(projectId);
+        return tenants(dataSourceManager, unknown, lookups, null);
+    }
+
+    /** As above, a client first spending its own allowance in {@code perClient} (when set), then the shared one. */
+    static KnownProjects tenants(DynamicDataSourceManager dataSourceManager, UnknownProjectCache unknown,
+                                 LookupLimiter lookups, ClientLookups perClient) {
+        return new KnownProjects() {
+            @Override
+            public void require(String projectId) {
+                require(projectId, null);
             }
-            if (!dataSourceManager.isCached(projectId) && !lookups.tryAcquire()) {
-                throw new ProjectLookupThrottledException();
-            }
-            try {
-                dataSourceManager.getDataSource(null, projectId);
-            } catch (UnknownProjectException e) {
-                unknown.recordMissing(projectId);
-                throw e;
+
+            @Override
+            public void require(String projectId, String client) {
+                if (!PROJECT_ID.matcher(projectId).matches() || unknown.isKnownMissing(projectId)) {
+                    throw new UnknownProjectException(projectId);
+                }
+                boolean allowed = dataSourceManager.isCached(projectId)
+                        || ((perClient == null || client == null || perClient.tryAcquire(client)) && lookups.tryAcquire());
+                if (!allowed) {
+                    throw new ProjectLookupThrottledException();
+                }
+                try {
+                    dataSourceManager.getDataSource(null, projectId);
+                } catch (UnknownProjectException e) {
+                    unknown.recordMissing(projectId);
+                    throw e;
+                }
             }
         };
     }
@@ -71,6 +92,12 @@ public interface KnownProjects {
     static KnownProjects forDeployment(String pinnedProjectId, String tenantProvisioningUrl,
                                        DynamicDataSourceManager dataSourceManager, UnknownProjectCache unknown,
                                        LookupLimiter lookups) {
+        return forDeployment(pinnedProjectId, tenantProvisioningUrl, dataSourceManager, unknown, lookups, null);
+    }
+
+    static KnownProjects forDeployment(String pinnedProjectId, String tenantProvisioningUrl,
+                                       DynamicDataSourceManager dataSourceManager, UnknownProjectCache unknown,
+                                       LookupLimiter lookups, ClientLookups perClient) {
         boolean pinned = pinnedProjectId != null && !pinnedProjectId.isBlank();
         boolean multiTenant = tenantProvisioningUrl != null && !tenantProvisioningUrl.isBlank();
         if (multiTenant) {
@@ -82,7 +109,7 @@ public interface KnownProjects {
                 throw new IllegalStateException("Multi-tenant mode resolves projects through authenticated "
                         + "provisioning: set app.security.jwt-enabled=true");
             }
-            return tenants(dataSourceManager, unknown, lookups);
+            return tenants(dataSourceManager, unknown, lookups, perClient);
         }
         if (!pinned) {
             throw new IllegalStateException("Single-database mode requires app.project-id (APP_PROJECT_ID): "

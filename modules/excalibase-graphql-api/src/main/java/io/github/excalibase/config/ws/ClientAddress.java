@@ -21,7 +21,7 @@ public final class ClientAddress {
     private ClientAddress() {
     }
 
-    static String of(HttpRequest<?> request) {
+    public static String of(HttpRequest<?> request) {
         InetAddress peer = Optional.ofNullable(request.getRemoteAddress())
                 .map(InetSocketAddress::getAddress).orElse(null);
         if (peer != null && isInternal(peer)) {

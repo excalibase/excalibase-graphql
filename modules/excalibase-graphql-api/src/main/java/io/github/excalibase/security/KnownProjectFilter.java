@@ -1,6 +1,7 @@
 package io.github.excalibase.security;
 
 import io.github.excalibase.cors.ProjectCorsConfigurationSource;
+import io.github.excalibase.config.ws.ClientAddress;
 import io.github.excalibase.service.VaultCredentialException;
 import io.micronaut.context.annotation.Value;
 import io.micronaut.core.annotation.Nullable;
@@ -84,7 +85,7 @@ public class KnownProjectFilter implements Ordered {
             return FilterErrors.write(HttpStatus.NOT_FOUND, "Project not found", "project_not_found");
         }
         try {
-            knownProjects.require(projectId);
+            knownProjects.require(projectId, ClientAddress.of(request));
         } catch (UnknownProjectException e) {
             return FilterErrors.write(HttpStatus.NOT_FOUND, "Project not found", "project_not_found");
         } catch (ProjectLookupThrottledException e) {

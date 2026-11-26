@@ -15,7 +15,10 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
@@ -50,6 +53,16 @@ class KnownProjectFilterTest {
             assertThat(response.code()).as(uri).isEqualTo(404);
             assertThat(body(response)).contains("\"code\":\"project_not_found\"");
         }
+    }
+
+    @Test
+    @DisplayName("the lookup is counted under the client's address, not only the shared allowance")
+    void theClientAddress_reachesTheProjectCheck() {
+        KnownProjects projects = mock(KnownProjects.class);
+
+        call(projects, "/" + PROJECT + "/graphql");
+
+        verify(projects).require(eq(PROJECT), anyString());
     }
 
     private static final KnownProjects THROTTLED = id -> {
