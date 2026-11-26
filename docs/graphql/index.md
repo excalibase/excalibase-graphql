@@ -460,7 +460,7 @@ mutation {
 
 ## Row-Level Security (PostgreSQL)
 
-Send a JWT in the `Authorization` header. Excalibase verifies the token and sets the `userId` claim as the `request.user_id` PostgreSQL session variable before executing the query:
+Send a JWT in the `Authorization` header. Excalibase verifies the token and evaluates the caller's role permissions inside the engine; no PostgreSQL session variable is set for you.
 
 ```http
 POST /graphql HTTP/1.1
@@ -468,14 +468,17 @@ Authorization: Bearer eyJhbGciOiJFUzI1NiJ9...
 Content-Type: application/json
 ```
 
-With this RLS policy in place:
+A permission filter refers to the caller with the `X-Excalibase-User-Id` session variable, which is filled from the token's `sub` claim:
 
-```sql
-CREATE POLICY user_isolation ON rls_orders
-  FOR ALL USING (user_id = current_setting('request.user_id', true));
+```yaml
+- table: rls_orders
+  role: user
+  select:
+    filter: {"user_id": {"_eq": "X-Excalibase-User-Id"}}
+    columns: "*"
 ```
 
-Each user sees only their own rows — no application-level filtering needed. Requires `jwt-enabled: true` and a configured `auth.jwks-url` or public key.
+Each user sees only their own rows, with no application-level filtering needed. Requires `jwt-enabled: true` and a configured `auth.jwks-url` or public key.
 
 A mutation whose written rows fail the role's permission `check` (inserting a row the caller could not own, or reassigning a row out of their permission) rolls back whole and fails with a typed error instead of database text:
 
