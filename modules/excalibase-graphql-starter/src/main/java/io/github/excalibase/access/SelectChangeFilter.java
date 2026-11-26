@@ -9,9 +9,7 @@ import io.github.excalibase.permissions.compile.SessionBinding;
 import io.github.excalibase.permissions.compile.SqlFragment;
 import io.github.excalibase.schema.SchemaInfo;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
+import java.time.Instant;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -30,8 +28,6 @@ import java.util.function.Supplier;
  */
 final class SelectChangeFilter implements ChangeFilter {
 
-    private static final Logger log = LoggerFactory.getLogger(SelectChangeFilter.class);
-
     private static final String UPDATE = "UPDATE";
     private static final String INSERT = "INSERT";
     private static final String OLD = "old";
@@ -47,6 +43,7 @@ final class SelectChangeFilter implements ChangeFilter {
     private final SchemaInfo reflected;
     private final SessionBinding binding;
     private final IncompleteImageWarning warning;
+    private final ProbeFailureWarning probeFailures = new ProbeFailureWarning(Instant::now);
 
     SelectChangeFilter(PermissionDialect dialect, String table, TableRules.SelectRule select, SchemaInfo reflected,
                        SessionBinding binding, IncompleteImageWarning warning) {
@@ -110,7 +107,7 @@ final class SelectChangeFilter implements ChangeFilter {
             Optional<SqlFragment> query = probeQuery.get();
             return query.isPresent() && probes.exists(query.get().sql(), query.get().params());
         } catch (RuntimeException e) {
-            log.warn("realtime_probe_failed table={} reason={}", table, e.getMessage());
+            probeFailures.failed(table, e);
             return false;
         }
     }
