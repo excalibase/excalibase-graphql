@@ -88,6 +88,11 @@ as GraphQL's selection set:
 GET /api/v1/issues?select=id,title,status&limit=5
 ```
 
+## Embed hints
+
+`select=*,users!author_id(*)` picks the foreign key by its column. A `!column` that names no key of an existing
+relationship is `400 unknown_relationship_hint`; it is never dropped. PostgREST's `!inner` is not supported.
+
 ## Worked example
 
 A complete read-path query — filter by enum + numeric range, order, paginate,

@@ -6,6 +6,8 @@ import io.github.excalibase.compiler.KeyedWrites;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.excalibase.SqlDialect;
 import io.github.excalibase.compiler.VectorSearchBuilder;
+import io.github.excalibase.errors.DataError;
+import io.github.excalibase.errors.DataErrorException;
 import io.github.excalibase.schema.SchemaInfo;
 import io.github.excalibase.schema.TableAccess;
 import io.github.excalibase.security.PermissionCheckFailedException;
@@ -841,9 +843,20 @@ public class RestQueryCompiler {
             else {
                 var rev = findReverseFk(table, embed.relationName(), embed.fkHint());
                 if (rev != null) entries.add(buildReverseEmbed(embed, rev, ia, oa, parentAlias, counter, params));
+                else requireKnownHint(table, embed);
             }
         }
         return entries;
+    }
+
+    /** A hint no key answers to is refused when the relation itself exists; an unknown relation is still skipped. */
+    private void requireKnownHint(String table, EmbedSpec embed) {
+        if (embed.fkHint() == null) return;
+        boolean relationExists = findForwardFk(table, embed.relationName(), null) != null
+                || findReverseFk(table, embed.relationName(), null) != null;
+        if (relationExists) {
+            throw new DataErrorException(DataError.unknownRelationshipHint(embed.relationName(), embed.fkHint()));
+        }
     }
 
     private String buildForwardEmbed(EmbedSpec embed, SchemaInfo.FkInfo fk, String ia, String oa,
