@@ -17,8 +17,13 @@ class UnknownFieldExceptionTest {
     }
 
     @Test
-    void aRequestWithNoToken_isToldItRunsAsAnon() {
-        String message = new UnknownFieldException(PUBLIC_TODOS).messageFor(null);
+    void aRequestWithNoPrincipal_getsTheCompilersOwnMessage() {
+        assertThat(new UnknownFieldException(PUBLIC_TODOS).messageFor(null)).isEqualTo("Unknown field(s): publicTodos");
+    }
+
+    @Test
+    void anAnonRequest_isToldItRunsAsAnon() {
+        String message = new UnknownFieldException(PUBLIC_TODOS).messageFor(Principal.anonymous());
 
         assertThat(message).startsWith("Unknown field(s): publicTodos").contains("'anon'").contains("no token");
     }
