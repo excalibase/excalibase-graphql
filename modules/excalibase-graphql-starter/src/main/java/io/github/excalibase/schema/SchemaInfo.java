@@ -7,6 +7,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import java.util.*;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BiPredicate;
+import java.util.function.Function;
 
 /**
  * Loads table/column/FK metadata from PostgreSQL information_schema.
@@ -215,11 +216,22 @@ public class SchemaInfo {
 
     /** As above, for a key whose target {@code toTable} is known to live in {@code toSchema}. */
     public void addForeignKey(String fromTable, String fromCol, String toSchema, String toTable, String toCol) {
+        addForeignKey(fromTable, fromCol, toSchema, toTable, toCol, null);
+    }
+
+    /** As above, for a key the database names {@code constraintName}; null when it names none. */
+    public void addForeignKey(String fromTable, String fromCol, String toSchema, String toTable, String toCol,
+                              String constraintName) {
         relationshipAliases.set(null);
         String fwdFieldName = fkColumnFieldName(fromTable, fromCol);
-        forwardFks.put(fromTable + "." + fwdFieldName,
-                new FkInfo(List.of(fromCol), toTable, List.of(toCol), toSchema));
-        addReverseFk(toTable, new ReverseFkInfo(fromTable, List.of(fromCol), List.of(toCol)));
+        String key = fromTable + "." + fwdFieldName;
+        FkInfo fresh = new FkInfo(List.of(fromCol), toTable, List.of(toCol), toSchema, constraintName);
+        FkInfo existing = forwardFks.get(key);
+        // The same key declared twice is one relationship and keeps the first name, as the reverse side does.
+        if (existing == null || !existing.sameKeyAs(fresh)) {
+            forwardFks.put(key, fresh);
+        }
+        addReverseFk(toTable, new ReverseFkInfo(fromTable, List.of(fromCol), List.of(toCol), constraintName));
     }
 
     public void addCompositeForeignKey(String fromTable, List<String> fromCols,
@@ -230,9 +242,16 @@ public class SchemaInfo {
     /** As above, for a key whose target {@code toTable} is known to live in {@code toSchema}. */
     public void addCompositeForeignKey(String fromTable, List<String> fromCols,
                                  String toSchema, String toTable, List<String> toCols) {
+        addCompositeForeignKey(fromTable, fromCols, toSchema, toTable, toCols, null);
+    }
+
+    /** As above, for a key the database names {@code constraintName}; null when it names none. */
+    public void addCompositeForeignKey(String fromTable, List<String> fromCols,
+                                 String toSchema, String toTable, List<String> toCols, String constraintName) {
         relationshipAliases.set(null);
-        addCompositeForward(fromTable + "." + fkFieldName(toTable), new FkInfo(fromCols, toTable, toCols, toSchema));
-        addReverseFk(toTable, new ReverseFkInfo(fromTable, fromCols, toCols));
+        addCompositeForward(fromTable + "." + fkFieldName(toTable),
+                new FkInfo(fromCols, toTable, toCols, toSchema, constraintName));
+        addReverseFk(toTable, new ReverseFkInfo(fromTable, fromCols, toCols, constraintName));
     }
 
     /**
@@ -242,20 +261,54 @@ public class SchemaInfo {
      */
     private void addCompositeForward(String baseKey, FkInfo key) {
         List<FkInfo> group = compositeForwardGroups.computeIfAbsent(baseKey, k -> new ArrayList<>());
-        if (group.contains(key)) {
+        if (group.stream().anyMatch(member -> member.sameKeyAs(key))) {
             return;
         }
-        group.forEach(member -> forwardFks.remove(compositeForwardKey(baseKey, member, group.size() > 1)));
+        forwardKeys(baseKey, group).forEach(forwardFks::remove);
         group.add(key);
-        group.forEach(member -> forwardFks.put(compositeForwardKey(baseKey, member, group.size() > 1), member));
+        List<String> names = forwardKeys(baseKey, group);
+        for (int member = 0; member < group.size(); member++) {
+            forwardFks.put(names.get(member), group.get(member));
+        }
     }
 
-    private static String compositeForwardKey(String baseKey, FkInfo key, boolean shared) {
-        if (!shared) {
-            return baseKey;
+    private static List<String> forwardKeys(String baseKey, List<FkInfo> group) {
+        List<String> candidates = group.stream().map(key -> group.size() < 2 ? baseKey : columnsName(baseKey,
+                key.fkColumns(), sharesColumns(key, group, FkInfo::fkColumns) ? key.constraintName() : null)).toList();
+        return distinct(candidates, group.stream().map(FkInfo::constraintName).toList());
+    }
+
+    private static <T> boolean sharesColumns(T key, List<T> group, Function<T, List<String>> columns) {
+        return group.stream().anyMatch(other -> other != key && columns.apply(other).equals(columns.apply(key)));
+    }
+
+    /**
+     * Keeps names apart when two keys sanitise to the same one ({@code fk-a} and {@code fk.a}): the keys of a name
+     * are numbered from the second, in the order of their constraint names, so the result does not depend on the
+     * order the keys were added in.
+     */
+    private static List<String> distinct(List<String> candidates, List<String> constraintNames) {
+        List<String> names = new ArrayList<>(candidates);
+        for (String candidate : new LinkedHashSet<>(candidates)) {
+            List<Integer> same = new ArrayList<>();
+            for (int member = 0; member < candidates.size(); member++) {
+                if (candidates.get(member).equals(candidate)) same.add(member);
+            }
+            same.sort(Comparator.comparing((Integer member) -> Objects.toString(constraintNames.get(member), "")));
+            for (int rank = 1; rank < same.size(); rank++) {
+                names.set(same.get(rank), candidate + (rank + 1));
+            }
         }
+        return names;
+    }
+
+    /** {@code baseKey} then each column, then the constraint name when the columns alone cannot tell the keys apart. */
+    private static String columnsName(String baseKey, List<String> columns, String constraintName) {
         StringBuilder named = new StringBuilder(baseKey);
-        key.fkColumns().forEach(column -> named.append(NamingUtils.capitalize(NamingUtils.toLowerCamelCase(column))));
+        columns.forEach(column -> named.append(NamingUtils.capitalize(NamingUtils.toLowerCamelCase(column))));
+        if (constraintName != null) {
+            named.append(NamingUtils.capitalize(NamingUtils.toLowerCamelCase(constraintName.replaceAll("[^A-Za-z0-9_]", "_"))));
+        }
         return named.toString();
     }
 
@@ -267,22 +320,22 @@ public class SchemaInfo {
     private void addReverseFk(String toTable, ReverseFkInfo relation) {
         String baseKey = toTable + "." + fkFieldName(relation.childTable());
         List<ReverseFkInfo> group = reverseFkGroups.computeIfAbsent(baseKey, k -> new ArrayList<>());
-        if (group.contains(relation)) {
+        if (group.stream().anyMatch(member -> member.sameKeyAs(relation))) {
             return;
         }
-        group.forEach(member -> reverseFks.remove(reverseFkKey(baseKey, member, group.size() > 1)));
+        reverseKeys(baseKey, group).forEach(reverseFks::remove);
         group.add(relation);
-        group.forEach(member -> reverseFks.put(reverseFkKey(baseKey, member, group.size() > 1), member));
+        List<String> names = reverseKeys(baseKey, group);
+        for (int member = 0; member < group.size(); member++) {
+            reverseFks.put(names.get(member), group.get(member));
+        }
     }
 
-    private static String reverseFkKey(String baseKey, ReverseFkInfo relation, boolean shared) {
-        if (!shared) {
-            return baseKey;
-        }
-        StringBuilder key = new StringBuilder(baseKey);
-        relation.fkColumns().forEach(column ->
-                key.append(NamingUtils.capitalize(NamingUtils.toLowerCamelCase(column))));
-        return key.toString();
+    private static List<String> reverseKeys(String baseKey, List<ReverseFkInfo> group) {
+        List<String> candidates = group.stream().map(relation -> group.size() < 2 ? baseKey : columnsName(baseKey,
+                relation.fkColumns(),
+                sharesColumns(relation, group, ReverseFkInfo::fkColumns) ? relation.constraintName() : null)).toList();
+        return distinct(candidates, group.stream().map(ReverseFkInfo::constraintName).toList());
     }
 
     /**
@@ -492,22 +545,42 @@ public class SchemaInfo {
     /**
      * A key's target. {@code refSchema} is set only by a loader that reads a whole database at once, where
      * the key may name a schema other than its own; it is null once the schemas are merged and
-     * {@code refTable} is the qualified name.
+     * {@code refTable} is the qualified name. {@code constraintName} is the name the database gives the key; null
+     * when it names none.
      */
-    public record FkInfo(List<String> fkColumns, String refTable, List<String> refColumns, String refSchema) {
+    public record FkInfo(List<String> fkColumns, String refTable, List<String> refColumns, String refSchema,
+                         String constraintName) {
+        public FkInfo(List<String> fkColumns, String refTable, List<String> refColumns, String refSchema) {
+            this(fkColumns, refTable, refColumns, refSchema, null);
+        }
         public FkInfo(List<String> fkColumns, String refTable, List<String> refColumns) {
-            this(fkColumns, refTable, refColumns, null);
+            this(fkColumns, refTable, refColumns, null, null);
         }
         /** Convenience for single-column FK */
         public String fkColumn() { return fkColumns.get(0); }
         public String refColumn() { return refColumns.get(0); }
         public boolean isComposite() { return fkColumns.size() > 1; }
+        /** The same key, whatever it is named: a duplicate constraint is one relationship. */
+        boolean sameKeyAs(FkInfo other) {
+            return fkColumns.equals(other.fkColumns) && refTable.equals(other.refTable)
+                    && refColumns.equals(other.refColumns) && Objects.equals(refSchema, other.refSchema);
+        }
     }
-    public record ReverseFkInfo(String childTable, List<String> fkColumns, List<String> refColumns) {
+    /** {@code constraintName} is the name the database gives the key; null when it names none. */
+    public record ReverseFkInfo(String childTable, List<String> fkColumns, List<String> refColumns,
+                                String constraintName) {
+        public ReverseFkInfo(String childTable, List<String> fkColumns, List<String> refColumns) {
+            this(childTable, fkColumns, refColumns, null);
+        }
         /** Convenience for single-column FK */
         public String fkColumn() { return fkColumns.get(0); }
         public String refColumn() { return refColumns.get(0); }
         public boolean isComposite() { return fkColumns.size() > 1; }
+        /** The same key, whatever it is named: a duplicate constraint is one relationship. */
+        boolean sameKeyAs(ReverseFkInfo other) {
+            return childTable.equals(other.childTable) && fkColumns.equals(other.fkColumns)
+                    && refColumns.equals(other.refColumns);
+        }
     }
     public record ComputedField(String functionName, String returnType) {}
 

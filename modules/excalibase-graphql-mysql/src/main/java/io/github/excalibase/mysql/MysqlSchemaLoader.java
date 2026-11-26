@@ -219,10 +219,11 @@ public class MysqlSchemaLoader implements SchemaLoader {
             SchemaInfo info = infoOf.apply(first.schema());
             if (info == null) continue;
             if (columns.size() == 1) {
-                info.addForeignKey(first.table(), first.column(), first.refSchema(), first.refTable(), first.refColumn());
+                info.addForeignKey(first.table(), first.column(), first.refSchema(), first.refTable(), first.refColumn(),
+                        first.constraint());
             } else {
                 info.addCompositeForeignKey(first.table(), columns.stream().map(KeyColumn::column).toList(),
-                        first.refSchema(), first.refTable(), columns.stream().map(KeyColumn::refColumn).toList());
+                        first.refSchema(), first.refTable(), columns.stream().map(KeyColumn::refColumn).toList(), first.constraint());
             }
         }
     }

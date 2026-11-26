@@ -73,9 +73,10 @@ final class MultiSchemaLoader {
                 String compoundTo = findCompoundKey(target, fk, schemaList, schema);
                 if (compoundTo != null && target.hasTable(compoundFrom)) {
                     if (fk.isComposite()) {
-                        target.addCompositeForeignKey(compoundFrom, fk.fkColumns(), compoundTo, fk.refColumns());
+                        target.addCompositeForeignKey(compoundFrom, fk.fkColumns(), null, compoundTo, fk.refColumns(),
+                                fk.constraintName());
                     } else {
-                        target.addForeignKey(compoundFrom, fk.fkColumn(), compoundTo, fk.refColumn());
+                        target.addForeignKey(compoundFrom, fk.fkColumn(), null, compoundTo, fk.refColumn(), fk.constraintName());
                     }
                 }
             }

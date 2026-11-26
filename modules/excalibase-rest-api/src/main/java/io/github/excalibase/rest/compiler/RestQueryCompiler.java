@@ -22,6 +22,7 @@ import java.util.*;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Function;
 import java.util.function.UnaryOperator;
+import java.util.stream.Collectors;
 
 import static io.github.excalibase.compiler.SqlKeywords.*;
 
@@ -1174,9 +1175,10 @@ public class RestQueryCompiler {
             SchemaInfo.FkInfo fk = e.getValue();
             if (!matchesFk(e.getKey(), tablePrefix, fk.fkColumn(), null, fk.refTable(), relName)) continue;
             fitsWithoutHint = true;
-            if (fkHint == null || fk.fkColumns().contains(fkHint)) fits.add(fk);
+            if (fkHint == null || fk.fkColumns().contains(fkHint) || fkHint.equals(fk.constraintName())) fits.add(fk);
         }
-        return only(fits, fitsWithoutHint, relName, fkHint, SchemaInfo.FkInfo::refTable, SchemaInfo.FkInfo::fkColumns);
+        return only(fits, fitsWithoutHint, relName, fkHint, new Keys<>(SchemaInfo.FkInfo::refTable, SchemaInfo.FkInfo::fkColumns,
+                SchemaInfo.FkInfo::constraintName));
     }
 
     private SchemaInfo.ReverseFkInfo findReverseFk(String table, String relName, String fkHint) {
@@ -1187,42 +1189,48 @@ public class RestQueryCompiler {
             SchemaInfo.ReverseFkInfo rfk = e.getValue();
             if (!matchesFk(e.getKey(), tablePrefix, rfk.fkColumn(), null, rfk.childTable(), relName)) continue;
             fitsWithoutHint = true;
-            if (fkHint == null || rfk.fkColumns().contains(fkHint)) fits.add(rfk);
+            if (fkHint == null || rfk.fkColumns().contains(fkHint) || fkHint.equals(rfk.constraintName())) fits.add(rfk);
         }
-        return only(fits, fitsWithoutHint, relName, fkHint, SchemaInfo.ReverseFkInfo::childTable,
-                SchemaInfo.ReverseFkInfo::fkColumns);
+        return only(fits, fitsWithoutHint, relName, fkHint, new Keys<>(SchemaInfo.ReverseFkInfo::childTable,
+                SchemaInfo.ReverseFkInfo::fkColumns, SchemaInfo.ReverseFkInfo::constraintName));
     }
+
+    /** What names a key: the table it leads to, its columns, and the name the database gives it. */
+    private record Keys<T>(Function<T, String> table, Function<T, List<String>> columns,
+                           Function<T, String> constraint) {}
 
     /**
      * Embed names that each pick exactly one of {@code fits}: the table, schema-qualified, when it has one key, and
-     * the table with a column hint when it has several. Keys into one table are told apart by column alone.
+     * the table with a hint when it has several: a column of the key, or its constraint name when the columns
+     * cannot tell it from its fellows.
      */
-    private static <T> List<String> options(List<T> fits, String relName, Function<T, String> table,
-                                            Function<T, List<String>> columns) {
-        Function<T, String> column = fit -> hintColumn(fit, fits, table, columns);
-        if (fits.stream().map(table).distinct().count() == 1) {
-            return fits.stream().map(fit -> relName + "!" + column.apply(fit)).toList();
+    private static <T> List<String> options(List<T> fits, String relName, Keys<T> keys) {
+        Function<T, String> hint = fit -> hintFor(fit, fits, keys);
+        if (fits.stream().map(keys.table()).distinct().count() == 1) {
+            return fits.stream().map(fit -> relName + "!" + hint.apply(fit)).toList();
         }
         Map<String, Long> keysPerTable = fits.stream().collect(
-                java.util.stream.Collectors.groupingBy(table, LinkedHashMap::new, java.util.stream.Collectors.counting()));
-        return fits.stream().map(fit -> keysPerTable.get(table.apply(fit)) == 1 ? table.apply(fit)
-                : table.apply(fit) + "!" + column.apply(fit)).toList();
+                Collectors.groupingBy(keys.table(), LinkedHashMap::new, Collectors.counting()));
+        return fits.stream().map(fit -> keysPerTable.get(keys.table().apply(fit)) == 1 ? keys.table().apply(fit)
+                : keys.table().apply(fit) + "!" + hint.apply(fit)).toList();
     }
 
     /**
-     * The column that names one key among the keys into its table: the first of its columns no other of them uses, so
-     * keys sharing a leading column are told apart by the one they differ in. A key with none keeps its first column.
+     * The hint that names one key among the keys into its table: the first of its columns no other of them uses, so
+     * keys sharing a leading column are told apart by the one they differ in. A key with none is named by its
+     * constraint, else keeps its first column.
      */
-    private static <T> String hintColumn(T fit, List<T> fits, Function<T, String> table,
-                                         Function<T, List<String>> columns) {
-        return columns.apply(fit).stream()
-                .filter(column -> fits.stream().filter(other -> other != fit && table.apply(other).equals(table.apply(fit)))
-                        .noneMatch(other -> columns.apply(other).contains(column)))
-                .findFirst().orElse(columns.apply(fit).getFirst());
+    private static <T> String hintFor(T fit, List<T> fits, Keys<T> keys) {
+        List<String> columns = keys.columns().apply(fit);
+        return columns.stream()
+                .filter(column -> fits.stream()
+                        .filter(other -> other != fit && keys.table().apply(other).equals(keys.table().apply(fit)))
+                        .noneMatch(other -> keys.columns().apply(other).contains(column)))
+                .findFirst()
+                .orElseGet(() -> keys.constraint().apply(fit) != null ? keys.constraint().apply(fit) : columns.getFirst());
     }
 
-    private static <T> T only(List<T> fits, boolean relationExists, String relName, String fkHint,
-                              Function<T, String> table, Function<T, List<String>> column) {
+    private static <T> T only(List<T> fits, boolean relationExists, String relName, String fkHint, Keys<T> keys) {
         if (fits.isEmpty()) {
             if (relationExists && fkHint != null) {
                 throw new DataErrorException(DataError.unknownRelationshipHint(relName, fkHint));
@@ -1230,7 +1238,7 @@ public class RestQueryCompiler {
             return null;
         }
         if (fits.size() > 1) {
-            throw new DataErrorException(DataError.ambiguousRelationship(relName, options(fits, relName, table, column)));
+            throw new DataErrorException(DataError.ambiguousRelationship(relName, options(fits, relName, keys)));
         }
         return fits.getFirst();
     }

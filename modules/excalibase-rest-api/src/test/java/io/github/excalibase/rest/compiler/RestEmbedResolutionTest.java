@@ -9,11 +9,17 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.catchThrowableOfType;
 
 /** Which relationship an embed names: one, a schema-qualified one, or an answer saying it cannot tell. (EXC-776) */
 class RestEmbedResolutionTest {
 
     private static final String DOCS = "a.docs";
+    private static final String GCHILD = "a.gchild";
+    private static final String GPARENT = "a.gparent";
+    private static final String GPARENT_RELATION = "gparent";
+    private static final String BY_PK = "by_pk";
+    private static final String BY_ALT = "by_alt";
 
     private static SchemaInfo schema() {
         SchemaInfo schema = new SchemaInfo();
@@ -40,6 +46,45 @@ class RestEmbedResolutionTest {
         return schema;
     }
 
+    private static SchemaInfo sameColumnsSchema() {
+        SchemaInfo schema = new SchemaInfo();
+        for (String table : List.of(GPARENT, GCHILD)) {
+            schema.addColumn(table, "id", "integer");
+            schema.setTableSchema(table, "a");
+            schema.addPrimaryKey(table, "id");
+        }
+        for (String column : List.of("c", "d", "x", "y")) {
+            schema.addColumn(GPARENT, column, "integer");
+        }
+        schema.addColumn(GCHILD, "x", "integer");
+        schema.addColumn(GCHILD, "y", "integer");
+        schema.addCompositeForeignKey(GCHILD, List.of("x", "y"), null, GPARENT, List.of("id", "c"), BY_PK);
+        schema.addCompositeForeignKey(GCHILD, List.of("x", "y"), null, GPARENT, List.of("c", "d"), BY_ALT);
+        return schema;
+    }
+
+    private static String sameColumnsSql(String table, String relation, String hint) {
+        var compiler = new RestQueryCompiler(sameColumnsSchema(), new PostgresDialect(), "a", 30);
+        return compiler.compileSelect(new RestQueryCompiler.SelectQuery(table, List.of("id"), List.of(), List.of(),
+                List.of(new RestQueryCompiler.EmbedSpec(relation, List.of("id"), hint)), List.of(), 10, 0, false)).sql();
+    }
+
+    @Test
+    void keysOverTheSameColumns_areAmbiguous_andNameTheirConstraints() {
+        var refused = catchThrowableOfType(DataErrorException.class,
+                () -> sameColumnsSql(GCHILD, GPARENT_RELATION, null));
+
+        assertThat(refused.error().code()).isEqualTo(DataError.AMBIGUOUS_RELATIONSHIP);
+        assertThat(refused.error().message()).contains(GPARENT_RELATION + "!" + BY_PK, GPARENT_RELATION + "!" + BY_ALT);
+    }
+
+    @Test
+    void aConstraintNameHint_picksOneKey_forwardAndReverse() {
+        assertThat(sameColumnsSql(GCHILD, GPARENT_RELATION, BY_ALT)).contains("\"c\"").contains("\"d\"");
+        assertThat(sameColumnsSql(GCHILD, GPARENT_RELATION, BY_PK)).doesNotContain("\"d\"");
+        assertThat(sameColumnsSql(GPARENT, "gchild", BY_ALT)).contains("\"d\"");
+    }
+
     private static String sql(String table, String relation, String hint) {
         var compiler = new RestQueryCompiler(schema(), new PostgresDialect(), "a", 30);
         return compiler.compileSelect(new RestQueryCompiler.SelectQuery(table, List.of("id"), List.of(), List.of(),
@@ -47,7 +92,7 @@ class RestEmbedResolutionTest {
     }
 
     private static DataError refusal(String table, String relation, String hint) {
-        return org.assertj.core.api.Assertions.catchThrowableOfType(DataErrorException.class,
+        return catchThrowableOfType(DataErrorException.class,
                 () -> sql(table, relation, hint)).error();
     }
 
@@ -115,7 +160,7 @@ class RestEmbedResolutionTest {
                         new RestQueryCompiler.EmbedSpec("users", List.of("id"), "updated_by")),
                 List.of(), 10, 0, false);
 
-        DataErrorException refused = org.assertj.core.api.Assertions.catchThrowableOfType(DataErrorException.class,
+        DataErrorException refused = catchThrowableOfType(DataErrorException.class,
                 () -> compiler.compileSelect(query));
 
         assertThat(refused.error().code()).isEqualTo(DataError.EMBED_KEY_COLLISION);
