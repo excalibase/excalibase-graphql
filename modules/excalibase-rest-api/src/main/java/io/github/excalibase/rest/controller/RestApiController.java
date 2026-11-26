@@ -11,6 +11,7 @@ import io.github.excalibase.errors.DataErrorException;
 import io.github.excalibase.errors.DataErrors;
 import io.github.excalibase.rest.compiler.RestQueryCompiler;
 import io.github.excalibase.rest.service.OpenApiGenerator;
+import io.github.excalibase.rest.parser.EmbedParams;
 import io.github.excalibase.rest.parser.FilterParser;
 import io.github.excalibase.rest.parser.OrderParser;
 import io.github.excalibase.rest.parser.SelectParser;
@@ -685,11 +686,14 @@ public class RestApiController {
 
     private ParsedParams parseSelectParams(String select, String order, Map<String, List<String>> allParams) {
         var selectResult = SelectParser.parse(select, strictSelectNames);
+        Set<String> embedPaths = EmbedParams.paths(selectResult.embeds());
+        Map<String, List<String>> filterParams = new LinkedHashMap<>(allParams);
+        filterParams.keySet().removeIf(param -> EmbedParams.isEmbedParam(param, embedPaths));
         return new ParsedParams(
             selectResult.columns(),
-            parseFilters(allParams),
+            parseFilters(filterParams),
             parseOrConditions(allParams),
-            selectResult.embeds().stream().map(RestApiController::toCompilerEmbed).toList(),
+            selectResult.embeds().stream().map(embed -> toCompilerEmbed(embed, "", allParams)).toList(),
             OrderParser.parse(order).stream().map(o -> new RestQueryCompiler.OrderBySpec(o.column(), o.direction(), o.nulls())).toList());
     }
 
@@ -863,9 +867,15 @@ public class RestApiController {
         return ctx.compiler().shapeOf(ctx.tableKey(), parsed.columns, parsed.embeds);
     }
 
-    private static RestQueryCompiler.EmbedSpec toCompilerEmbed(SelectParser.EmbedSpec e) {
-        List<RestQueryCompiler.EmbedSpec> children = e.children().stream().map(RestApiController::toCompilerEmbed).toList();
-        return new RestQueryCompiler.EmbedSpec(e.relationName(), e.columns(), e.fkHint(), children, e.alias());
+    private static RestQueryCompiler.EmbedSpec toCompilerEmbed(SelectParser.EmbedSpec e, String parentPath,
+                                                               Map<String, List<String>> params) {
+        String path = parentPath + (e.alias() != null ? e.alias() : e.relationName());
+        List<RestQueryCompiler.EmbedSpec> children = e.children().stream()
+                .map(child -> toCompilerEmbed(child, path + ".", params)).toList();
+        List<RestQueryCompiler.OrderBySpec> order = EmbedParams.order(path, params).stream()
+                .map(o -> new RestQueryCompiler.OrderBySpec(o.column(), o.direction(), o.nulls())).toList();
+        return new RestQueryCompiler.EmbedSpec(e.relationName(), e.columns(), e.fkHint(), children, e.alias(),
+                order, EmbedParams.limit(path, params));
     }
 
     /** A refusal shaped like every other error the data API answers: a code, a message, and the message as error. */

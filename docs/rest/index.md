@@ -120,6 +120,15 @@ A `!column` that names no key of an existing relationship is `400 unknown_relati
 its schema comes back under the table name (`users`), unless another embed of the same select has that name, when it
 keeps the name as written (`tenant_b.users`).
 
+An embedded list takes its own order and limit, named by the embed's key (its alias, or its name):
+`select=*,posts(*)&posts.order=created_at.desc&posts.limit=3`. Nested embeds chain the keys, `posts.comments.limit=2`.
+A limit never exceeds the row cap; an order column the table lacks is refused.
+
+The top-level `order` is refused the same way. An order column the table lacks answers `400` instead of being
+ignored: that covers a column the role cannot see, an empty segment (`order=id.desc,,name`) and an embed in the order
+(`order=author(name)`). This matches PostgREST. Before, the unknown part was dropped and the rows came back in
+another order.
+
 ## Worked example
 
 A complete read-path query — filter by enum + numeric range, order, paginate,
