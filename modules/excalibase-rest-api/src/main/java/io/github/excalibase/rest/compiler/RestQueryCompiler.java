@@ -77,8 +77,9 @@ public class RestQueryCompiler {
             this(group.allFilters(), group);
         }
     }
+    /** {@code orderBy} and {@code limit} shape an embedded list: its own order, and its own cut within the row cap. */
     public record EmbedSpec(String relationName, List<String> columns, String fkHint, List<EmbedSpec> children,
-                            String alias) {
+                            String alias, List<OrderBySpec> orderBy, Integer limit) {
         public EmbedSpec(String relationName, List<String> columns) {
             this(relationName, columns, null, List.of(), null);
         }
@@ -87,6 +88,10 @@ public class RestQueryCompiler {
         }
         public EmbedSpec(String relationName, List<String> columns, String fkHint, List<EmbedSpec> children) {
             this(relationName, columns, fkHint, children, null);
+        }
+        public EmbedSpec(String relationName, List<String> columns, String fkHint, List<EmbedSpec> children,
+                         String alias) {
+            this(relationName, columns, fkHint, children, alias, List.of(), null);
         }
     }
     public record SelectQuery(
@@ -159,8 +164,8 @@ public class RestQueryCompiler {
         Set<String> knownCols = new HashSet<>(schemaInfo.getColumns(query.table()));
         requirePermittedSelect(query, knownCols);
         List<String> columns = query.columns().stream().filter(knownCols::contains).toList();
-        List<OrderBySpec> orderBy = query.orderBy() != null ? query.orderBy().stream()
-                .filter(o -> knownCols.contains(o.column())).toList() : null;
+        List<OrderBySpec> orderBy = query.orderBy();
+        requireKnownOrderColumns(query.table(), orderBy, knownCols);
         requireKnownFilterColumns(query.table(), query.filters());
         if (query.orConditions() != null) {
             query.orConditions().forEach(or -> requireKnownFilterColumns(query.table(), or.conditions()));
@@ -746,11 +751,43 @@ public class RestQueryCompiler {
         return dialect.jsonValue(alias + DOT + dialect.quoteIdentifier(column), schemaInfo.getColumnType(table, column));
     }
 
-    /** {@code LIMIT n} on an embedded list: the caller's own row limit; with nested lists capped, within the engine's row cap too. */
+    /** The most rows an embedded list may hold: the caller's own row limit, and with nested lists capped, the engine's cap too; null when unbounded. */
+    private Integer nestedCeiling(String table) {
+        return capNestedLists ? Integer.valueOf(capped(table, defaultMaxRows)) : access.rowLimit(table);
+    }
+
+    /** {@code LIMIT n} on an embedded list: its ceiling, or none. */
     private String roleLimit(String table) {
-        if (capNestedLists) return LIMIT + capped(table, defaultMaxRows);
-        Integer limit = access.rowLimit(table);
-        return limit == null ? "" : LIMIT + limit;
+        Integer ceiling = nestedCeiling(table);
+        return ceiling == null ? "" : LIMIT + ceiling;
+    }
+
+    /** The embedded list's {@code ORDER BY}; a column the table lacks is refused, never ignored. */
+    private String embedOrder(String table, EmbedSpec embed, String alias) {
+        if (embed.orderBy() == null || embed.orderBy().isEmpty()) return "";
+        Set<String> known = schemaInfo.getColumns(table);
+        List<String> parts = new ArrayList<>();
+        for (OrderBySpec spec : embed.orderBy()) {
+            if (!known.contains(spec.column())) {
+                throw new IllegalArgumentException("Unknown column '" + spec.column() + "' on " + table);
+            }
+            String column = alias + DOT + dialect.quoteIdentifier(spec.column());
+            String direction = validateDirection(spec.direction());
+            parts.add(spec.nulls() == null ? column + SPACE + direction
+                    : dialect.orderByNulls(column, direction, validateNulls(spec.nulls())));
+        }
+        return ORDER_BY + String.join(COMMA_SEP, parts);
+    }
+
+    /** The embedded list's {@code LIMIT}: the caller's own, never above its ceiling. */
+    private String embedLimit(String table, EmbedSpec embed) {
+        Integer ceiling = nestedCeiling(table);
+        if (embed.limit() == null) {
+            // MySQL drops the ORDER BY of a subquery that has no LIMIT, so an ordered list always carries one.
+            boolean ordered = embed.orderBy() != null && !embed.orderBy().isEmpty();
+            return ceiling == null && ordered ? LIMIT + Integer.MAX_VALUE : roleLimit(table);
+        }
+        return LIMIT + (ceiling == null ? embed.limit() : Math.min(embed.limit(), ceiling));
     }
 
     /** The select's rows capped by the caller's own row limit on {@code table}. */
@@ -779,6 +816,15 @@ public class RestQueryCompiler {
         named.stream().filter(column -> !knownCols.contains(column)).findFirst().ifPresent(column -> {
             throw new IllegalArgumentException("Unknown column '" + column + "' on " + query.table());
         });
+    }
+
+    /** An order by a column the table lacks is refused, as an embed's is: dropping it would answer in another order. */
+    private static void requireKnownOrderColumns(String table, List<OrderBySpec> orderBy, Set<String> knownCols) {
+        if (orderBy == null) return;
+        orderBy.stream().map(OrderBySpec::column).filter(column -> !knownCols.contains(column)).findFirst()
+                .ifPresent(column -> {
+                    throw new IllegalArgumentException("Unknown column '" + column + "' on " + table);
+                });
     }
 
     /** A filter on a column the table lacks is refused, with or without permissions: a typo must not match every row. */
@@ -1004,7 +1050,8 @@ public class RestQueryCompiler {
             String ia = ALIAS_R + counter.getAndIncrement();
             String oa = ALIAS_R + counter.getAndIncrement();
             var fwd = findForwardFk(table, embed.relationName(), embed.fkHint());
-            var keyed = new EmbedSpec(keys.get(position), embed.columns(), embed.fkHint(), embed.children());
+            var keyed = new EmbedSpec(keys.get(position), embed.columns(), embed.fkHint(), embed.children(), embed.alias(),
+                    embed.orderBy(), embed.limit());
             if (fwd != null) entries.add(buildForwardEmbed(keyed, fwd, ia, oa, parentAlias, counter, params));
             else {
                 var rev = findReverseFk(table, embed.relationName(), embed.fkHint());
@@ -1054,8 +1101,8 @@ public class RestQueryCompiler {
         // RLS on the embedded child table (aliased ia) — same leak guard as forward.
         StringBuilder ew = new StringBuilder(columnPairs(ia, rev.fkColumns(), parentAlias, rev.refColumns()));
         appendRls(ew, rev.childTable(), ia, RlsOp.SELECT, params);
-        String children = parens(innerSel + FROM + childTable + SPACE + ia + WHERE + ew + roleLimit(rev.childTable()))
-                + SPACE + oa;
+        String children = parens(innerSel + FROM + childTable + SPACE + ia + WHERE + ew
+                + embedOrder(rev.childTable(), embed, ia) + embedLimit(rev.childTable(), embed)) + SPACE + oa;
         if (!dialect.supportsRowToJson()) {
             return dialect.stringLiteral(embed.relationName()) + COMMA_SEP
                     + parens(SELECT + dialect.coalesceArray(dialect.aggregateArray(rowExpr)) + FROM + children);
