@@ -67,6 +67,7 @@ public class GraphqlSchemaManager implements SchemaProvider, AccessPlans, Projec
     private final int maxRows;
     private final boolean capNestedLists;
     private final String databaseType;
+    private final boolean documentMode;
     private final int maxQueryDepth;
     private final ReservedSchemas reservedSchemas;
     private final DynamicDataSourceManager dataSourceManager;
@@ -153,6 +154,7 @@ public class GraphqlSchemaManager implements SchemaProvider, AccessPlans, Projec
         this.jdbcTemplate = jdbcTemplate;
         this.maxRows = maxRows;
         this.databaseType = databaseType;
+        this.documentMode = QueryEngineFactory.serves(databaseType);
         this.maxQueryDepth = maxQueryDepth;
         this.reservedSchemas = ReservedSchemas.fromConfig(reservedSchemasConfig);
         this.dataSourceManager = dataSourceManager;
@@ -206,7 +208,7 @@ public class GraphqlSchemaManager implements SchemaProvider, AccessPlans, Projec
 
     /** True when the configured database is a document database: it has no SQL schema, plan or compiler. */
     public boolean documentMode() {
-        return QueryEngineFactory.serves(databaseType);
+        return documentMode;
     }
 
     /** Reflects the configured database at start. One that cannot be read is served as an empty schema. */
@@ -448,6 +450,9 @@ public class GraphqlSchemaManager implements SchemaProvider, AccessPlans, Projec
     @Override
     public Optional<RealtimeAccess> realtime(String orgSlug, String projectId, Principal principal,
                                              String subscriptionKey) {
+        if (documentMode) {
+            throw new SurfaceNotServedException("Realtime is not served for " + databaseType + " databases yet");
+        }
         EngineState state = resolveEngineState(orgSlug, projectId, principal);
         if (state == null) {
             return Optional.empty();

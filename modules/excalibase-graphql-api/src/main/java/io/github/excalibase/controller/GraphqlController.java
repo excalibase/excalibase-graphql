@@ -24,6 +24,7 @@ import io.github.excalibase.security.PermissionCheckFailedException;
 import io.github.excalibase.security.PermissionErrors;
 import io.github.excalibase.security.Principal;
 import io.github.excalibase.security.SecurityConstants;
+import io.github.excalibase.security.UnknownProjectException;
 import io.github.excalibase.service.QueryExecutionService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -31,7 +32,6 @@ import io.github.excalibase.http.Reply;
 import io.micronaut.http.HttpResponse;
 import io.micronaut.http.HttpStatus;
 import io.micronaut.core.annotation.Nullable;
-import jakarta.inject.Inject;
 import io.micronaut.http.HttpRequest;
 import io.micronaut.http.annotation.Body;
 import io.micronaut.http.annotation.Controller;
@@ -41,6 +41,7 @@ import io.micronaut.http.annotation.Post;
 import io.micronaut.http.annotation.Produces;
 import io.micronaut.scheduling.TaskExecutors;
 import io.micronaut.scheduling.annotation.ExecuteOn;
+import jakarta.inject.Inject;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 
 import java.sql.SQLException;
@@ -128,7 +129,7 @@ public class GraphqlController {
                 ? (Map<String, Object>) request.get(VARIABLES_KEY) : Map.of();
 
         if (documentEngines != null) {
-            return observability.observe(query, null, () -> documentAnswer(documentEngines, principal, query, variables));
+            return observability.observe(query, null, () -> documentAnswer(documentEngines, projectId, principal, query, variables));
         }
 
         final String finalUserId = userId;
@@ -167,15 +168,18 @@ public class GraphqlController {
     }
 
     /** A document database's answer: its engine enforces the permission document itself, for every role. */
-    private HttpResponse<Object> documentAnswer(DocumentEngines engines, Principal principal, String query,
-                                                Map<String, Object> variables) {
+    private HttpResponse<Object> documentAnswer(DocumentEngines engines, String projectId, Principal principal,
+                                                String query, Map<String, Object> variables) {
         Principal caller = principal == null ? Principal.anonymous() : principal;
         if (caller.bypass()) {
             return Reply.status(HttpStatus.FORBIDDEN).body(Map.of(ERRORS_KEY, List.of(PermissionErrors.graphqlError(
                     "service_role_unsupported", "The service role is not served on this database yet"))));
         }
         try {
-            return Reply.ok(engines.execute(query, variables, caller));
+            return Reply.ok(engines.execute(projectId, query, variables, caller));
+        } catch (UnknownProjectException e) {
+            return Reply.status(HttpStatus.NOT_FOUND).body(Map.of(ERRORS_KEY, List.of(
+                    PermissionErrors.graphqlError("project_not_found", "Project not found"))));
         } catch (Exception e) {
             return errorResponse(e, null);
         }

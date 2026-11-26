@@ -86,8 +86,14 @@ A request without the session variable a filter needs is refused, and returns no
 
 ## Known limits
 
+- One project per engine. A MongoDB or DocumentDB engine refuses to start in multi-tenant mode (a provisioning URL), and
+  answers `404 project_not_found` for any project but `APP_PROJECT_ID`. Per-project document databases are phase 4.
 - `service` tokens are refused on a MongoDB project (`403 service_role_unsupported`); there is no bypass.
-- The schema served to a role still lists every declared collection; a role with no permission reads nothing from it.
-- `/health` does not ping MongoDB yet; it reports UP without checking the database.
+- Introspection shows every declared collection and its field names to every role. A column a role may not read is removed
+  from that role's schema, but a collection a role has no permission on is still listed (with all its fields) and reads
+  as empty. Hiding such collections per role is phase 2.
+- Realtime and `graphql-ws` subscriptions answer `surface_not_served`.
+- `/health` pings MongoDB: a wrong or unreachable URI reports the engine down. The start logs a warning instead of
+  refusing, so an engine can start before its database does.
 - The native-image build has not been tried with the MongoDB driver; use the JVM image.
 - Reloading the permission document replaces the engine; a request in flight at that moment can fail once.

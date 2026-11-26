@@ -12,6 +12,7 @@ import io.github.excalibase.permissions.PermissionsUnavailableException;
 import io.github.excalibase.permissions.SelectPermission;
 import io.github.excalibase.permissions.TablePermissions;
 import io.github.excalibase.security.Principal;
+import io.github.excalibase.security.UnknownProjectException;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
@@ -92,16 +93,41 @@ class DocumentEnginesTest {
     void aNewDocumentVersionReplacesTheEngineAndARefusedOneAnswersUnavailable() {
         AtomicReference<PermissionSet> held = new AtomicReference<>(document(1, BoolExp.TRUE));
         try (DocumentEngines engines = engines(serving(held), PROJECT, collections.toString())) {
-            assertThat(engines.execute(QUERY, Map.of(), user())).containsKey("data");
+            assertThat(engines.execute(PROJECT, QUERY, Map.of(), user())).containsKey("data");
 
             var unsupported = new BoolExp.Not(new ColumnCompare("owner", ComparisonOperator.EQ, new Literal("x")));
             held.set(document(2, unsupported));
 
-            assertThatThrownBy(() -> engines.execute(QUERY, Map.of(), user()))
+            assertThatThrownBy(() -> engines.execute(PROJECT, QUERY, Map.of(), user()))
                     .isInstanceOf(PermissionsUnavailableException.class);
 
             held.set(document(3, BoolExp.TRUE));
-            assertThat(engines.execute(QUERY, Map.of(), user())).containsKey("data");
+            assertThat(engines.execute(PROJECT, QUERY, Map.of(), user())).containsKey("data");
+        }
+    }
+
+    @Test
+    void aRequestForAnotherProjectIsRefusedNeverServedFromThisOne() {
+        AtomicReference<PermissionSet> held = new AtomicReference<>(document(1, BoolExp.TRUE));
+        try (DocumentEngines engines = engines(serving(held), PROJECT, collections.toString())) {
+            assertThatThrownBy(() -> engines.execute("other", QUERY, Map.of(), user()))
+                    .isInstanceOf(UnknownProjectException.class);
+        }
+    }
+
+    @Test
+    void healthFollowsTheDatabaseTheEngineReaches() {
+        AtomicReference<PermissionSet> held = new AtomicReference<>(document(1, BoolExp.TRUE));
+        DocumentEngines engines = new DocumentEngines(CountingProvider.TYPE, "", "app", collections.toString(), 1000, 30,
+                PROJECT, serving(held));
+        try {
+            CountingProvider.HEALTHY.set(true);
+            assertThat(engines.healthy()).isTrue();
+            CountingProvider.HEALTHY.set(false);
+            assertThat(engines.healthy()).isFalse();
+        } finally {
+            CountingProvider.HEALTHY.set(true);
+            engines.close();
         }
     }
 
@@ -113,12 +139,12 @@ class DocumentEnginesTest {
         DocumentEngines engines = new DocumentEngines(CountingProvider.TYPE, "", "app", collections.toString(), 1000, 30,
                 PROJECT, serving(held));
 
-        engines.execute(QUERY, Map.of(), user());
-        engines.execute(QUERY, Map.of(), user());
+        engines.execute(PROJECT, QUERY, Map.of(), user());
+        engines.execute(PROJECT, QUERY, Map.of(), user());
         assertThat(CountingProvider.BUILT.get() - builtBefore).as("same version, one engine").isEqualTo(1);
 
         held.set(document(2, BoolExp.TRUE));
-        engines.execute(QUERY, Map.of(), user());
+        engines.execute(PROJECT, QUERY, Map.of(), user());
         assertThat(CountingProvider.BUILT.get() - builtBefore).isEqualTo(2);
         assertThat(CountingProvider.OPEN.get() - openBefore).as("the replaced engine is closed").isEqualTo(1);
 

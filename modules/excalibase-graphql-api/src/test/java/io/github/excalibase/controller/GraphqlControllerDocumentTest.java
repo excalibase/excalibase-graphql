@@ -106,6 +106,17 @@ class GraphqlControllerDocumentTest {
     }
 
     @Test
+    void aPathProjectThatIsNotThisDeploymentsIsAnswered404() {
+        MutableHttpRequest<Object> request = HttpRequest.POST("/other/graphql", "");
+        request.setAttribute(SecurityConstants.PRINCIPAL_ATTR, user());
+
+        HttpResponse<Object> answer = controller.graphql("other", Map.of("query", "{ orders { id } }"), request);
+
+        assertThat(answer.code()).isEqualTo(HttpStatus.NOT_FOUND.getCode());
+        verifyNoInteractions(schemaManager, executor);
+    }
+
+    @Test
     void permissionsThatCannotBeReadAreRefusedAs503() {
         served = null;
 

@@ -60,6 +60,14 @@ class EngineAvailabilityGuardTest {
     }
 
     @Test
+    void aDocumentDatabaseIsRefusedInMultiTenantModeUntilProjectsCanBringTheirOwn() {
+        EngineAvailabilityGuard guard = new EngineAvailabilityGuard("mongodb", "", "http://provisioning");
+
+        assertThatThrownBy(() -> guard.check(POSTGRES_ONLY))
+                .isInstanceOf(IllegalStateException.class).hasMessageContaining("multi-tenant");
+    }
+
+    @Test
     void aPostgresBuildRefusesAMysqlDatabaseAndNamesTheMysqlImage() {
         EngineAvailabilityGuard guard = new EngineAvailabilityGuard("mysql", "jdbc:mysql://db/app", NO_TENANTS);
         assertThatThrownBy(() -> guard.check(POSTGRES_ONLY))

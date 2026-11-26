@@ -6,6 +6,7 @@ import io.github.excalibase.spi.QueryEngineProvider;
 
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /** A document database that keeps no data and counts its engines, so a test can see one replaced and closed. */
@@ -13,7 +14,14 @@ public final class CountingProvider implements QueryEngineProvider {
 
     public static final String TYPE = "countingdb";
     static final AtomicInteger OPEN = new AtomicInteger();
+    public static final AtomicBoolean HEALTHY = new AtomicBoolean(true);
+    public static final AtomicInteger INSTANTIATED = new AtomicInteger();
     static final AtomicInteger BUILT = new AtomicInteger();
+
+    /** A ServiceLoader scan builds one of these, so the count shows whether a caller scans. */
+    public CountingProvider() {
+        INSTANTIATED.incrementAndGet();
+    }
 
     @Override
     public List<String> supportedTypes() {
@@ -28,6 +36,11 @@ public final class CountingProvider implements QueryEngineProvider {
             @Override
             public Map<String, Object> execute(String query, Map<String, Object> variables, UserContext caller) {
                 return Map.of("data", Map.of());
+            }
+
+            @Override
+            public boolean healthy() {
+                return HEALTHY.get();
             }
 
             @Override

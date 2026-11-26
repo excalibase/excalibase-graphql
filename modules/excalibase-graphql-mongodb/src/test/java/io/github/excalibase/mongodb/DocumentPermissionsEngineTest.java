@@ -1,5 +1,9 @@
 package io.github.excalibase.mongodb;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import io.github.excalibase.permissions.BoolExp;
 import io.github.excalibase.permissions.BoolExp.ColumnCompare;
 import io.github.excalibase.permissions.ColumnSet;
@@ -12,6 +16,7 @@ import io.github.excalibase.permissions.TablePermissions;
 import io.github.excalibase.rls.UserContext;
 import io.github.excalibase.spi.QueryEngine;
 import org.junit.jupiter.api.Test;
+import org.slf4j.LoggerFactory;
 
 import java.util.HashMap;
 import java.util.List;
@@ -31,6 +36,7 @@ class DocumentPermissionsEngineTest extends AbstractEngineTest {
     private static final String OWNER = "owner";
     private static final String USER_ID_VARIABLE = "x-excalibase-user-id";
     private static final String WHERE = "$where";
+    private static final String ID_KEY = "id";
 
     @Override
     Backend backend() {
@@ -76,9 +82,9 @@ class DocumentPermissionsEngineTest extends AbstractEngineTest {
     void aRoleReadsOnlyTheDocumentsItsFilterAllows() {
         QueryEngine engine = engineFrom(document(select(USER, ownedByCaller(), ColumnSet.ALL)));
 
-        assertThat(rows(engine.execute(QUERY, Map.of(), caller(USER, "u1")), ORDERS)).extracting(r -> r.get("id"))
+        assertThat(rows(engine.execute(QUERY, Map.of(), caller(USER, "u1")), ORDERS)).extracting(r -> r.get(ID_KEY))
                 .containsExactlyInAnyOrder(ID_1, ID_2);
-        assertThat(rows(engine.execute(QUERY, Map.of(), caller(USER, "u2")), ORDERS)).extracting(r -> r.get("id"))
+        assertThat(rows(engine.execute(QUERY, Map.of(), caller(USER, "u2")), ORDERS)).extracting(r -> r.get(ID_KEY))
                 .containsExactlyInAnyOrder(ID_3, ID_4);
     }
 
@@ -123,7 +129,7 @@ class DocumentPermissionsEngineTest extends AbstractEngineTest {
         var filter = new ColumnCompare("status", ComparisonOperator.EQ, new Literal(WHERE));
         QueryEngine engine = engineFrom(document(select(USER, filter, ColumnSet.ALL)));
 
-        assertThat(rows(engine.execute(QUERY, Map.of(), caller(USER, "u1")), ORDERS)).extracting(r -> r.get("id"))
+        assertThat(rows(engine.execute(QUERY, Map.of(), caller(USER, "u1")), ORDERS)).extracting(r -> r.get(ID_KEY))
                 .containsExactly(ID_4);
     }
 
@@ -133,7 +139,7 @@ class DocumentPermissionsEngineTest extends AbstractEngineTest {
                 new ColumnCompare("status", ComparisonOperator.EQ, new Literal(WHERE))));
         QueryEngine engine = engineFrom(document(select(USER, filter, ColumnSet.ALL)));
 
-        assertThat(rows(engine.execute(QUERY, Map.of(), caller(USER, "u9")), ORDERS)).extracting(r -> r.get("id"))
+        assertThat(rows(engine.execute(QUERY, Map.of(), caller(USER, "u9")), ORDERS)).extracting(r -> r.get(ID_KEY))
                 .containsExactlyInAnyOrder(ID_1, ID_2, ID_4);
     }
 
@@ -149,5 +155,28 @@ class DocumentPermissionsEngineTest extends AbstractEngineTest {
     void permissionsAndHandWrittenPoliciesCannotBeMixed() {
         assertThatThrownBy(() -> engineWith(Map.of("permissions", document(), "openCollections", List.of("*"))))
                 .isInstanceOf(IllegalStateException.class).hasMessageContaining("permissions");
+    }
+
+    @Test
+    void aMissingSessionVariableIsRefusedWithoutAnErrorLinePerRequest() {
+        QueryEngine engine = engineFrom(document(select(USER, ownedByCaller(), ColumnSet.ALL)));
+        var logger = (Logger) LoggerFactory.getLogger(MongoQueryEngine.class);
+        var captured = new ListAppender<ILoggingEvent>();
+        captured.start();
+        logger.addAppender(captured);
+        try {
+            engine.execute(QUERY, Map.of(), caller(USER, null));
+        } finally {
+            logger.detachAppender(captured);
+        }
+
+        assertThat(captured.list).noneMatch(event -> event.getLevel().isGreaterOrEqual(Level.ERROR));
+    }
+
+    @Test
+    void theEngineAnswersAPingWhenTheDatabaseDoes() {
+        QueryEngine engine = engineFrom(document(select(USER, BoolExp.TRUE, ColumnSet.ALL)));
+
+        assertThat(engine.healthy()).isTrue();
     }
 }

@@ -84,4 +84,14 @@ class ProviderGuardTest {
         assertThatThrownBy(() -> provider.create(settings))
                 .isInstanceOf(IllegalStateException.class).hasMessageContaining("uri");
     }
+
+    @Test
+    void anEngineWhoseDatabaseCannotBeReachedIsNotHealthy() {
+        Map<String, Object> settings = settings();
+        settings.put("openCollections", List.of("*"));
+
+        try (var engine = new MongoQueryEngineProvider().create(settings)) {
+            assertThat(engine.healthy()).isFalse();
+        }
+    }
 }

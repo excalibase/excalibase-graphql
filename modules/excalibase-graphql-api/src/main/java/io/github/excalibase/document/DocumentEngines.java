@@ -5,6 +5,7 @@ import io.github.excalibase.permissions.PermissionProvider;
 import io.github.excalibase.permissions.PermissionSet;
 import io.github.excalibase.permissions.PermissionsUnavailableException;
 import io.github.excalibase.security.Principal;
+import io.github.excalibase.security.UnknownProjectException;
 import io.github.excalibase.spi.QueryEngine;
 import io.github.excalibase.spi.QueryEngineFactory;
 import io.micronaut.context.annotation.Context;
@@ -26,7 +27,8 @@ import java.util.concurrent.atomic.AtomicReference;
  * The engine of a document database (MongoDB, DocumentDB), built from the permission document the project is served
  * under. A new document version builds a new engine and closes the old one, so a rule change takes effect on the
  * next request and a rule that cannot be enforced is refused, never skipped. There is no service-role bypass here:
- * every role, the service role included, is judged by the document.
+ * the controller refuses the service role (403) before a request reaches the engine, and every other role is judged by
+ * the document. The engine serves its own project only; a request for another one is refused.
  */
 @Context
 @Requires(property = "app.database-type", pattern = "(?i)mongodb|documentdb")
@@ -75,7 +77,9 @@ public class DocumentEngines implements AutoCloseable {
     @PostConstruct
     void start() {
         try {
-            engineFor(projectId);
+            if (!engineFor(projectId).healthy()) {
+                log.warn("document_database_unreachable: the database does not answer a ping; /health reports it down");
+            }
         } catch (PermissionsUnavailableException e) {
             log.warn("document_permissions_not_loaded_yet: the first request builds the engine");
         }
@@ -84,9 +88,13 @@ public class DocumentEngines implements AutoCloseable {
     /**
      * Answers one GraphQL request as {@code principal} on this deployment's own project.
      *
+     * @throws UnknownProjectException {@code project} is not the project this deployment serves
      * @throws PermissionsUnavailableException the document cannot be read, or holds a rule that cannot be enforced
      */
-    public Map<String, Object> execute(String query, Map<String, Object> variables, Principal principal) {
+    public Map<String, Object> execute(String project, String query, Map<String, Object> variables, Principal principal) {
+        if (!projectId.equals(project)) {
+            throw new UnknownProjectException(String.valueOf(project));
+        }
         QueryEngine engine;
         try {
             engine = engineFor(projectId);
@@ -95,6 +103,16 @@ public class DocumentEngines implements AutoCloseable {
             throw new PermissionsUnavailableException("The permission document cannot be enforced", refused);
         }
         return engine.execute(query, variables, new RequestCaller(principal, projectId));
+    }
+
+    /** Whether the database answers now; false when no engine could be built yet (permissions not loaded, a refused rule). */
+    public boolean healthy() {
+        try {
+            return engineFor(projectId).healthy();
+        } catch (RuntimeException e) {
+            log.warn("document_health: no engine to ask ({})", e.getClass().getSimpleName());
+            return false;
+        }
     }
 
     private QueryEngine engineFor(String project) {

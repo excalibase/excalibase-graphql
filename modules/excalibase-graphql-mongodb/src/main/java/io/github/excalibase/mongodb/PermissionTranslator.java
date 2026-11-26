@@ -220,6 +220,10 @@ final class PermissionTranslator {
         List<String> texts = new ArrayList<>();
         for (Object item : items) {
             String text = scalar(kind, field, item, where);
+            if (text.startsWith(CLAIM_OPEN) || text.endsWith(CLAIM_CLOSE)) {
+                throw refuse(where, "a list value on \"" + field + "\" starts or ends like a claim ({{...}}), "
+                        + "which the joined list could turn into one");
+            }
             if (text.contains(",")) {
                 throw refuse(where, "a list value on \"" + field + "\" holds a comma, which the rule model would split");
             }

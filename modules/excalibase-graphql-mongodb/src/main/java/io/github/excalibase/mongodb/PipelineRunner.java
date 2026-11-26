@@ -9,6 +9,11 @@ interface PipelineRunner extends AutoCloseable {
 
     List<Document> run(String collection, List<Document> pipeline);
 
+    /** Whether the database answers a ping now. */
+    default boolean ping() {
+        return true;
+    }
+
     @Override
     void close();
 }

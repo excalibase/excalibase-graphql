@@ -10,6 +10,7 @@ import io.github.excalibase.permissions.PermissionSet;
 import io.github.excalibase.permissions.SelectPermission;
 import io.github.excalibase.permissions.SessionVariable;
 import io.github.excalibase.permissions.TablePermissions;
+import io.github.excalibase.rls.Assignment;
 import io.github.excalibase.rls.FieldType;
 import io.github.excalibase.rls.LogicOperator;
 import io.github.excalibase.rls.MaskMode;
@@ -71,7 +72,7 @@ class PermissionTranslatorTest {
         assertThat(policy.resource()).isEqualTo("orders");
         assertThat(policy.effect()).isEqualTo(PolicyEffect.ALLOW);
         assertThat(policy.operations()).containsExactly(Operation.SELECT);
-        assertThat(policy.assignments()).extracting(a -> a.targetId()).containsExactly(USER);
+        assertThat(policy.assignments()).extracting(Assignment::targetId).containsExactly(USER);
         assertThat(policy.rules()).containsExactly(new Rule(OWNER, FieldType.STRING, RuleOperator.EQ, "u1"));
         assertThat(translation.columnPolicies()).isEmpty();
     }
@@ -158,7 +159,7 @@ class PermissionTranslatorTest {
         var hide = translation.columnPolicies().getFirst();
         assertThat(hide.mode()).isEqualTo(MaskMode.HIDE);
         assertThat(hide.columns()).containsExactlyInAnyOrder(TOTAL, PAID, "placedAt", "secret");
-        assertThat(hide.assignments()).extracting(a -> a.targetId()).containsExactly(USER);
+        assertThat(hide.assignments()).extracting(Assignment::targetId).containsExactly(USER);
     }
 
     @Test
@@ -226,6 +227,12 @@ class PermissionTranslatorTest {
     void aListValueThatTheRuleModelCouldSplitIsRefused() {
         refused(compare(STATUS, ComparisonOperator.IN, List.of("a,b")), "comma");
         refused(compare(STATUS, ComparisonOperator.IN, List.of(" a")), "space");
+    }
+
+    @Test
+    void aListThatJoinsIntoAClaimIsRefusedItemByItem() {
+        refused(compare(STATUS, ComparisonOperator.IN, List.of("{{x-excalibase-user-id", "x}}")), "claim");
+        refused(compare(STATUS, ComparisonOperator.IN, List.of("a", "x}}")), "claim");
     }
 
     @Test
