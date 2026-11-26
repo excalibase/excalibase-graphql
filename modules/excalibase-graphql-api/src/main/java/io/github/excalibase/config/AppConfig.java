@@ -31,6 +31,7 @@ import io.github.excalibase.permissions.ProvisioningPermissionProvider;
 import io.github.excalibase.rls.PolicyChangeSubscriber;
 import io.github.excalibase.schema.GraphqlSchemaManager;
 import io.github.excalibase.security.JwtService;
+import io.github.excalibase.security.ClientLookups;
 import io.github.excalibase.security.KnownProjects;
 import io.github.excalibase.security.LookupLimiter;
 import io.github.excalibase.security.TokenFileSource;
@@ -64,6 +65,8 @@ import java.util.List;
 public class AppConfig {
 
     private static final Logger log = LoggerFactory.getLogger(AppConfig.class);
+    /** Client addresses whose lookup allowance is held at once. */
+    private static final int CLIENTS_HELD = 10_000;
 
     static final String NO_VERIFIER = "Authentication is on by default and needs a token verifier: set "
             + "app.security.auth.jwks-url or app.security.auth.hmac-secret. To run without authentication "
@@ -386,11 +389,12 @@ public class AppConfig {
             @Nullable DynamicDataSourceManager dataSourceManager,
             @Value("${app.security.multi-tenant.unknown-project-cache.max-entries:10000}") int unknownMaxEntries,
             @Value("${app.security.multi-tenant.unknown-project-cache.ttl-seconds:30}") long unknownTtlSeconds,
-            @Value("${app.security.multi-tenant.lookup-rate-per-second:50}") int lookupsPerSecond) {
+            @Value("${app.security.multi-tenant.lookup-rate-per-second:50}") int lookupsPerSecond,
+            @Value("${app.security.multi-tenant.lookup-rate-per-client:10}") int lookupsPerClient) {
         UnknownProjectCache unknown = new UnknownProjectCache(unknownMaxEntries,
                 Duration.ofSeconds(unknownTtlSeconds), System::currentTimeMillis);
         return KnownProjects.forDeployment(projectId, tenantProvisioningUrl, dataSourceManager, unknown,
-                LookupLimiter.perSecond(lookupsPerSecond));
+                LookupLimiter.perSecond(lookupsPerSecond), ClientLookups.perSecond(lookupsPerClient, CLIENTS_HELD));
     }
 
     /** {@code app.graphql.parse-cache.heap-share}: the share of the maximum heap the parsed-query cache may use. */
