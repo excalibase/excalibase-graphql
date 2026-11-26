@@ -496,6 +496,12 @@ public class GraphqlSchemaManager implements SchemaProvider, AccessPlans, Projec
         tenantEngineStates.removeIf(key -> projectId.equals(key.projectId()));
     }
 
+    /** As {@link #evict}, for every project. */
+    public void evictAll() {
+        reflections.clear();
+        tenantEngineStates.clear();
+    }
+
     @Override
     public boolean isReserved(String schema) {
         return reservedSchemas.isReserved(schema);

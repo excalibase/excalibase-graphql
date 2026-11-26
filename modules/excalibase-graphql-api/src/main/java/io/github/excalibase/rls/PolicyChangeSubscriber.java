@@ -3,6 +3,7 @@ package io.github.excalibase.rls;
 import io.github.excalibase.nats.NatsOptionsFactory;
 import io.github.excalibase.permissions.PermissionVersions;
 import io.nats.client.Connection;
+import io.nats.client.ConnectionListener;
 import io.nats.client.Dispatcher;
 import io.nats.client.Message;
 import io.nats.client.Nats;
@@ -43,6 +44,7 @@ public class PolicyChangeSubscriber {
     private final String natsPassword;
     private final String natsInboxPrefix;
 
+    private final Runnable catchUp;
     private Connection connection;
     private Dispatcher dispatcher;
     private final AtomicBoolean running = new AtomicBoolean(false);
@@ -73,6 +75,16 @@ public class PolicyChangeSubscriber {
     public PolicyChangeSubscriber(List<ProjectCacheEvictor> evictors, PermissionVersions permissionVersions,
                                   ProjectSockets sockets, boolean natsEnabled, String natsUrl,
                                   String natsUsername, String natsPassword, String natsInboxPrefix) {
+        this(evictors, permissionVersions, sockets, natsEnabled, natsUrl, natsUsername, natsPassword,
+                natsInboxPrefix, () -> { });
+    }
+
+    /** @param catchUp evicts everything held, run when the connection comes back: signals sent while it was down were missed */
+    public PolicyChangeSubscriber(List<ProjectCacheEvictor> evictors, PermissionVersions permissionVersions,
+                                  ProjectSockets sockets, boolean natsEnabled, String natsUrl,
+                                  String natsUsername, String natsPassword, String natsInboxPrefix,
+                                  Runnable catchUp) {
+        this.catchUp = catchUp;
         this.evictors = List.copyOf(evictors);
         this.permissionVersions = permissionVersions;
         this.sockets = sockets;
@@ -92,6 +104,7 @@ public class PolicyChangeSubscriber {
         try {
             Options options = NatsOptionsFactory
                     .builder(natsUrl, natsUsername, natsPassword, natsInboxPrefix)
+                    .connectionListener((conn, event) -> connectionEvent(event))
                     .build();
             connection = Nats.connect(options);
             dispatcher = connection.createDispatcher(this::handleMessage);
@@ -103,6 +116,34 @@ public class PolicyChangeSubscriber {
             log.error("Interrupted while starting policy-change subscriber", e);
         } catch (Exception e) {
             log.error("Failed to start policy-change subscriber", e);
+        }
+    }
+
+    /** A reconnect missed every signal sent while the bus was unreachable: evict what is held and settle the sockets. */
+    void connectionEvent(ConnectionListener.Events event) {
+        if (event != ConnectionListener.Events.RECONNECTED) {
+            return;
+        }
+        log.info("Policy-change subscriber reconnected; evicting everything held, signals were missed");
+        try {
+            catchUp.run();
+        } catch (RuntimeException e) {
+            log.error("Evicting after the NATS reconnect failed; the TTL still converges", e);
+        }
+        settleOpenSockets();
+    }
+
+    private void settleOpenSockets() {
+        if (sockets == null || permissionVersions == null) {
+            return;
+        }
+        for (String projectId : sockets.projectsWithSockets()) {
+            try {
+                settleSockets(projectId, false);
+            } catch (RuntimeException e) {
+                log.error("Settling the sockets of project {} after the reconnect failed; closing them", projectId, e);
+                sockets.closeForPermissionChange(projectId);
+            }
         }
     }
 
