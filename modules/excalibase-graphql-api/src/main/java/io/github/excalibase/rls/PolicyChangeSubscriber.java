@@ -3,6 +3,7 @@ package io.github.excalibase.rls;
 import io.github.excalibase.nats.NatsOptionsFactory;
 import io.github.excalibase.permissions.PermissionVersions;
 import io.nats.client.Connection;
+import io.nats.client.ConnectionListener;
 import io.nats.client.Dispatcher;
 import io.nats.client.Message;
 import io.nats.client.Nats;
@@ -161,16 +162,35 @@ public class PolicyChangeSubscriber {
         }
     }
 
+    /** The dial options, with the listener that catches up after a reconnect. */
+    Options options() {
+        return NatsOptionsFactory
+                .builder(settings.url(), settings.username(), settings.password(), settings.inboxPrefix())
+                .connectionListener((conn, event) -> connectionEvent(event))
+                .build();
+    }
+
+    /** A reconnect missed every signal sent while the bus was unreachable: evict what is held and settle the sockets. */
+    void connectionEvent(ConnectionListener.Events event) {
+        if (event != ConnectionListener.Events.RECONNECTED) {
+            return;
+        }
+        log.info("Policy-change subscriber reconnected; evicting everything held, signals were missed");
+        try {
+            wiring.catchUp().run();
+        } catch (RuntimeException e) {
+            log.error("Evicting after the NATS reconnect failed; the TTL still converges", e);
+        }
+        settleOpenSockets();
+    }
+
     /** True once subscribed, or once stopped, when there is nothing left to try. */
     private synchronized boolean connectAndSubscribe() {
         if (stopped) {
             return true;
         }
         try {
-            Options options = NatsOptionsFactory
-                    .builder(settings.url(), settings.username(), settings.password(), settings.inboxPrefix())
-                    .build();
-            connection = wiring.connector().connect(options);
+            connection = wiring.connector().connect(options());
             dispatcher = connection.createDispatcher(this::handleMessage);
             dispatcher.subscribe(SUBJECT);
             running.set(true);
