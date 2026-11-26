@@ -10,9 +10,13 @@ import io.nats.client.Options;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.IOException;
 import java.time.Duration;
 import java.util.List;
 import java.util.OptionalLong;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
@@ -37,14 +41,33 @@ public class PolicyChangeSubscriber {
     private final List<ProjectCacheEvictor> evictors;
     private final PermissionVersions permissionVersions;
     private final ProjectSockets sockets;
-    private final boolean natsEnabled;
-    private final String natsUrl;
-    private final String natsUsername;
-    private final String natsPassword;
-    private final String natsInboxPrefix;
+    private final NatsSettings settings;
 
+    private static final Duration RETRY_INTERVAL = Duration.ofSeconds(5);
+
+    /** Opens the connection; a seam so a test can stand in for a NATS that is down. */
+    @FunctionalInterface
+    interface Connector {
+        Connection connect(Options options) throws IOException, InterruptedException;
+    }
+
+    /**
+     * Where and how the bus is reached.
+     *
+     * @param username    bus principal, blank for an anonymous connection
+     * @param password    principal secret
+     * @param inboxPrefix reply-inbox prefix this principal may subscribe to
+     */
+    public record NatsSettings(boolean enabled, String url, String username, String password, String inboxPrefix) {}
+
+    /** How a connection is made and how a late one is caught up. */
+    record Wiring(Connector connector, Duration retryInterval, Runnable catchUp) {}
+
+    private final Wiring wiring;
     private Connection connection;
     private Dispatcher dispatcher;
+    private ScheduledExecutorService retrier;
+    private boolean stopped;
     private final AtomicBoolean running = new AtomicBoolean(false);
 
     /**
@@ -56,57 +79,138 @@ public class PolicyChangeSubscriber {
         this(evictors, natsEnabled, natsUrl, "", "", "");
     }
 
-    /**
-     * @param natsUsername    bus principal, blank for an anonymous connection
-     * @param natsPassword    principal secret
-     * @param natsInboxPrefix reply-inbox prefix this principal may subscribe to
-     */
     public PolicyChangeSubscriber(List<ProjectCacheEvictor> evictors, boolean natsEnabled, String natsUrl,
                                   String natsUsername, String natsPassword, String natsInboxPrefix) {
-        this(evictors, null, null, natsEnabled, natsUrl, natsUsername, natsPassword, natsInboxPrefix);
+        this(evictors, null, null, new NatsSettings(natsEnabled, natsUrl, natsUsername, natsPassword, natsInboxPrefix),
+                () -> { });
+    }
+
+    public PolicyChangeSubscriber(List<ProjectCacheEvictor> evictors, PermissionVersions permissionVersions,
+                                  ProjectSockets sockets, boolean natsEnabled, String natsUrl,
+                                  String natsUsername, String natsPassword, String natsInboxPrefix) {
+        this(evictors, permissionVersions, sockets,
+                new NatsSettings(natsEnabled, natsUrl, natsUsername, natsPassword, natsInboxPrefix), () -> { });
     }
 
     /**
      * @param permissionVersions compares the permission document before and after the eviction
      * @param sockets     the project's open sockets, closed only when the document actually changed
+     * @param catchUp     evicts everything held, run when NATS connects late: signals sent while it was
+     *                    unreachable were missed
      */
     public PolicyChangeSubscriber(List<ProjectCacheEvictor> evictors, PermissionVersions permissionVersions,
-                                  ProjectSockets sockets, boolean natsEnabled, String natsUrl,
-                                  String natsUsername, String natsPassword, String natsInboxPrefix) {
+                                  ProjectSockets sockets, NatsSettings settings, Runnable catchUp) {
+        this(evictors, permissionVersions, sockets, settings, new Wiring(Nats::connect, RETRY_INTERVAL, catchUp));
+    }
+
+    PolicyChangeSubscriber(List<ProjectCacheEvictor> evictors, PermissionVersions permissionVersions,
+                           ProjectSockets sockets, NatsSettings settings, Wiring wiring) {
+        this.wiring = wiring;
         this.evictors = List.copyOf(evictors);
         this.permissionVersions = permissionVersions;
         this.sockets = sockets;
-        this.natsEnabled = natsEnabled;
-        this.natsUrl = natsUrl;
-        this.natsUsername = natsUsername;
-        this.natsPassword = natsPassword;
-        this.natsInboxPrefix = natsInboxPrefix;
+        this.settings = settings;
     }
 
     public void start() {
-        if (!natsEnabled) {
+        if (!settings.enabled()) {
             log.info("Policy-change subscriber disabled (app.nats.enabled=false); "
                     + "policy cache converges via TTL only");
             return;
         }
+        if (connectAndSubscribe()) {
+            return;
+        }
+        // NATS may be down while the engine boots: try again until it answers or the subscriber stops.
+        retrier = Executors.newSingleThreadScheduledExecutor(task -> {
+            Thread thread = new Thread(task, "policy-change-connect");
+            thread.setDaemon(true);
+            return thread;
+        });
+        long period = wiring.retryInterval().toMillis();
+        retrier.scheduleWithFixedDelay(this::retryUntilConnected, period, period, TimeUnit.MILLISECONDS);
+    }
+
+    private void retryUntilConnected() {
+        if (connectAndSubscribe()) {
+            retrier.shutdown();
+            if (running.get()) {
+                log.info("Policy-change subscriber connected late; evicting everything held, signals were missed");
+                wiring.catchUp().run();
+                settleOpenSockets();
+            }
+        }
+    }
+
+    /**
+     * A permission change made while NATS was down was never signalled, and the evicted documents leave no earlier
+     * copy to compare a refresh with. So every project that has sockets is settled as a signal would: against the
+     * document as it is now, the sockets opened under another one closing.
+     */
+    private void settleOpenSockets() {
+        if (sockets == null || permissionVersions == null) {
+            return;
+        }
+        for (String projectId : sockets.projectsWithSockets()) {
+            try {
+                settleSockets(projectId, false);
+            } catch (RuntimeException e) {
+                log.error("Settling the sockets of project {} after the late connect failed; closing them", projectId, e);
+                sockets.closeForPermissionChange(projectId);
+            }
+        }
+    }
+
+    /** True once subscribed, or once stopped, when there is nothing left to try. */
+    private synchronized boolean connectAndSubscribe() {
+        if (stopped) {
+            return true;
+        }
         try {
             Options options = NatsOptionsFactory
-                    .builder(natsUrl, natsUsername, natsPassword, natsInboxPrefix)
+                    .builder(settings.url(), settings.username(), settings.password(), settings.inboxPrefix())
                     .build();
-            connection = Nats.connect(options);
+            connection = wiring.connector().connect(options);
             dispatcher = connection.createDispatcher(this::handleMessage);
             dispatcher.subscribe(SUBJECT);
             running.set(true);
             log.info("Policy-change subscriber started - subscribing to '{}'", SUBJECT);
+            return true;
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             log.error("Interrupted while starting policy-change subscriber", e);
+            closeConnection();
+            return true;
         } catch (Exception e) {
-            log.error("Failed to start policy-change subscriber", e);
+            log.warn("Policy-change subscriber not connected yet, retrying in {}: {}", wiring.retryInterval(),
+                    e.getMessage());
+            closeConnection();
+            return false;
         }
     }
 
-    public void stop() {
+    /** A connection that did not end up subscribed is closed, not left to leak while the next attempt opens another. */
+    private void closeConnection() {
+        Connection open = connection;
+        connection = null;
+        dispatcher = null;
+        if (open == null) {
+            return;
+        }
+        try {
+            open.close();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        } catch (RuntimeException e) {
+            log.debug("Closing an unsubscribed NATS connection failed: {}", e.getMessage());
+        }
+    }
+
+    public synchronized void stop() {
+        stopped = true;
+        if (retrier != null) {
+            retrier.shutdownNow();
+        }
         try {
             if (connection != null) {
                 connection.close();

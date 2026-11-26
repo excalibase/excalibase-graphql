@@ -6,6 +6,7 @@ import io.github.excalibase.config.EngineAvailabilityGuard;
 import io.github.excalibase.service.DatabaseEngine;
 import io.github.excalibase.spi.QueryEngineFactory;
 import io.micrometer.core.instrument.MeterRegistry;
+import io.micronaut.context.annotation.Bean;
 import io.micronaut.context.annotation.Context;
 import io.micronaut.context.annotation.Factory;
 import io.micronaut.context.annotation.Value;
@@ -44,7 +45,8 @@ public class DataSourceConfig {
     }
 
     @Context
-    DataSource dataSource(DataSourceSettings properties,
+    @Bean(preDestroy = "close")
+    DynamicRoutingDataSource dataSource(DataSourceSettings properties,
                           @Value("${app.security.multi-tenant.provisioning-url:}") String tenantProvisioningUrl,
                           @Nullable DynamicDataSourceManager dataSourceManager, MeterRegistry meters,
                           EngineAvailabilityGuard engineGuard,

@@ -180,6 +180,11 @@ public class WsRuntime implements ProjectSockets {
         return sessions != null && !sessions.isEmpty();
     }
 
+    @Override
+    public Set<String> projectsWithSockets() {
+        return Set.copyOf(sessionsByProject.keySet());
+    }
+
     /**
      * Counts the permission changes announced for the session's project; read before a subscription's plan is
      * resolved, so {@link #openedUnder} can tell that one was announced while it was being resolved.
