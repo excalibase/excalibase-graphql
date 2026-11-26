@@ -116,6 +116,10 @@ pick one:
 An alias gives an embed its own key (`creator:users!created_by(name)` returns under `creator`), which is how two embeds of
 the same table sit in one select; two embeds that would share a key are `400 embed_key_collision`.
 
+A `!hint` is a column of the key, or the name of its foreign key constraint. Keys over the same columns, which no column
+can tell apart, are told apart by the constraint (`gparent!gchild_by_alt`); the `300 ambiguous_relationship` answer
+lists the hints that work.
+
 A `!column` that names no key of an existing relationship is `400 unknown_relationship_hint`. An embed named with
 its schema comes back under the table name (`users`), unless another embed of the same select has that name, when it
 keeps the name as written (`tenant_b.users`).

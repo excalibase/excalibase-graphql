@@ -28,7 +28,8 @@ class SingleSchemaForeignKeyLoaderTest {
             "CREATE TABLE excalibase_meta.t (id INT PRIMARY KEY)",
             "CREATE TABLE public.t (id INT PRIMARY KEY)",
             "CREATE TABLE public.items (id INT PRIMARY KEY, meta_id INT REFERENCES excalibase_meta.t (id),"
-                    + " own_id INT REFERENCES public.t (id))");
+                    + " own_id INT CONSTRAINT fk_user REFERENCES public.t (id))",
+            "CREATE TABLE public.notes (id INT PRIMARY KEY, own_id INT CONSTRAINT fk_user REFERENCES public.t (id))");
 
     private static final PostgreSQLContainer<?> postgres = new PostgreSQLContainer<>("postgres:16-alpine");
     private static final MySQLContainer<?> mysql = new MySQLContainer<>("mysql:8.4").withDatabaseName("shop");
@@ -46,7 +47,7 @@ class SingleSchemaForeignKeyLoaderTest {
                 "CREATE TABLE shop.t (id INT PRIMARY KEY)",
                 "CREATE TABLE shop.items (id INT PRIMARY KEY, meta_id INT, own_id INT,"
                         + " FOREIGN KEY (meta_id) REFERENCES excalibase_meta.t (id),"
-                        + " FOREIGN KEY (own_id) REFERENCES shop.t (id))")) {
+                        + " CONSTRAINT fk_user FOREIGN KEY (own_id) REFERENCES shop.t (id))")) {
             asMysqlRoot(statement);
         }
     }
@@ -71,7 +72,22 @@ class SingleSchemaForeignKeyLoaderTest {
         new PostgresSchemaLoader().loadForeignKeys(jdbc, "public", info);
 
         assertThat(info.getAllForwardFks().values()).extracting(SchemaInfo.FkInfo::fkColumn)
-                .containsExactly("own_id");
+                .containsOnly("own_id");
+    }
+
+    @Test
+    void postgres_aConstraintNameIsUniquePerTable_soTwoTablesMayShareOne_andEachKeepsItsKey() {
+        JdbcTemplate jdbc = new JdbcTemplate(new DriverManagerDataSource(postgres.getJdbcUrl(),
+                postgres.getUsername(), postgres.getPassword()));
+        SchemaInfo info = new SchemaInfo();
+
+        new PostgresSchemaLoader().loadForeignKeys(jdbc, "public", info);
+
+        assertThat(info.getAllForwardFks()).hasSize(2);
+        assertThat(info.getAllForwardFks().values()).extracting(SchemaInfo.FkInfo::constraintName)
+                .containsExactly("fk_user", "fk_user");
+        assertThat(info.getAllReverseFks().values()).extracting(SchemaInfo.ReverseFkInfo::childTable)
+                .containsExactlyInAnyOrder("items", "notes");
     }
 
     @Test
@@ -85,5 +101,7 @@ class SingleSchemaForeignKeyLoaderTest {
 
         assertThat(info.getAllForwardFks().values()).extracting(SchemaInfo.FkInfo::fkColumn)
                 .containsExactly("own_id");
+        assertThat(info.getAllForwardFks().values()).extracting(SchemaInfo.FkInfo::constraintName)
+                .containsExactly("fk_user");
     }
 }
