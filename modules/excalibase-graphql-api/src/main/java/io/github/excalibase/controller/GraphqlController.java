@@ -142,6 +142,7 @@ public class GraphqlController {
                 state = schemaManager.resolveEngineState(principal);
                 Document document = parsedQueries.parse(finalQuery);
                 if (state.compiler().isIntrospection(document)) {
+                    state.compiler().enforceLimits(document);
                     HttpResponse<Object> introspection = handleIntrospection(state, finalQuery, variables);
                     Optional<Document> dataPart = MixedQuery.dataPart(document);
                     if (dataPart.isEmpty()) {
