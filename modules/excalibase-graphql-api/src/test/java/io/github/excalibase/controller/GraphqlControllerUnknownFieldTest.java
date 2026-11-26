@@ -50,8 +50,8 @@ class GraphqlControllerUnknownFieldTest {
 
     @Test
     @SuppressWarnings("unchecked")
-    void aRequestWithNoToken_getsUnknownFieldNamingAnon() {
-        Map<String, Object> error = firstError(null);
+    void anAnonRequest_getsUnknownFieldNamingAnon() {
+        Map<String, Object> error = firstError(Principal.anonymous());
 
         assertThat(((Map<String, Object>) error.get("extensions")).get("code")).isEqualTo("unknown_field");
         assertThat((String) error.get("message")).contains("publicTodos", "'anon'");
@@ -62,5 +62,12 @@ class GraphqlControllerUnknownFieldTest {
         Map<String, Object> error = firstError(new Principal("editor", false, null, Map.of()));
 
         assertThat((String) error.get("message")).contains("publicTodos", "'editor'");
+    }
+
+    @Test
+    void aRequestWithNoPrincipal_keepsThePlainMessage() {
+        Map<String, Object> error = firstError(null);
+
+        assertThat(error.get("message")).isEqualTo("Unknown field(s): publicTodos");
     }
 }
