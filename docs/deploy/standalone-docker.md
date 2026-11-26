@@ -104,6 +104,76 @@ the engine:
 java -jar excalibase-graphql-api.jar validate metadata/permissions.yaml --project-id my-app
 ```
 
+## Try it: a token and your first queries
+
+The engine checks every token, so you need one to try a query. In the sample setup a token is a JWT signed
+(HS256) with `JWT_SECRET`, with the claims `aud` (`my-app-api`), `role` and `sub`. You can make one in the
+console (the sample token form), or with this script. It needs only `bash` and `openssl`. It reads the secret
+from the `JWT_SECRET` environment variable, so the secret never shows up in the process list or your shell history.
+To make a secret, run `openssl rand -base64 48` and put the result in `JWT_SECRET` in the compose file:
+
+```bash
+#!/usr/bin/env bash
+# usage: JWT_SECRET=... ./mktoken.sh <audience> <user id> <role>
+b64() { openssl base64 -A | tr '+/' '-_' | tr -d '='; }
+header=$(printf '{"alg":"HS256","typ":"JWT"}' | b64)
+payload=$(printf '{"sub":"%s","role":"%s","aud":"%s","exp":%s}' "$2" "$3" "$1" "$(( $(date +%s) + 3600 ))" | b64)
+sig=$(printf '%s.%s' "$header" "$payload" | openssl dgst -sha256 -hmac "${JWT_SECRET:?set JWT_SECRET}" -binary | b64)
+printf '%s.%s.%s\n' "$header" "$payload" "$sig"
+```
+
+```bash
+export JWT_SECRET=change-me-to-a-long-random-secret-of-32-bytes-or-more   # the value in your compose file
+TOKEN=$(./mktoken.sh my-app-api alice user)
+```
+
+The token lasts one hour. The `sub` becomes the user id in the rules: the sample rule shows `alice` only the
+rows whose `owner_id` is `alice`.
+
+### Names carry the schema
+
+A GraphQL name starts with the schema, then the table. The table `todos` in the Postgres schema `public` is
+`publicTodos`. In MySQL the schema is the database name (`app`, so `appTodos`). In SQLite it is always `main`.
+
+| What | Name for `public.todos` |
+|---|---|
+| Read rows | `publicTodos` |
+| Read a page with a cursor | `publicTodosConnection` |
+| Insert | `createPublicTodos` |
+| Update | `updatePublicTodos` |
+| Delete | `deletePublicTodos` |
+
+The columns keep their own names, such as `owner_id`. Ask the engine for the list: send
+`{ __schema { queryType { fields { name } } } }`.
+
+```bash
+q() { curl -s -X POST http://localhost:10000/my-app/graphql \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' -d "$1"; echo; }
+
+q '{"query":"{ publicTodos { id title done } }"}'
+q '{"query":"{ publicTodos(where: {done: {eq: false}}, orderBy: {id: DESC}, limit: 5) { id title } }"}'
+q '{"query":"{ publicTodosConnection(first: 2) { edges { node { id title } } pageInfo { hasNextPage } } }"}'
+q '{"query":"mutation { createPublicTodos(input: {title: \"buy milk\"}) { id title done } }"}'
+q '{"query":"mutation { updatePublicTodos(where: {id: {eq: 3}}, input: {done: true}) { id done } }"}'
+q '{"query":"mutation { deletePublicTodos(where: {id: {eq: 3}}) { id } }"}'
+```
+
+The insert does not send `owner_id`. The rule sets it to the caller. The REST API reaches the same table,
+without the schema in the name: `GET /my-app/api/v1/todos`.
+
+### Reading an error
+
+A bad token and an unknown project are refused before the query runs, with an HTTP error status. GraphQL errors
+that come after that come back with HTTP status 200 and an `errors` list. Look at `message` and `extensions.code`.
+
+| You see | It means |
+|---|---|
+| HTTP 401, `Invalid or expired token`, code `invalid_token` | The signature is wrong (another secret), or the token has expired. |
+| HTTP 401, `Invalid or expired token`, code `aud_mismatch` | `aud` is not the `audience` in the document. |
+| `Unknown field(s): publicTodos` | The role in the token has no rule for the table, or the table is not there. A request with no token counts as no role, so it gets this too. Check the `role` claim and the document. |
+| HTTP 404, `Project not found`, code `project_not_found` | The project id in the URL is not `APP_PROJECT_ID`. |
+| An empty list, no error | The rule's row filter hides every row from this user. |
+
 ## The console
 
 The console is off in the base file. To turn it on:
@@ -139,6 +209,10 @@ The management port (`8081`) is inside the container network and is not publishe
 ```bash
 docker compose exec engine curl -fsS http://localhost:8081/actuator/health/readiness
 ```
+
+The `curl` command works in the default images, which carry `curl`. The `-native` images are distroless: they have
+no `curl` and no shell, so a command check inside the container cannot run. For them, probe port `8081` from
+outside the container (your orchestrator's HTTP probe, a sidecar or the host), not with `docker compose exec`.
 
 Readiness reports `UP` only when a valid document is loaded. The compose file uses this as the container
 healthcheck. `/actuator/info` shows the version of the document being served.
