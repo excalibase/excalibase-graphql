@@ -284,6 +284,15 @@ public final class ProvisioningPermissionProvider implements PermissionProvider 
         expiryReported.remove(projectId);
     }
 
+    @Override
+    public void evictAll() {
+        cache.clear();
+        lastAttemptAt.clear();
+        firstRefusalAt.clear();
+        firstFailureAt.clear();
+        expiryReported.clear();
+    }
+
     private PermissionSet fetch(String projectId) {
         HttpResponse<String> response = send(projectId);
         if (response.statusCode() == 404) {
