@@ -20,6 +20,8 @@ class RestEmbedResolutionTest {
     private static final String GPARENT_RELATION = "gparent";
     private static final String BY_PK = "by_pk";
     private static final String BY_ALT = "by_alt";
+    private static final String USERS_TABLE = "a.users";
+    private static final String TEAMS_TABLE = "a.teams";
 
     private static SchemaInfo schema() {
         SchemaInfo schema = new SchemaInfo();
@@ -69,6 +71,27 @@ class RestEmbedResolutionTest {
                 List.of(new RestQueryCompiler.EmbedSpec(relation, List.of("id"), hint)), List.of(), 10, 0, false)).sql();
     }
 
+
+    private static SchemaInfo mutualSchema() {
+        SchemaInfo schema = new SchemaInfo();
+        for (String table : List.of(USERS_TABLE, TEAMS_TABLE)) {
+            schema.addColumn(table, "id", "integer");
+            schema.setTableSchema(table, "a");
+            schema.addPrimaryKey(table, "id");
+        }
+        schema.addColumn(USERS_TABLE, "team_id", "integer");
+        schema.addColumn(TEAMS_TABLE, "owner_id", "integer");
+        schema.addForeignKey(USERS_TABLE, "team_id", TEAMS_TABLE, "id");
+        schema.addForeignKey(TEAMS_TABLE, "owner_id", USERS_TABLE, "id");
+        return schema;
+    }
+
+    private static String mutualSql(String table, String relation, String hint) {
+        var compiler = new RestQueryCompiler(mutualSchema(), new PostgresDialect(), "a", 30);
+        return compiler.compileSelect(new RestQueryCompiler.SelectQuery(table, List.of("id"), List.of(), List.of(),
+                List.of(new RestQueryCompiler.EmbedSpec(relation, List.of("id"), hint)), List.of(), 10, 0, false)).sql();
+    }
+
     @Test
     void keysOverTheSameColumns_areAmbiguous_andNameTheirConstraints() {
         var refused = catchThrowableOfType(DataErrorException.class,
@@ -83,6 +106,20 @@ class RestEmbedResolutionTest {
         assertThat(sameColumnsSql(GCHILD, GPARENT_RELATION, BY_ALT)).contains("\"c\"").contains("\"d\"");
         assertThat(sameColumnsSql(GCHILD, GPARENT_RELATION, BY_PK)).doesNotContain("\"d\"");
         assertThat(sameColumnsSql(GPARENT, "gchild", BY_ALT)).contains("\"d\"");
+    }
+
+    @Test
+    void mutualKeys_aHintThatFitsOnlyTheOtherDirection_picksIt() {
+        assertThat(mutualSql(USERS_TABLE, "teams", "owner_id")).contains("owner_id");
+        assertThat(mutualSql(TEAMS_TABLE, "users", "team_id")).contains("team_id");
+        assertThat(mutualSql(USERS_TABLE, "teams", "team_id")).contains("team_id");
+    }
+
+    @Test
+    void mutualKeys_aHintThatFitsNeitherDirection_isStillRefused() {
+        var refused = catchThrowableOfType(DataErrorException.class, () -> mutualSql(USERS_TABLE, "teams", "nope"));
+
+        assertThat(refused.error().code()).isEqualTo(DataError.UNKNOWN_RELATIONSHIP_HINT);
     }
 
     private static String sql(String table, String relation, String hint) {

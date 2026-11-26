@@ -1057,9 +1057,27 @@ public class RestQueryCompiler {
             else {
                 var rev = findReverseFk(table, embed.relationName(), embed.fkHint());
                 if (rev != null) entries.add(buildReverseEmbed(keyed, rev, ia, oa, parentAlias, counter, params));
+                else requireKnownHint(table, embed);
             }
         }
         return entries;
+    }
+
+    /**
+     * A {@code !hint} that fits no key in either direction is a mistake, never a silently dropped embed. It is judged
+     * only once both directions have been tried: mutual keys (users to teams and teams to users) let a hint that
+     * does not fit one direction pick the other.
+     */
+    private void requireKnownHint(String table, EmbedSpec embed) {
+        if (embed.fkHint() == null) return;
+        String relation = embed.relationName();
+        boolean relationExists = schemaInfo.getAllForwardFks().entrySet().stream()
+                .anyMatch(e -> matchesFk(e.getKey(), table + DOT, e.getValue().fkColumn(), null, e.getValue().refTable(), relation))
+                || schemaInfo.getAllReverseFks().entrySet().stream()
+                .anyMatch(e -> matchesFk(e.getKey(), table + DOT, e.getValue().fkColumn(), null, e.getValue().childTable(), relation));
+        if (relationExists) {
+            throw new DataErrorException(DataError.unknownRelationshipHint(relation, embed.fkHint()));
+        }
     }
 
     /** The join of a key: every column of one side equal to its pair on the other, never the first column alone. */
@@ -1170,28 +1188,24 @@ public class RestQueryCompiler {
     private SchemaInfo.FkInfo findForwardFk(String table, String relName, String fkHint) {
         String tablePrefix = table + DOT;
         List<SchemaInfo.FkInfo> fits = new ArrayList<>();
-        boolean fitsWithoutHint = false;
         for (var e : schemaInfo.getAllForwardFks().entrySet()) {
             SchemaInfo.FkInfo fk = e.getValue();
             if (!matchesFk(e.getKey(), tablePrefix, fk.fkColumn(), null, fk.refTable(), relName)) continue;
-            fitsWithoutHint = true;
             if (fkHint == null || fk.fkColumns().contains(fkHint) || fkHint.equals(fk.constraintName())) fits.add(fk);
         }
-        return only(fits, fitsWithoutHint, relName, fkHint, new Keys<>(SchemaInfo.FkInfo::refTable, SchemaInfo.FkInfo::fkColumns,
+        return only(fits, relName, new Keys<>(SchemaInfo.FkInfo::refTable, SchemaInfo.FkInfo::fkColumns,
                 SchemaInfo.FkInfo::constraintName));
     }
 
     private SchemaInfo.ReverseFkInfo findReverseFk(String table, String relName, String fkHint) {
         String tablePrefix = table + DOT;
         List<SchemaInfo.ReverseFkInfo> fits = new ArrayList<>();
-        boolean fitsWithoutHint = false;
         for (var e : schemaInfo.getAllReverseFks().entrySet()) {
             SchemaInfo.ReverseFkInfo rfk = e.getValue();
             if (!matchesFk(e.getKey(), tablePrefix, rfk.fkColumn(), null, rfk.childTable(), relName)) continue;
-            fitsWithoutHint = true;
             if (fkHint == null || rfk.fkColumns().contains(fkHint) || fkHint.equals(rfk.constraintName())) fits.add(rfk);
         }
-        return only(fits, fitsWithoutHint, relName, fkHint, new Keys<>(SchemaInfo.ReverseFkInfo::childTable,
+        return only(fits, relName, new Keys<>(SchemaInfo.ReverseFkInfo::childTable,
                 SchemaInfo.ReverseFkInfo::fkColumns, SchemaInfo.ReverseFkInfo::constraintName));
     }
 
@@ -1230,11 +1244,8 @@ public class RestQueryCompiler {
                 .orElseGet(() -> keys.constraint().apply(fit) != null ? keys.constraint().apply(fit) : columns.getFirst());
     }
 
-    private static <T> T only(List<T> fits, boolean relationExists, String relName, String fkHint, Keys<T> keys) {
+    private static <T> T only(List<T> fits, String relName, Keys<T> keys) {
         if (fits.isEmpty()) {
-            if (relationExists && fkHint != null) {
-                throw new DataErrorException(DataError.unknownRelationshipHint(relName, fkHint));
-            }
             return null;
         }
         if (fits.size() > 1) {
