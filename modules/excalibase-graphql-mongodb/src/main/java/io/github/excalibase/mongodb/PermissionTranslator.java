@@ -46,6 +46,7 @@ final class PermissionTranslator {
     private static final String ID = CollectionDef.ID_FIELD;
     private static final String CLAIM_OPEN = "{{";
     private static final String CLAIM_CLOSE = "}}";
+    private static final String LIST_VALUE = "a list value on \"";
     private static final String PERMISSION_ON = "Permission on \"";
 
     private static final Map<ComparisonOperator, RuleOperator> OPERATORS = Map.of(
@@ -152,14 +153,14 @@ final class PermissionTranslator {
 
     private static Shape shape(BoolExp filter, String where) {
         return switch (filter) {
-            case BoolExp.True ignored -> new Shape(LogicOperator.AND, List.of());
+            case BoolExp.True _ -> new Shape(LogicOperator.AND, List.of());
             case ColumnCompare compare -> new Shape(LogicOperator.AND, List.of(compare));
-            case BoolExp.And and -> new Shape(LogicOperator.AND, flat(and.operands(), where));
-            case BoolExp.Or or -> or.operands().isEmpty() ? null : new Shape(LogicOperator.OR, flat(or.operands(), where));
-            case BoolExp.Not ignored -> throw refuse(where, "_not cannot be enforced on MongoDB yet");
-            case BoolExp.Relationship ignored -> throw refuse(where, "a relationship filter cannot be enforced on MongoDB yet");
-            case BoolExp.Exists ignored -> throw refuse(where, "_exists cannot be enforced on MongoDB yet");
-            case BoolExp.SessionCompare ignored ->
+            case BoolExp.And(var operands) -> new Shape(LogicOperator.AND, flat(operands, where));
+            case BoolExp.Or(var operands) -> operands.isEmpty() ? null : new Shape(LogicOperator.OR, flat(operands, where));
+            case BoolExp.Not _ -> throw refuse(where, "_not cannot be enforced on MongoDB yet");
+            case BoolExp.Relationship _ -> throw refuse(where, "a relationship filter cannot be enforced on MongoDB yet");
+            case BoolExp.Exists _ -> throw refuse(where, "_exists cannot be enforced on MongoDB yet");
+            case BoolExp.SessionCompare _ ->
                     throw refuse(where, "a session variable check cannot be enforced on MongoDB yet");
         };
     }
@@ -192,7 +193,7 @@ final class PermissionTranslator {
     }
 
     private static boolean booleanLiteral(ColumnCompare compare, String where, String field) {
-        if (compare.operand() instanceof Literal literal && literal.value() instanceof Boolean flag) {
+        if (compare.operand() instanceof Literal(Boolean flag)) {
             return flag;
         }
         throw refuse(where, "_is_null on \"" + field + "\" takes true or false");
@@ -221,14 +222,14 @@ final class PermissionTranslator {
         for (Object item : items) {
             String text = scalar(kind, field, item, where);
             if (text.startsWith(CLAIM_OPEN) || text.endsWith(CLAIM_CLOSE)) {
-                throw refuse(where, "a list value on \"" + field + "\" starts or ends like a claim ({{...}}), "
+                throw refuse(where, LIST_VALUE + field + "\" starts or ends like a claim ({{...}}), "
                         + "which the joined list could turn into one");
             }
             if (text.contains(",")) {
-                throw refuse(where, "a list value on \"" + field + "\" holds a comma, which the rule model would split");
+                throw refuse(where, LIST_VALUE + field + "\" holds a comma, which the rule model would split");
             }
             if (!text.equals(text.strip()) || text.isEmpty()) {
-                throw refuse(where, "a list value on \"" + field + "\" is empty or has a leading or trailing space");
+                throw refuse(where, LIST_VALUE + field + "\" is empty or has a leading or trailing space");
             }
             texts.add(text);
         }

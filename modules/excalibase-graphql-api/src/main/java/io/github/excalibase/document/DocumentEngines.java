@@ -19,7 +19,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -80,7 +79,7 @@ public class DocumentEngines implements AutoCloseable {
             if (!engineFor(projectId).healthy()) {
                 log.warn("document_database_unreachable: the database does not answer a ping; /health reports it down");
             }
-        } catch (PermissionsUnavailableException e) {
+        } catch (PermissionsUnavailableException _) {
             log.warn("document_permissions_not_loaded_yet: the first request builds the engine");
         }
     }

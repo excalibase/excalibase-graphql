@@ -35,7 +35,7 @@ class PermissionBoundaryTest {
             // A document database (MongoDB) has no SQL plan to build: its engine reads the permission source and
             // translates the model into the plugin's own rules, so these are plan builders of that kind. Nothing else
             // may name them, and no controller does (the second test below).
-            "/io/github/excalibase/document/",
+            "/io/github/excalibase/document/DocumentEngines.java",
             "/io/github/excalibase/mongodb/PermissionTranslator.java",
             "/io/github/excalibase/mongodb/MongoQueryEngineProvider.java");
 

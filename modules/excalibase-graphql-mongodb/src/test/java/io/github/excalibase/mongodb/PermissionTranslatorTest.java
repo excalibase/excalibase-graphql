@@ -186,7 +186,11 @@ class PermissionTranslatorTest {
     // ---- refusals: what cannot be expressed exactly is refused at load, never weakened ----
 
     private static void refused(BoolExp filter, String reason) {
-        assertThatThrownBy(() -> translate(document(select(ORDERS, USER, filter, ColumnSet.ALL))))
+        refusedDocument(document(select(ORDERS, USER, filter, ColumnSet.ALL)), reason);
+    }
+
+    private static void refusedDocument(PermissionSet document, String reason) {
+        assertThatThrownBy(() -> translate(document))
                 .isInstanceOf(IllegalStateException.class).hasMessageContaining(reason);
     }
 
@@ -259,18 +263,14 @@ class PermissionTranslatorTest {
 
     @Test
     void aTableOfAnotherDatabaseOrAnUndeclaredCollectionIsRefused() {
-        assertThatThrownBy(() -> translate(document(select("other.orders", USER, BoolExp.TRUE, ColumnSet.ALL))))
-                .isInstanceOf(IllegalStateException.class).hasMessageContaining("other.orders");
-        assertThatThrownBy(() -> translate(document(select("app.ghosts", USER, BoolExp.TRUE, ColumnSet.ALL))))
-                .isInstanceOf(IllegalStateException.class).hasMessageContaining("app.ghosts");
+        refusedDocument(document(select("other.orders", USER, BoolExp.TRUE, ColumnSet.ALL)), "other.orders");
+        refusedDocument(document(select("app.ghosts", USER, BoolExp.TRUE, ColumnSet.ALL)), "app.ghosts");
     }
 
     @Test
     void aColumnListWithoutTheIdOrWithAnUnknownColumnIsRefused() {
-        assertThatThrownBy(() -> translate(document(select(ORDERS, USER, BoolExp.TRUE, ColumnSet.of(List.of(OWNER))))))
-                .isInstanceOf(IllegalStateException.class).hasMessageContaining(ID);
-        assertThatThrownBy(() -> translate(document(select(ORDERS, USER, BoolExp.TRUE, ColumnSet.of(List.of(ID, NOPE))))))
-                .isInstanceOf(IllegalStateException.class).hasMessageContaining(NOPE);
+        refusedDocument(document(select(ORDERS, USER, BoolExp.TRUE, ColumnSet.of(List.of(OWNER)))), ID);
+        refusedDocument(document(select(ORDERS, USER, BoolExp.TRUE, ColumnSet.of(List.of(ID, NOPE)))), NOPE);
     }
 
     @Test
@@ -278,7 +278,6 @@ class PermissionTranslatorTest {
         var limited = new TablePermissions(ORDERS, USER, Optional.of(new SelectPermission(BoolExp.TRUE, ColumnSet.ALL, 5, false)),
                 Optional.empty(), Optional.empty(), Optional.empty());
 
-        assertThatThrownBy(() -> translate(document(limited)))
-                .isInstanceOf(IllegalStateException.class).hasMessageContaining("limit");
+        refusedDocument(document(limited), "limit");
     }
 }

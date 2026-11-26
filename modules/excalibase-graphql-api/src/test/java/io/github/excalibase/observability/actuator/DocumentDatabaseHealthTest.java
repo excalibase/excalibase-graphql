@@ -25,7 +25,7 @@ class DocumentDatabaseHealthTest {
         PermissionSet document = new PermissionSet("p1", 1, List.of(), List.of(), List.of());
         PermissionProvider permissions = new PermissionProvider() {
             @Override public PermissionSet permissionsFor(String projectId) { return document; }
-            @Override public void evict(String projectId) { }
+            @Override public void evict(String projectId) { /* nothing is cached */ }
         };
         try (DocumentEngines engines = new DocumentEngines(CountingProvider.TYPE, "", "app", collections.toString(), 1000, 30,
                 "p1", permissions)) {

@@ -49,7 +49,7 @@ class DocumentEnginesTest {
     private static PermissionProvider serving(AtomicReference<PermissionSet> held) {
         return new PermissionProvider() {
             @Override public PermissionSet permissionsFor(String projectId) { return held.get(); }
-            @Override public void evict(String projectId) { }
+            @Override public void evict(String projectId) { /* nothing is cached */ }
         };
     }
 
@@ -64,9 +64,12 @@ class DocumentEnginesTest {
 
     @Test
     void withoutAPermissionSourceItRefusesToStart() {
-        assertThatThrownBy(() -> engines(null, PROJECT, collections.toString()))
+        String file = collections.toString();
+        PermissionProvider none = new NoPermissionSource();
+
+        assertThatThrownBy(() -> engines(null, PROJECT, file))
                 .isInstanceOf(IllegalStateException.class).hasMessageContaining("permission document");
-        assertThatThrownBy(() -> engines(new NoPermissionSource(), PROJECT, collections.toString()))
+        assertThatThrownBy(() -> engines(none, PROJECT, file))
                 .isInstanceOf(IllegalStateException.class).hasMessageContaining("permission document");
     }
 
@@ -74,9 +77,12 @@ class DocumentEnginesTest {
     void withoutAProjectOrCollectionsItRefusesToStart() {
         AtomicReference<PermissionSet> held = new AtomicReference<>(document(1, BoolExp.TRUE));
 
-        assertThatThrownBy(() -> engines(serving(held), "", collections.toString()))
+        PermissionProvider provider = serving(held);
+        String file = collections.toString();
+
+        assertThatThrownBy(() -> engines(provider, "", file))
                 .isInstanceOf(IllegalStateException.class).hasMessageContaining("app.project-id");
-        assertThatThrownBy(() -> engines(serving(held), PROJECT, ""))
+        assertThatThrownBy(() -> engines(provider, PROJECT, ""))
                 .isInstanceOf(IllegalStateException.class).hasMessageContaining("collections");
     }
 
@@ -93,16 +99,18 @@ class DocumentEnginesTest {
     void aNewDocumentVersionReplacesTheEngineAndARefusedOneAnswersUnavailable() {
         AtomicReference<PermissionSet> held = new AtomicReference<>(document(1, BoolExp.TRUE));
         try (DocumentEngines engines = engines(serving(held), PROJECT, collections.toString())) {
-            assertThat(engines.execute(PROJECT, QUERY, Map.of(), user())).containsKey("data");
+            Principal caller = user();
+            Map<String, Object> noVariables = Map.of();
+            assertThat(engines.execute(PROJECT, QUERY, noVariables, caller)).containsKey("data");
 
             var unsupported = new BoolExp.Not(new ColumnCompare("owner", ComparisonOperator.EQ, new Literal("x")));
             held.set(document(2, unsupported));
 
-            assertThatThrownBy(() -> engines.execute(PROJECT, QUERY, Map.of(), user()))
+            assertThatThrownBy(() -> engines.execute(PROJECT, QUERY, noVariables, caller))
                     .isInstanceOf(PermissionsUnavailableException.class);
 
             held.set(document(3, BoolExp.TRUE));
-            assertThat(engines.execute(PROJECT, QUERY, Map.of(), user())).containsKey("data");
+            assertThat(engines.execute(PROJECT, QUERY, noVariables, caller)).containsKey("data");
         }
     }
 
@@ -110,7 +118,9 @@ class DocumentEnginesTest {
     void aRequestForAnotherProjectIsRefusedNeverServedFromThisOne() {
         AtomicReference<PermissionSet> held = new AtomicReference<>(document(1, BoolExp.TRUE));
         try (DocumentEngines engines = engines(serving(held), PROJECT, collections.toString())) {
-            assertThatThrownBy(() -> engines.execute("other", QUERY, Map.of(), user()))
+            Principal caller = user();
+            Map<String, Object> noVariables = Map.of();
+            assertThatThrownBy(() -> engines.execute("other", QUERY, noVariables, caller))
                     .isInstanceOf(UnknownProjectException.class);
         }
     }
@@ -118,16 +128,14 @@ class DocumentEnginesTest {
     @Test
     void healthFollowsTheDatabaseTheEngineReaches() {
         AtomicReference<PermissionSet> held = new AtomicReference<>(document(1, BoolExp.TRUE));
-        DocumentEngines engines = new DocumentEngines(CountingProvider.TYPE, "", "app", collections.toString(), 1000, 30,
-                PROJECT, serving(held));
-        try {
+        try (DocumentEngines engines = new DocumentEngines(CountingProvider.TYPE, "", "app", collections.toString(), 1000, 30,
+                PROJECT, serving(held))) {
             CountingProvider.HEALTHY.set(true);
             assertThat(engines.healthy()).isTrue();
             CountingProvider.HEALTHY.set(false);
             assertThat(engines.healthy()).isFalse();
         } finally {
             CountingProvider.HEALTHY.set(true);
-            engines.close();
         }
     }
 

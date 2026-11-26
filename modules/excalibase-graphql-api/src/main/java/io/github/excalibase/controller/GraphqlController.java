@@ -177,7 +177,7 @@ public class GraphqlController {
         }
         try {
             return Reply.ok(engines.execute(projectId, query, variables, caller));
-        } catch (UnknownProjectException e) {
+        } catch (UnknownProjectException _) {
             return Reply.status(HttpStatus.NOT_FOUND).body(Map.of(ERRORS_KEY, List.of(
                     PermissionErrors.graphqlError("project_not_found", "Project not found"))));
         } catch (Exception e) {

@@ -146,14 +146,17 @@ class DocumentPermissionsEngineTest extends AbstractEngineTest {
     @Test
     void aRuleThatCannotBeEnforcedStopsTheEngineFromStarting() {
         var unsupported = new BoolExp.Not(ownedByCaller());
+        PermissionSet refused = document(select(USER, unsupported, ColumnSet.ALL));
 
-        assertThatThrownBy(() -> engineFrom(document(select(USER, unsupported, ColumnSet.ALL))))
+        assertThatThrownBy(() -> engineFrom(refused))
                 .isInstanceOf(IllegalStateException.class).hasMessageContaining("_not");
     }
 
     @Test
     void permissionsAndHandWrittenPoliciesCannotBeMixed() {
-        assertThatThrownBy(() -> engineWith(Map.of("permissions", document(), "openCollections", List.of("*"))))
+        Map<String, Object> both = Map.of("permissions", document(), "openCollections", List.of("*"));
+
+        assertThatThrownBy(() -> engineWith(both))
                 .isInstanceOf(IllegalStateException.class).hasMessageContaining("permissions");
     }
 

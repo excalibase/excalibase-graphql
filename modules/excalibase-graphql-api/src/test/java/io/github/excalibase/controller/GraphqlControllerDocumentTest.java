@@ -63,13 +63,13 @@ class GraphqlControllerDocumentTest {
                 }
                 return served;
             }
-            @Override public void evict(String projectId) { }
+            @Override public void evict(String projectId) { /* nothing is cached */ }
         };
         engines = new DocumentEngines(CountingProvider.TYPE, "", "app", collections.toString(), 1000, 30, PROJECT, permissions);
         GraphQLObservabilityInstrumentation observability = mock(GraphQLObservabilityInstrumentation.class);
         when(observability.observe(any(), any(), any())).thenAnswer(call -> ((Supplier<?>) call.getArgument(2)).get());
         controller = new GraphqlController(schemaManager, executor, observability, null,
-                new ParsedQueries(1_000_000, text -> Parser.parse(text)), engines);
+                new ParsedQueries(1_000_000, Parser::parse), engines);
     }
 
     @AfterEach

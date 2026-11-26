@@ -18,7 +18,7 @@ import java.util.Map;
 public final class DocumentCollections {
 
     private static final ObjectMapper JSON = new ObjectMapper();
-    private static final long MAX_BYTES = 1024 * 1024;
+    private static final long MAX_BYTES = 1024L * 1024;
 
     private DocumentCollections() {
     }
