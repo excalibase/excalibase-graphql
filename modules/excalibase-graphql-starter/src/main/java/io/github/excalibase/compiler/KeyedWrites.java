@@ -3,6 +3,7 @@ package io.github.excalibase.compiler;
 import io.github.excalibase.SqlDialect;
 import io.github.excalibase.security.PermissionCheckFailedException;
 import org.springframework.dao.DataAccessException;
+import org.springframework.dao.PessimisticLockingFailureException;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.jdbc.core.namedparam.NamedParameterJdbcTemplate;
 import org.springframework.jdbc.support.GeneratedKeyHolder;
@@ -179,11 +180,15 @@ public final class KeyedWrites {
      * The database refused the INSERT. A row that exists is the one the caller addressed, so it is updated: the
      * refusal may be a partial row's own (a NOT NULL column with no default) that the existing row already
      * satisfies. With no row, a duplicate means it was deleted since, so the INSERT runs once more; anything else
-     * is the database's own error.
+     * is the database's own error. A lost lock is neither: it is rethrown for the transaction's owner to retry.
      */
     private String afterRefusedInsert(DataAccessException failure, KeyedWrite write,
                                       Function<NamedParameterJdbcTemplate, Optional<List<Object>>> existing,
                                       Update update, NamedParameterJdbcTemplate jdbc, boolean represent) {
+        if (failure instanceof PessimisticLockingFailureException || WriteRetry.isLockConflict(failure)) {
+            // The transaction lost a lock and may be rolled back whole: going on would commit only what follows.
+            throw failure;
+        }
         Optional<List<Object>> found = existing.apply(jdbc);
         if (found.isPresent()) {
             return updateExisting(jdbc, found.get(), update.set(), update.updatable(), represent);

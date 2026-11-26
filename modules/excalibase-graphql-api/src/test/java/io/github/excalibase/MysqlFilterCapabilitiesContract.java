@@ -212,6 +212,53 @@ abstract class MysqlFilterCapabilitiesContract extends EngineIntegrationTest {
         }
     }
 
+    /**
+     * Two bulk upserts touching the same existing rows in opposite order deadlock; the loser is retried whole, so
+     * its new row is not lost and its writes after the deadlock are not committed alone.
+     */
+    @Test
+    void bulkUpsertsOfTheSameRowsInOppositeOrderLoseNothing() throws Exception {
+        ExecutorService pool = Executors.newFixedThreadPool(2);
+        try {
+            for (int round = 0; round < STRESS_ROUNDS; round++) {
+                int first = 7000 + round * 10;
+                int second = first + 1;
+                for (int seeded : List.of(first, second)) {
+                    http.post("/test-proj/api/v1/article", "{\"id\":" + seeded + ",\"title\":\"seed\"}",
+                            "Content-Type", "application/json").expect(status().is2xxSuccessful());
+                }
+                CyclicBarrier start = new CyclicBarrier(2);
+                List<Future<?>> requests = new ArrayList<>();
+                requests.add(pool.submit(() -> bulkUpsert(start, first + 2, "left", first, second)));
+                requests.add(pool.submit(() -> bulkUpsert(start, first + 3, "right", second, first)));
+                for (Future<?> request : requests) {
+                    request.get(60, TimeUnit.SECONDS);
+                }
+                for (int id : List.of(first + 2, first + 3)) {
+                    graphql("{ testArticle(where: { id: { eq: " + id + " } }) { id } }")
+                            .expect(jsonPath("$.data.testArticle", org.hamcrest.Matchers.hasSize(1)));
+                }
+                for (int id : List.of(first, second)) {
+                    graphql("{ testArticle(where: { id: { eq: " + id + " } }) { title } }")
+                            .expect(jsonPath("$.data.testArticle[0].title", org.hamcrest.Matchers.not("seed")));
+                }
+            }
+        } finally {
+            pool.shutdownNow();
+        }
+    }
+
+    private Object bulkUpsert(CyclicBarrier start, int newId, String title, int firstExisting, int secondExisting)
+            throws Exception {
+        start.await();
+        http.post("/test-proj/api/v1/article", "[{\"id\":" + newId + ",\"title\":\"" + title + "\"},{\"id\":"
+                        + firstExisting + ",\"title\":\"" + title + "\"},{\"id\":" + secondExisting
+                        + ",\"title\":\"" + title + "\"}]",
+                "Content-Type", "application/json", "Prefer", "return=minimal, resolution=merge-duplicates")
+                .expect(status().is2xxSuccessful());
+        return null;
+    }
+
     /** The real MySQL dialect, not a mock: a subscription on MySQL is refused, naming the database. */
     @Test
     void subscriptionsAreRefusedForAMysqlProject() {
