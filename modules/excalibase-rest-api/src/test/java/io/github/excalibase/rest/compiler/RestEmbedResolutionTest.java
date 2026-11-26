@@ -9,11 +9,14 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.catchThrowableOfType;
 
 /** Which relationship an embed names: one, a schema-qualified one, or an answer saying it cannot tell. (EXC-776) */
 class RestEmbedResolutionTest {
 
     private static final String DOCS = "a.docs";
+    private static final String USERS_TABLE = "a.users";
+    private static final String TEAMS_TABLE = "a.teams";
 
     private static SchemaInfo schema() {
         SchemaInfo schema = new SchemaInfo();
@@ -40,6 +43,40 @@ class RestEmbedResolutionTest {
         return schema;
     }
 
+    private static SchemaInfo mutualSchema() {
+        SchemaInfo schema = new SchemaInfo();
+        for (String table : List.of(USERS_TABLE, TEAMS_TABLE)) {
+            schema.addColumn(table, "id", "integer");
+            schema.setTableSchema(table, "a");
+            schema.addPrimaryKey(table, "id");
+        }
+        schema.addColumn(USERS_TABLE, "team_id", "integer");
+        schema.addColumn(TEAMS_TABLE, "owner_id", "integer");
+        schema.addForeignKey(USERS_TABLE, "team_id", TEAMS_TABLE, "id");
+        schema.addForeignKey(TEAMS_TABLE, "owner_id", USERS_TABLE, "id");
+        return schema;
+    }
+
+    private static String mutualSql(String table, String relation, String hint) {
+        var compiler = new RestQueryCompiler(mutualSchema(), new PostgresDialect(), "a", 30);
+        return compiler.compileSelect(new RestQueryCompiler.SelectQuery(table, List.of("id"), List.of(), List.of(),
+                List.of(new RestQueryCompiler.EmbedSpec(relation, List.of("id"), hint)), List.of(), 10, 0, false)).sql();
+    }
+
+    @Test
+    void mutualKeys_aHintThatFitsOnlyTheOtherDirection_picksIt() {
+        assertThat(mutualSql(USERS_TABLE, "teams", "owner_id")).contains("owner_id");
+        assertThat(mutualSql(TEAMS_TABLE, "users", "team_id")).contains("team_id");
+        assertThat(mutualSql(USERS_TABLE, "teams", "team_id")).contains("team_id");
+    }
+
+    @Test
+    void mutualKeys_aHintThatFitsNeitherDirection_isStillRefused() {
+        var refused = catchThrowableOfType(DataErrorException.class, () -> mutualSql(USERS_TABLE, "teams", "nope"));
+
+        assertThat(refused.error().code()).isEqualTo(DataError.UNKNOWN_RELATIONSHIP_HINT);
+    }
+
     private static String sql(String table, String relation, String hint) {
         var compiler = new RestQueryCompiler(schema(), new PostgresDialect(), "a", 30);
         return compiler.compileSelect(new RestQueryCompiler.SelectQuery(table, List.of("id"), List.of(), List.of(),
@@ -47,7 +84,7 @@ class RestEmbedResolutionTest {
     }
 
     private static DataError refusal(String table, String relation, String hint) {
-        return org.assertj.core.api.Assertions.catchThrowableOfType(DataErrorException.class,
+        return catchThrowableOfType(DataErrorException.class,
                 () -> sql(table, relation, hint)).error();
     }
 
@@ -115,7 +152,7 @@ class RestEmbedResolutionTest {
                         new RestQueryCompiler.EmbedSpec("users", List.of("id"), "updated_by")),
                 List.of(), 10, 0, false);
 
-        DataErrorException refused = org.assertj.core.api.Assertions.catchThrowableOfType(DataErrorException.class,
+        DataErrorException refused = catchThrowableOfType(DataErrorException.class,
                 () -> compiler.compileSelect(query));
 
         assertThat(refused.error().code()).isEqualTo(DataError.EMBED_KEY_COLLISION);
