@@ -69,6 +69,15 @@ public class RealtimeWebSocketHandler extends TextWsHandler {
     @Value("${app.nats.tenant-in-subject:false}")
     private boolean wsAuthRequired;
 
+    /** Changes arrive over NATS; without it a subscription is refused, never accepted to deliver nothing. */
+    @Value("${app.nats.enabled:false}")
+    private boolean natsEnabled;
+
+    /** For tests that build the handler the way the container does, then turn realtime on. */
+    void natsEnabled(boolean enabled) {
+        this.natsEnabled = enabled;
+    }
+
     // sessionId -> (subscriptionId -> Disposable)
     private final Map<String, Map<String, Disposable>> sessionSubscriptions = new ConcurrentHashMap<>();
     private final WebSocketHeartbeat heartbeat;
@@ -81,6 +90,7 @@ public class RealtimeWebSocketHandler extends TextWsHandler {
                              @Nullable AccessPlans accessPlans, @Nullable RequestMetrics requestMetrics) {
         this(subscriptionService, objectMapper, jwtService, heartbeat, accessPlans, requestMetrics,
                 WsRuntime.inline());
+        this.natsEnabled = true;
     }
 
     @Inject
@@ -206,11 +216,12 @@ public class RealtimeWebSocketHandler extends TextWsHandler {
 
     /** The plan for the collection, or {@code null} once the refusal has been sent. */
     private RealtimeGate.Delivery openDelivery(WsSession session, String id, String resource, String collection) {
-        RealtimeGate.Opening opening = RealtimeGate.open(accessPlans, session, resource);
+        RealtimeGate.Opening opening = RealtimeGate.open(accessPlans, session, resource, natsEnabled);
         if (opening.delivery() != null) {
             return opening.delivery();
         }
-        sendError(session, id, opening.unavailable() ? opening.refusal() : "Unknown collection: " + collection);
+        boolean named = opening.unavailable() || opening.refusal().startsWith(RealtimeGate.REALTIME_UNAVAILABLE);
+        sendError(session, id, named ? opening.refusal() : "Unknown collection: " + collection);
         if (opening.unavailable()) {
             closeUnavailable(session);
         }

@@ -83,6 +83,15 @@ public class GraphQLWebSocketHandler extends TextWsHandler {
     @Value("${app.nats.tenant-in-subject:false}")
     private boolean wsAuthRequired;
 
+    /** Changes arrive over NATS; without it a subscription is refused, never accepted to deliver nothing. */
+    @Value("${app.nats.enabled:false}")
+    private boolean natsEnabled;
+
+    /** For tests that build the handler the way the container does, then turn realtime on. */
+    void natsEnabled(boolean enabled) {
+        this.natsEnabled = enabled;
+    }
+
     // sessionId -> (subscriptionId -> Disposable)
     private final Map<String, Map<String, Disposable>> sessionSubscriptions = new ConcurrentHashMap<>();
     private final WebSocketHeartbeat heartbeat;
@@ -97,6 +106,7 @@ public class GraphQLWebSocketHandler extends TextWsHandler {
                             ParsedQueries parsedQueries) {
         this(subscriptionService, objectMapper, jwtService, heartbeat, accessPlans, requestMetrics, parsedQueries,
                 WsRuntime.inline());
+        this.natsEnabled = true;
     }
 
     @Inject
@@ -253,7 +263,7 @@ public class GraphQLWebSocketHandler extends TextWsHandler {
         String fieldName = extracted[1];
 
         long generation = runtime.permissionGeneration(session);
-        RealtimeGate.Opening opening = RealtimeGate.open(accessPlans, session, tableName);
+        RealtimeGate.Opening opening = RealtimeGate.open(accessPlans, session, tableName, natsEnabled);
         if (opening.delivery() == null) {
             sendError(session, id, opening.refusal());
             if (opening.unavailable()) {

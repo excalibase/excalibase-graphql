@@ -28,7 +28,7 @@ class RealtimeGateUnavailableTest {
         attributes.put(GraphQLWebSocketHandler.SESSION_PROJECT_KEY, "proj_restore01");
         when(session.getAttributes()).thenReturn(attributes);
 
-        RealtimeGate.Opening opening = RealtimeGate.open(plans, session, "orders");
+        RealtimeGate.Opening opening = RealtimeGate.open(plans, session, "orders", true);
 
         assertThat(opening.delivery()).isNull();
         assertThat(opening.refusal()).isEqualTo("project_unavailable");

@@ -24,6 +24,9 @@ import java.util.Optional;
  */
 final class RealtimeGate {
 
+    /** The code a subscription is refused under when nothing could deliver it. */
+    static final String REALTIME_UNAVAILABLE = "realtime_unavailable";
+
     private RealtimeGate() {
     }
 
@@ -93,7 +96,14 @@ final class RealtimeGate {
         return (String) attributes.get(key);
     }
 
-    static Opening open(AccessPlans plans, WsSession session, String subscriptionKey) {
+    /**
+     * @param natsEnabled whether changes reach this engine at all: they come from the watcher over NATS, so without
+     *                    it a subscription would be accepted and never deliver, and is refused instead
+     */
+    static Opening open(AccessPlans plans, WsSession session, String subscriptionKey, boolean natsEnabled) {
+        if (!natsEnabled) {
+            return Opening.refused(REALTIME_UNAVAILABLE + ": realtime needs NATS (app.nats.enabled=true)");
+        }
         String projectId = (String) session.getAttributes().get(GraphQLWebSocketHandler.SESSION_PROJECT_KEY);
         if (projectId == null) {
             return Opening.refused("Unknown project");

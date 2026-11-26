@@ -55,14 +55,14 @@ class WsSessionLimitsTest {
 
     private RealtimeWebSocketHandler realtime(WsLimits limits, Executor executor) {
         runtime = new WsRuntime(limits, executor);
-        return new RealtimeWebSocketHandler(subscriptions, mapper, null, new WebSocketHeartbeat(0), null, null,
-                runtime);
+        return withNats(new RealtimeWebSocketHandler(subscriptions, mapper, null, new WebSocketHeartbeat(0), null, null,
+                runtime));
     }
 
     private GraphQLWebSocketHandler graphql(WsLimits limits) {
         runtime = new WsRuntime(limits, Runnable::run);
-        return new GraphQLWebSocketHandler(subscriptions, mapper, null, new WebSocketHeartbeat(0), null, null,
-                new ParsedQueries(1_000, Parser::parse), runtime);
+        return withNats(new GraphQLWebSocketHandler(subscriptions, mapper, null, new WebSocketHeartbeat(0), null, null,
+                new ParsedQueries(1_000, Parser::parse), runtime));
     }
 
     private static WsLimits limits(int perProject, int perClient, int perSession, int perProjectSubs, int outbox) {
@@ -378,5 +378,15 @@ class WsSessionLimitsTest {
         assertThat(sent).isEmpty();
         subscriptions.publish(null, new CDCEvent("INSERT", "public", "secret_x", "{\"id\":1}", 0L));
         assertThat(sent).hasSize(1);
+    }
+
+    private static RealtimeWebSocketHandler withNats(RealtimeWebSocketHandler handler) {
+        handler.natsEnabled(true);
+        return handler;
+    }
+
+    private static GraphQLWebSocketHandler withNats(GraphQLWebSocketHandler handler) {
+        handler.natsEnabled(true);
+        return handler;
     }
 }

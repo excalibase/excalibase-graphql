@@ -40,7 +40,7 @@ class RequestMetricsIntegrationTest extends EngineIntegrationTest {
     @Override
     public Map<String, String> getProperties() {
         Map<String, String> properties = new HashMap<>(EngineProperties.postgres(postgres, PROJECT));
-        properties.put("app.nats.enabled", "false");
+        properties.put("app.nats.enabled", "true");
         properties.put("app.request-metrics.enabled", "true");
         properties.put("app.request-metrics.port", Integer.toString(METRICS_PORT));
         properties.put("endpoints.all.port", Integer.toString(MANAGEMENT_PORT));
