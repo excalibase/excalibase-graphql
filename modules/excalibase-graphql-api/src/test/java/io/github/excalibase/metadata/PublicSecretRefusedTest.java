@@ -22,14 +22,18 @@ class PublicSecretRefusedTest {
     @Test
     @DisplayName("APP_AUTH_SECRET holding the example placeholder is refused at startup")
     void engineSecretRefused() {
-        assertThatThrownBy(() -> AuthSettingsReader.fromEnv(Map.of("APP_AUTH_SECRET", PUBLIC_SECRET)))
+        Map<String, String> env = Map.of("APP_AUTH_SECRET", PUBLIC_SECRET);
+
+        assertThatThrownBy(() -> AuthSettingsReader.fromEnv(env))
                 .isInstanceOf(IllegalStateException.class).hasMessageContaining("change-me");
     }
 
     @Test
     @DisplayName("a placeholder in any case, or inside a longer value, is refused too")
     void variantsRefused() {
-        assertThatThrownBy(() -> AuthSettingsReader.fromEnv(Map.of("APP_AUTH_SECRET", "x-CHANGE-ME-" + REAL_SECRET)))
+        Map<String, String> env = Map.of("APP_AUTH_SECRET", "x-CHANGE-ME-" + REAL_SECRET);
+
+        assertThatThrownBy(() -> AuthSettingsReader.fromEnv(env))
                 .isInstanceOf(IllegalStateException.class).hasMessageContaining("change-me");
     }
 
@@ -38,7 +42,9 @@ class PublicSecretRefusedTest {
     void secretFileRefused(@TempDir Path dir) throws IOException {
         Path file = Files.writeString(dir.resolve("secret"), PUBLIC_SECRET);
 
-        assertThatThrownBy(() -> AuthSettingsReader.fromEnv(Map.of("APP_AUTH_SECRET_FILE", file.toString())))
+        Map<String, String> env = Map.of("APP_AUTH_SECRET_FILE", file.toString());
+
+        assertThatThrownBy(() -> AuthSettingsReader.fromEnv(env))
                 .isInstanceOf(IllegalStateException.class).hasMessageContaining("change-me");
     }
 
