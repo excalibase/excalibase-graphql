@@ -536,6 +536,16 @@ public class RestApiController {
 
     /** One transaction; empty when it lost a lock to a concurrent request, was rolled back, and may run again. */
     private Optional<HttpResponse<Object>> executeDmlOnce(Dml dml, WriteRetry.Run run) {
+        try {
+            return executeDmlTransaction(dml, run);
+        } catch (DataAccessException e) {
+            if (!WriteRetry.isLockConflict(e)) throw e;
+            // The commit itself lost a lock (a serialization failure at COMMIT): the database rolled the write back.
+            return run.canRetry(e) ? Optional.empty() : Optional.of(mutationFailed(e, dml));
+        }
+    }
+
+    private Optional<HttpResponse<Object>> executeDmlTransaction(Dml dml, WriteRetry.Run run) {
         return inTransaction(status -> {
             try {
                 boolean represent = dml.maxAffected() != null || preferContains(dml.prefer(), PREFER_REPRESENTATION);
