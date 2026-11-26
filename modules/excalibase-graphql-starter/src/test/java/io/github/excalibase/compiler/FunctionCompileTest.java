@@ -10,6 +10,7 @@ import io.github.excalibase.security.RlsContext;
 import io.github.excalibase.security.RlsOp;
 import io.github.excalibase.security.RlsWhereContributor;
 import io.github.excalibase.spi.MutationCompiler;
+import graphql.language.Document;
 import graphql.language.Field;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -18,6 +19,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /** How a tracked function compiles: a named call as the FROM source, read like its return table. */
@@ -127,30 +129,34 @@ class FunctionCompileTest {
 
     @Test
     void anUnknownField_isATypedError_forRootQuery_rootMutation_andSelection() {
-        assertThatThrownBy(() -> compiler().compile(Parser.parse("{ nope { id } }")))
-                .isInstanceOf(UnknownFieldException.class);
-        assertThatThrownBy(() -> compiler().compile(Parser.parse("mutation { nope(x: 1) { id } }")))
-                .isInstanceOf(UnknownFieldException.class);
-        assertThatThrownBy(() -> compiler().compile(Parser.parse("{ publicNotes { id label } }")))
-                .isInstanceOf(UnknownFieldException.class);
+        SqlCompiler compiler = compiler();
+        Document rootQuery = Parser.parse("{ nope { id } }");
+        Document rootMutation = Parser.parse("mutation { nope(x: 1) { id } }");
+        Document selection = Parser.parse("{ publicNotes { id label } }");
+
+        assertThatThrownBy(() -> compiler.compile(rootQuery)).isInstanceOf(UnknownFieldException.class);
+        assertThatThrownBy(() -> compiler.compile(rootMutation)).isInstanceOf(UnknownFieldException.class);
+        assertThatThrownBy(() -> compiler.compile(selection)).isInstanceOf(UnknownFieldException.class);
     }
 
     @Test
     void introspection_isHeldToTheSameDepthAndSelectionLimitsAsAnyQuery() {
-        String deep = "{ __schema " + "{ types ".repeat(20) + "{ name }" + " }".repeat(20) + " }";
-        String wide = "{ " + "a: __typename ".repeat(QueryComplexity.MAX_SELECTIONS + 1) + "}";
+        SqlCompiler compiler = compiler(15);
+        Document deep = Parser.parse("{ __schema " + "{ types ".repeat(20) + "{ name }" + " }".repeat(20) + " }");
+        Document wide = Parser.parse("{ " + "a: __typename ".repeat(QueryComplexity.MAX_SELECTIONS + 1) + "}");
 
-        assertThatThrownBy(() -> compiler(15).enforceLimits(Parser.parse(deep))).hasMessageContaining("depth");
-        assertThatThrownBy(() -> compiler(15).enforceLimits(Parser.parse(wide))).isInstanceOf(QueryRejectedException.class);
+        assertThatThrownBy(() -> compiler.enforceLimits(deep)).hasMessageContaining("depth");
+        assertThatThrownBy(() -> compiler.enforceLimits(wide)).isInstanceOf(QueryRejectedException.class);
     }
 
     @Test
     void theStandardIntrospectionQuery_staysWithinTheLimits() {
         String ofType = "ofType { kind name ".repeat(7) + "}".repeat(7);
-        String standard = "query IntrospectionQuery { __schema { queryType { name } types { kind name fields(includeDeprecated: true) "
-                + "{ name args { name type { kind name " + ofType + " } } type { kind name " + ofType + " } } } } }";
+        Document standard = Parser.parse("query IntrospectionQuery { __schema { queryType { name } types { kind name fields(includeDeprecated: true) "
+                + "{ name args { name type { kind name " + ofType + " } } type { kind name " + ofType + " } } } } }");
+        SqlCompiler compiler = compiler(15);
 
-        compiler(15).enforceLimits(Parser.parse(standard));
+        assertThatCode(() -> compiler.enforceLimits(standard)).doesNotThrowAnyException();
     }
 
     @Test

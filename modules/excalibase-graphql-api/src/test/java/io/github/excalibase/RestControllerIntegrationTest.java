@@ -649,7 +649,7 @@ class RestControllerIntegrationTest extends EngineIntegrationTest {
 
     @Test
     @DisplayName("GET embedded orders take their own order and limit: ?orders.order=id.desc&orders.limit=1 (EXC-698)")
-    void embeddedList_takesItsOwnOrderAndLimit() throws Exception {
+    void embeddedList_takesItsOwnOrderAndLimit() {
       http.get(BASE + "/users?select=id,name,orders(id)&order=id.asc&orders.limit=1")
           .expect(status().isOk())
           .expect(jsonPath("$.data[0].name", is("Alice")))

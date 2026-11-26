@@ -51,7 +51,8 @@ class KeyedUpsertOrderTest {
     @BeforeEach
     void setUp() {
         when(dialect.quoteIdentifier(anyString())).thenAnswer(call -> "`" + call.getArgument(0) + "`");
-        when(jdbc.getJdbcOperations()).thenReturn(mock(JdbcOperations.class));
+        JdbcOperations operations = mock(JdbcOperations.class);
+        when(jdbc.getJdbcOperations()).thenReturn(operations);
         when(jdbc.queryForObject(anyString(), anyMap(), ArgumentMatchers.<RowMapper<long[]>>any()))
                 .thenReturn(new long[] {1, 0});
         insert = new KeyedWrites.Insert(INSERT_SQL, Map.of("id", 1), Map.of("id", 1));

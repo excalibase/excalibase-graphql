@@ -20,6 +20,8 @@ public class PostgresSchemaLoader implements SchemaLoader {
     }
 
     private static final String COL_TABLE_NAME = "table_name";
+
+    private static final String COL_CONSTRAINT_NAME = "constraint_name";
     private static final String COL_COLUMN_NAME = "column_name";
     private static final String COL_DATA_TYPE = "data_type";
     private static final String COL_UDT_NAME = "udt_name";
@@ -350,12 +352,12 @@ public class PostgresSchemaLoader implements SchemaLoader {
         }
         String fromTable = node.get(COL_TABLE_NAME).asText();
         // A constraint name is unique per table, not per schema.
-        String constraintKey = schema + "." + fromTable + "." + node.get("constraint_name").asText();
+        String constraintKey = schema + "." + fromTable + "." + node.get(COL_CONSTRAINT_NAME).asText();
         String fromCol = node.get("from_column").asText();
         String toTable = node.get("to_table").asText();
         String toCol = node.get("to_column").asText();
         fkTables.putIfAbsent(constraintKey, new String[]{fromTable, toTable, schema, node.get("to_schema").asText(),
-                node.get("constraint_name").asText()});
+                node.get(COL_CONSTRAINT_NAME).asText()});
         fkColumns.computeIfAbsent(constraintKey, k -> new ArrayList<>())
                 .add(new String[]{fromCol, toCol});
     }
@@ -487,7 +489,7 @@ public class PostgresSchemaLoader implements SchemaLoader {
             WHERE c.contype = 'f' AND n.nspname = ? AND clf.relnamespace = c.connamespace
             ORDER BY c.conname, u.ord
             """, rs -> {
-            String constraintName = rs.getString("constraint_name");
+            String constraintName = rs.getString(COL_CONSTRAINT_NAME);
             String fromTable = rs.getString("from_table");
             String fromCol = rs.getString("from_column");
             String toTable = rs.getString("to_table");

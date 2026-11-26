@@ -46,7 +46,7 @@ public class DynamicRoutingDataSource extends AbstractDataSource {
         closer.start();
         try {
             closer.join(CLOSE_WAIT.toMillis());
-        } catch (InterruptedException e) {
+        } catch (InterruptedException _) {
             Thread.currentThread().interrupt();
         }
     }
