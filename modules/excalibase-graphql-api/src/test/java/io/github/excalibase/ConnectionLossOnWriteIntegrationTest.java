@@ -74,4 +74,14 @@ class ConnectionLossOnWriteIntegrationTest extends EngineIntegrationTest {
                 .expect(status().isBadRequest())
                 .expect(jsonPath("$.code", is("foreign_key_violation")));
     }
+
+    /** A serialization failure at COMMIT rolled the write back, so it is run again, not reported as unknown. (EXC-817) */
+    @Test
+    void rest_serializationFailureAtCommit_isRetried() {
+        http.post(REST + "/commit_conflict", "{\"note\":\"x\"}", "Content-Type", "application/json")
+                .expect(status().isCreated());
+        http.get(REST + "/commit_conflict")
+                .expect(status().isOk())
+                .expect(jsonPath("$.data.length()", is(1)));
+    }
 }

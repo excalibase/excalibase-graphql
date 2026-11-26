@@ -19,3 +19,17 @@ ALTER TABLE deferred_check ADD CONSTRAINT qty_positive CHECK (qty > 0) NOT VALID
 CREATE TABLE deferred_child (id INT PRIMARY KEY, parent_id INT,
     CONSTRAINT deferred_child_parent FOREIGN KEY (parent_id) REFERENCES deferred_check (id)
         DEFERRABLE INITIALLY DEFERRED);
+
+-- A serialization failure raised at COMMIT, on the first commit only (a sequence is not rolled back).
+CREATE SEQUENCE commit_conflict_commits;
+CREATE FUNCTION fail_first_commit() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+    IF nextval('commit_conflict_commits') = 1 THEN
+        RAISE EXCEPTION 'could not serialize access' USING ERRCODE = '40001';
+    END IF;
+    RETURN NEW;
+END $$;
+
+CREATE TABLE commit_conflict (id SERIAL PRIMARY KEY, note TEXT);
+CREATE CONSTRAINT TRIGGER fail_first_commit AFTER INSERT ON commit_conflict
+    DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION fail_first_commit();
