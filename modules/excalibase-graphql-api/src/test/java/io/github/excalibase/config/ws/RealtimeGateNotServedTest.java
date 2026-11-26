@@ -24,7 +24,7 @@ class RealtimeGateNotServedTest {
         attributes.put(GraphQLWebSocketHandler.SESSION_PROJECT_KEY, "p1");
         when(session.getAttributes()).thenReturn(attributes);
 
-        RealtimeGate.Opening opening = RealtimeGate.open(plans, session, "orders");
+        RealtimeGate.Opening opening = RealtimeGate.open(plans, session, "orders", true);
 
         assertThat(opening.delivery()).isNull();
         assertThat(opening.refusal()).isEqualTo(SurfaceNotServedException.CODE);
