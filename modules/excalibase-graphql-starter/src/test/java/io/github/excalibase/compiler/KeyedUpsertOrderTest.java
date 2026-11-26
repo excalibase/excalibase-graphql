@@ -4,7 +4,10 @@ import io.github.excalibase.SqlDialect;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentMatchers;
+import org.springframework.dao.CannotAcquireLockException;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.dao.DeadlockLoserDataAccessException;
+import org.springframework.dao.PessimisticLockingFailureException;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.JdbcOperations;
 import org.springframework.jdbc.core.RowMapper;
@@ -150,6 +153,29 @@ class KeyedUpsertOrderTest {
 
         assertThatThrownBy(() -> write.run(jdbc, false)).isSameAs(failure);
         verify(jdbc, times(1)).update(eq(INSERT_SQL), any(SqlParameterSource.class), any(KeyHolder.class));
+    }
+
+    @Test
+    void aDeadlock_isRethrownBeforeAnyLookup_soTheTransactionIsRetriedWhole() {
+        assertLockFailureRethrown(new DeadlockLoserDataAccessException("deadlock",
+                new SQLException("Deadlock found", "40001", 1213)));
+    }
+
+    @Test
+    void aLockWaitTimeout_isRethrownBeforeAnyLookup() {
+        assertLockFailureRethrown(new CannotAcquireLockException("timeout",
+                new SQLException("Lock wait timeout exceeded", "HY000", 1205)));
+    }
+
+    private void assertLockFailureRethrown(PessimisticLockingFailureException failure) {
+        insertsFirst(true);
+        insertRaises(failure);
+        lookupFinds(true);
+        KeyedWrite write = writes.upsert(insert, set, everyRow);
+
+        assertThatThrownBy(() -> write.run(jdbc, false)).isSameAs(failure);
+        verify(jdbc, never()).queryForList(anyString(), anyMap(), eq(Integer.class));
+        verify(jdbc, never()).update(contains(UPDATE_PREFIX), anyMap());
     }
 
     @Test
