@@ -42,6 +42,16 @@ final class MysqlErrors {
     private MysqlErrors() {
     }
 
+    /** True when {@code failure}, or a cause of it, is the server's duplicate-entry error. */
+    static boolean isDuplicateKey(Throwable failure) {
+        for (Throwable cause = failure; cause != null; cause = cause.getCause() == cause ? null : cause.getCause()) {
+            if (cause instanceof SQLException sql && sql.getErrorCode() == DUPLICATE_ENTRY) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     static Optional<DataError> describe(SQLException failure) {
         String message = failure.getMessage() == null ? "" : failure.getMessage();
         return Optional.ofNullable(switch (failure.getErrorCode()) {

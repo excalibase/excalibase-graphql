@@ -28,6 +28,15 @@ class MysqlErrorsTest {
     }
 
     @Test
+    void mysqlInsertsBeforeTheLookupOfAnUpsert_andRecognisesADuplicateAnywhereInTheCauseChain() {
+        SQLException duplicate = new SQLIntegrityConstraintViolationException("Duplicate entry '1' for key 'PRIMARY'", "23000", 1062);
+
+        assertThat(dialect.insertsBeforeLookup()).isTrue();
+        assertThat(dialect.isDuplicateKey(new IllegalStateException("wrapped", duplicate))).isTrue();
+        assertThat(dialect.isDuplicateKey(new SQLException("deadlock", "40001", 1213))).isFalse();
+    }
+
+    @Test
     void aForeignKeyFailure_namesTheConstraintButNoSchema() {
         DataError error = describe(new SQLIntegrityConstraintViolationException(
                 "Cannot add or update a child row: a foreign key constraint fails (`appdb`.`orders`, CONSTRAINT "

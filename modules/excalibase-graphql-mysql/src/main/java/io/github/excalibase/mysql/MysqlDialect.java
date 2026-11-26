@@ -42,6 +42,17 @@ public class MysqlDialect implements SqlDialect {
         return MysqlErrors.describe(failure);
     }
 
+    /** Under REPEATABLE READ the lookup of a missing key locks a gap, and two upserts of one new key deadlock on it. */
+    @Override
+    public boolean insertsBeforeLookup() {
+        return true;
+    }
+
+    @Override
+    public boolean isDuplicateKey(Throwable failure) {
+        return MysqlErrors.isDuplicateKey(failure);
+    }
+
     /** No DISTINCT ON, no vector search, and no subscriptions until the watcher's binlog stream is tested. */
     @Override
     public Set<DialectFeature> features() {
