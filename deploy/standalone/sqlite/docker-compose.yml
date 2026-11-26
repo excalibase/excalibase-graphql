@@ -11,8 +11,15 @@ services:
       APP_DATABASE_TYPE: sqlite
       APP_PROJECT_ID: my-app
       JWT_SECRET: change-me-to-a-long-random-secret-of-32-bytes-or-more
+      # Readiness reports not ready while no valid permissions file is loaded. /actuator/health also checks the database.
+      MANAGEMENT_ENDPOINT_HEALTH_PROBES_ENABLED: "true"
       METADATA_SOURCE: file
       METADATA_FILE_PATH: /etc/excalibase
     volumes:
       - ./data:/data
       - ./metadata:/etc/excalibase:ro
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8081/actuator/health/readiness && curl -fsS http://localhost:8081/actuator/health"]
+      interval: 10s
+      retries: 6
+      start_period: 30s
