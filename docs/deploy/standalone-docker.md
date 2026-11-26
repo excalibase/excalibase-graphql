@@ -182,7 +182,7 @@ that come after that come back with HTTP status 200 and an `errors` list. Look a
 |---|---|
 | HTTP 401, `Invalid or expired token`, code `invalid_token` | The signature is wrong (another secret), or the token has expired. |
 | HTTP 401, `Invalid or expired token`, code `aud_mismatch` | `aud` is not the `audience` in the document. |
-| `Unknown field(s): publicTodos` | The role in the token has no rule for the table, or the table is not there. A request with no token counts as no role, so it gets this too. Check the `role` claim and the document. |
+| code `unknown_field`, `Unknown field(s): publicTodos. The request runs as role 'user', which has no permission rule for publicTodos…` | The role in the token has no rule for the table, or the table is not there. A request with no token runs as `anon`, so it gets this too; the message names the role. Check the `role` claim and the document. |
 | HTTP 404, `Project not found`, code `project_not_found` | The project id in the URL is not `APP_PROJECT_ID`. |
 | An empty list, no error | The rule's row filter hides every row from this user. |
 

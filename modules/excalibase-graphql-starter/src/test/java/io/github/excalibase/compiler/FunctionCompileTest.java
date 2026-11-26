@@ -122,6 +122,16 @@ class FunctionCompileTest {
     }
 
     @Test
+    void anUnknownField_isATypedError_forRootQuery_rootMutation_andSelection() {
+        assertThatThrownBy(() -> compiler().compile(Parser.parse("{ nope { id } }")))
+                .isInstanceOf(UnknownFieldException.class);
+        assertThatThrownBy(() -> compiler().compile(Parser.parse("mutation { nope(x: 1) { id } }")))
+                .isInstanceOf(UnknownFieldException.class);
+        assertThatThrownBy(() -> compiler().compile(Parser.parse("{ publicNotes { id label } }")))
+                .isInstanceOf(UnknownFieldException.class);
+    }
+
+    @Test
     void aKnownMutationThatCannotCompile_isAnError_namingIt() {
         assertThatThrownBy(() -> compiler().compile(Parser.parse("mutation { deletePublicNotes { id } }")))
                 .hasMessage("Invalid arguments for deletePublicNotes");

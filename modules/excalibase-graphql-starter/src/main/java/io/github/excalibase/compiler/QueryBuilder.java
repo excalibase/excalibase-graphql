@@ -866,7 +866,7 @@ public class QueryBuilder {
     }
 
     static IllegalArgumentException unknownField(String fieldName) {
-        return new IllegalArgumentException("Unknown field(s): " + fieldName);
+        return new UnknownFieldException(fieldName);
     }
 
     // === Fragment expansion ===

@@ -180,7 +180,7 @@ public class SqlCompiler {
     /** A root field the caller's schema does not have fails the whole operation, never silently. */
     private static void requireKnown(List<String> unresolvedFields) {
         if (!unresolvedFields.isEmpty()) {
-            throw new IllegalArgumentException("Unknown field(s): " + String.join(", ", unresolvedFields));
+            throw new UnknownFieldException(String.join(", ", unresolvedFields));
         }
     }
 

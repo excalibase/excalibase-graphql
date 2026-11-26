@@ -7,6 +7,7 @@ import graphql.language.Document;
 import graphql.language.OperationDefinition;
 import io.github.excalibase.SqlDialect;
 import io.github.excalibase.compiler.ParsedQueries;
+import io.github.excalibase.compiler.UnknownFieldException;
 import io.github.excalibase.compiler.SqlCompilationException;
 import io.github.excalibase.compiler.QueryRejectedException;
 import io.github.excalibase.compiler.SqlCompiler;
@@ -154,7 +155,7 @@ public class GraphqlController {
                 SqlCompiler.CompiledQuery compiled = state.compiler().compile(document, variables);
                 return SelectionOrder.apply(dispatchCompiled(compiled, state, finalUserId, finalClaims, isMutation(document)), document);
             } catch (Exception e) {
-                return errorResponse(e, state == null ? null : state.compiler().dialect());
+                return errorResponse(e, state == null ? null : state.compiler().dialect(), principal);
             } catch (StackOverflowError e) {
                 log.warn("GraphQL request refused: nesting too deep for the compiler");
                 return Reply.badRequest().body(Map.of(
@@ -181,7 +182,7 @@ public class GraphqlController {
             return Reply.status(HttpStatus.NOT_FOUND).body(Map.of(ERRORS_KEY, List.of(
                     PermissionErrors.graphqlError("project_not_found", "Project not found"))));
         } catch (Exception e) {
-            return errorResponse(e, null);
+            return errorResponse(e, null, caller);
         }
     }
 
@@ -192,7 +193,7 @@ public class GraphqlController {
      * malformed value, a column it may not write) carries its code too; a request the compiler rejects
      * keeps its message; anything else is the server's fault, logged here and answered 500 without detail.
      */
-    private static HttpResponse<Object> errorResponse(Exception e, SqlDialect dialect) {
+    private static HttpResponse<Object> errorResponse(Exception e, SqlDialect dialect, Principal principal) {
         if (e instanceof PermissionsUnavailableException) {
             return Reply.status(HttpStatus.SERVICE_UNAVAILABLE).body(Map.of(ERRORS_KEY, List.of(
                     PermissionErrors.graphqlError(PermissionsUnavailableException.CODE, "Permissions unavailable"))));
@@ -200,6 +201,11 @@ public class GraphqlController {
         if (e instanceof QueryRejectedException) {
             log.info("GraphQL request refused: {}", e.getMessage());
             return Reply.badRequest().body(Map.of(ERRORS_KEY, List.of(Map.of(MESSAGE_KEY, e.getMessage()))));
+        }
+        if (e instanceof UnknownFieldException unknown) {
+            log.info("GraphQL request refused: {}", unknown.getMessage());
+            return Reply.ok(Map.of(ERRORS_KEY, List.of(
+                    PermissionErrors.graphqlError(UnknownFieldException.CODE, unknown.messageFor(principal)))));
         }
         if (e instanceof PermissionEvaluationException evaluation) {
             return Reply.ok(Map.of(ERRORS_KEY,
