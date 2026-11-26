@@ -14,7 +14,7 @@ package io.github.excalibase.config;
  * Mode 2 — Shared HMAC secret (HS256, standalone / no auth service):
  *   jwt-enabled: true
  *   auth:
- *     hmac-secret: your-32-char-minimum-secret-here
+ *     hmac-secret: ${HMAC_SECRET}   # a random value, e.g. openssl rand -base64 48
  *
  * Mode 1 + multi-tenant (JWKS + per-tenant DB routing):
  *   jwt-enabled: true

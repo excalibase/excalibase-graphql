@@ -38,6 +38,15 @@ class PublicSecretRefusedTest {
     }
 
     @Test
+    @DisplayName("the placeholder spelled without the hyphen is refused too")
+    void unhyphenatedRefused() {
+        Map<String, String> env = Map.of("APP_AUTH_SECRET", "ChangeMe" + REAL_SECRET);
+
+        assertThatThrownBy(() -> AuthSettingsReader.fromEnv(env))
+                .isInstanceOf(IllegalStateException.class).hasMessageContaining("change-me");
+    }
+
+    @Test
     @DisplayName("a secret file holding the placeholder is refused")
     void secretFileRefused(@TempDir Path dir) throws IOException {
         Path file = Files.writeString(dir.resolve("secret"), PUBLIC_SECRET);

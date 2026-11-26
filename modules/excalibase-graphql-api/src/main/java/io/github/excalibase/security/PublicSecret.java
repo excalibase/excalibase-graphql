@@ -9,13 +9,18 @@ import java.util.Locale;
 public final class PublicSecret {
 
     private static final String PLACEHOLDER = "change-me";
+    private static final String UNHYPHENATED = "changeme";
 
     private PublicSecret() {
     }
 
-    /** @throws Refused when the secret holds the example placeholder, in any case */
+    /** @throws Refused when the secret holds the example placeholder, with or without the hyphen, in any case */
     public static void refuse(String secret) {
-        if (secret != null && secret.toLowerCase(Locale.ROOT).contains(PLACEHOLDER)) {
+        if (secret == null) {
+            return;
+        }
+        String lower = secret.toLowerCase(Locale.ROOT);
+        if (lower.contains(PLACEHOLDER) || lower.contains(UNHYPHENATED)) {
             throw new Refused();
         }
     }
