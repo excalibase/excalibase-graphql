@@ -48,6 +48,9 @@ public class SchemaChangeWatcher {
 
     @PostConstruct
     void start() {
+        if (schemas.documentMode()) {
+            return;
+        }
         if (pollSeconds <= 0) {
             log.info("schema_poll_disabled: app.cache.schema-poll-seconds is 0");
             return;

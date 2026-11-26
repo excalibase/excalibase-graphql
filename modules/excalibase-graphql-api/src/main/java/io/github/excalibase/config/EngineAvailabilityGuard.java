@@ -1,6 +1,7 @@
 package io.github.excalibase.config;
 
 import io.github.excalibase.SqlEngineProvider;
+import io.github.excalibase.spi.QueryEngineFactory;
 import io.github.excalibase.spi.SqlEngineFactory;
 import io.micronaut.context.annotation.Value;
 import jakarta.inject.Inject;
@@ -56,6 +57,9 @@ public class EngineAvailabilityGuard {
         }
         if (multiTenant) {
             return;
+        }
+        if (QueryEngineFactory.serves(databaseType)) {
+            return; // a document database: its plugin is on the classpath, and there is no JDBC url to judge
         }
         require(databaseType, "APP_DATABASE_TYPE=" + databaseType, providers);
         if (datasourceUrl == null) {

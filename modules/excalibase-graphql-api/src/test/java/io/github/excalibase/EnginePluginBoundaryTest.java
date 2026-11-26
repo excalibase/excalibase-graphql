@@ -4,6 +4,7 @@ import com.tngtech.archunit.core.domain.JavaClass;
 import com.tngtech.archunit.core.domain.JavaClasses;
 import com.tngtech.archunit.core.importer.ClassFileImporter;
 import com.tngtech.archunit.core.importer.ImportOption;
+import io.github.excalibase.spi.QueryEngineProvider;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
@@ -15,7 +16,8 @@ import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Keeps the slim images slim (EXC-799). A database plugin is whatever package holds a {@link SqlEngineProvider}; the
+ * Keeps the slim images slim (EXC-799). A database plugin is whatever package holds a {@link SqlEngineProvider} or a
+ * {@link QueryEngineProvider}; the
  * app, REST, RLS and starter code reach it only through that interface, and no one but a plugin touches a driver.
  * Otherwise a build without one plugin would not start, or would carry it in through the other code.
  */
@@ -37,14 +39,15 @@ class EnginePluginBoundaryTest {
 
     private static Set<String> pluginPackageNames(JavaClasses classes) {
         return classes.stream()
-                .filter(c -> c.isAssignableTo(SqlEngineProvider.class) && !c.isInterface())
+                .filter(c -> (c.isAssignableTo(SqlEngineProvider.class) || c.isAssignableTo(QueryEngineProvider.class)) && !c.isInterface())
                 .map(JavaClass::getPackageName)
                 .collect(Collectors.toSet());
     }
 
     @Test
     void thePluginsAreFoundSoTheRulesBelowAreNotVacuous() {
-        assertThat(pluginPackageNames(engine)).contains("io.github.excalibase.postgres", "io.github.excalibase.mysql", "io.github.excalibase.sqlite");
+        assertThat(pluginPackageNames(engine)).contains("io.github.excalibase.postgres", "io.github.excalibase.mysql", "io.github.excalibase.sqlite",
+                "io.github.excalibase.mongodb");
     }
 
     @Test

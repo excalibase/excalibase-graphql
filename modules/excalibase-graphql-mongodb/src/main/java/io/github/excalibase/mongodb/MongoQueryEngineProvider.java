@@ -1,5 +1,6 @@
 package io.github.excalibase.mongodb;
 
+import io.github.excalibase.permissions.PermissionSet;
 import io.github.excalibase.rls.ColumnPolicy;
 import io.github.excalibase.rls.Policy;
 import io.github.excalibase.spi.QueryEngine;
@@ -34,9 +35,10 @@ public final class MongoQueryEngineProvider implements QueryEngineProvider {
         String uri = required(settings, "uri");
         String database = required(settings, "database");
         Catalog catalog = Catalog.fromSettings(settings);
-        RowSecurity rows = new RowSecurity(catalog, typed(settings, "policies", Policy.class));
-        ColumnSecurity columns = new ColumnSecurity(catalog, typed(settings, "columnPolicies", ColumnPolicy.class));
-        requireGoverned(catalog, rows, openCollections(catalog, settings));
+        Rules rules = rules(settings, database, catalog);
+        RowSecurity rows = new RowSecurity(catalog, rules.policies());
+        ColumnSecurity columns = new ColumnSecurity(catalog, rules.columnPolicies());
+        requireGoverned(catalog, rows, rules.open());
 
         PipelineRunner runner = new DriverPipelineRunner(uri, database,
                 number(settings, "maxTimeMs", DEFAULT_MAX_TIME_MS), sslContext(settings));
@@ -48,6 +50,33 @@ public final class MongoQueryEngineProvider implements QueryEngineProvider {
             runner.close();
             throw e;
         }
+    }
+
+    /** The row and column rules to enforce, and the collections named open on purpose. */
+    private record Rules(List<Policy> policies, List<ColumnPolicy> columnPolicies, Set<String> open) {
+    }
+
+    /**
+     * Either the engine's permission document ({@code permissions}, translated and refused when it cannot be
+     * enforced exactly) or hand-written rls-core policies; never both, because two sources would leave it unclear
+     * which one a collection is governed by.
+     */
+    private static Rules rules(Map<String, Object> settings, String database, Catalog catalog) {
+        Object document = settings.get("permissions");
+        if (document == null) {
+            return new Rules(typed(settings, "policies", Policy.class), typed(settings, "columnPolicies", ColumnPolicy.class),
+                    openCollections(catalog, settings));
+        }
+        for (String own : List.of("policies", "columnPolicies", "openCollections")) {
+            if (settings.get(own) != null) {
+                throw new IllegalStateException("Setting \"permissions\" is the whole rule set: \"" + own + "\" cannot be given beside it");
+            }
+        }
+        if (!(document instanceof PermissionSet permissions)) {
+            throw new IllegalStateException("Setting \"permissions\" must be a PermissionSet");
+        }
+        PermissionTranslator.Translation translation = PermissionTranslator.translate(permissions, database, catalog);
+        return new Rules(translation.policies(), translation.columnPolicies(), Set.of());
     }
 
     /** Every collection is either governed by an ALLOW policy or named open: nothing is served by omission. */

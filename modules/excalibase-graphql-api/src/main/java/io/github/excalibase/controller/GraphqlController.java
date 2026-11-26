@@ -14,6 +14,7 @@ import io.github.excalibase.errors.DataError;
 import io.github.excalibase.errors.DataErrors;
 import io.github.excalibase.observability.requests.RequestMetrics;
 import io.github.excalibase.config.GraphQLObservabilityInstrumentation;
+import io.github.excalibase.document.DocumentEngines;
 import io.github.excalibase.permissions.PermissionEvaluationException;
 import io.github.excalibase.permissions.PermissionsUnavailableException;
 import io.github.excalibase.schema.GraphqlSchemaManager;
@@ -30,6 +31,7 @@ import io.github.excalibase.http.Reply;
 import io.micronaut.http.HttpResponse;
 import io.micronaut.http.HttpStatus;
 import io.micronaut.core.annotation.Nullable;
+import jakarta.inject.Inject;
 import io.micronaut.http.HttpRequest;
 import io.micronaut.http.annotation.Body;
 import io.micronaut.http.annotation.Controller;
@@ -70,12 +72,24 @@ public class GraphqlController {
     private final GraphQLObservabilityInstrumentation observability;
     private final boolean requestMetricsOn;
     private final ParsedQueries parsedQueries;
+    private final DocumentEngines documentEngines;
 
     public GraphqlController(GraphqlSchemaManager schemaManager,
                              QueryExecutionService queryExecutor,
                              GraphQLObservabilityInstrumentation observability,
                              @Nullable RequestMetrics requestMetrics,
                              ParsedQueries parsedQueries) {
+        this(schemaManager, queryExecutor, observability, requestMetrics, parsedQueries, null);
+    }
+
+    @Inject
+    public GraphqlController(GraphqlSchemaManager schemaManager,
+                             QueryExecutionService queryExecutor,
+                             GraphQLObservabilityInstrumentation observability,
+                             @Nullable RequestMetrics requestMetrics,
+                             ParsedQueries parsedQueries,
+                             @Nullable DocumentEngines documentEngines) {
+        this.documentEngines = documentEngines;
         this.schemaManager = schemaManager;
         this.queryExecutor = queryExecutor;
         this.observability = observability;
@@ -113,6 +127,10 @@ public class GraphqlController {
         Map<String, Object> variables = request.containsKey(VARIABLES_KEY) && request.get(VARIABLES_KEY) instanceof Map
                 ? (Map<String, Object>) request.get(VARIABLES_KEY) : Map.of();
 
+        if (documentEngines != null) {
+            return observability.observe(query, null, () -> documentAnswer(documentEngines, principal, query, variables));
+        }
+
         final String finalUserId = userId;
         final JwtClaims finalClaims = jwtClaims;
         final String finalQuery = query;
@@ -146,6 +164,21 @@ public class GraphqlController {
             httpRequest.getAttributes().put(RequestMetrics.GRAPHQL_ERRORS_ATTR, Boolean.TRUE);
         }
         return answer;
+    }
+
+    /** A document database's answer: its engine enforces the permission document itself, for every role. */
+    private HttpResponse<Object> documentAnswer(DocumentEngines engines, Principal principal, String query,
+                                                Map<String, Object> variables) {
+        Principal caller = principal == null ? Principal.anonymous() : principal;
+        if (caller.bypass()) {
+            return Reply.status(HttpStatus.FORBIDDEN).body(Map.of(ERRORS_KEY, List.of(PermissionErrors.graphqlError(
+                    "service_role_unsupported", "The service role is not served on this database yet"))));
+        }
+        try {
+            return Reply.ok(engines.execute(query, variables, caller));
+        } catch (Exception e) {
+            return errorResponse(e, null);
+        }
     }
 
     /**

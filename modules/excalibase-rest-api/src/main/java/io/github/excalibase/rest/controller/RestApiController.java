@@ -20,6 +20,7 @@ import io.github.excalibase.compiler.FunctionCall;
 import io.github.excalibase.schema.ExposedFunction;
 import io.github.excalibase.schema.SchemaInfo;
 import io.github.excalibase.schema.SchemaProvider;
+import io.github.excalibase.schema.SurfaceNotServedException;
 import io.github.excalibase.schema.TableAccess;
 import io.github.excalibase.security.PermissionCheckFailedException;
 import io.github.excalibase.security.PermissionErrors;
@@ -469,6 +470,12 @@ public class RestApiController {
         return DataErrors.describe(e, null).map(RestErrors::response)
                 .orElseGet(() -> Reply.status(HttpStatus.INTERNAL_SERVER_ERROR)
                         .body(Map.of(KEY_ERROR, "Mutation execution failed", "code", "internal_error")));
+    }
+
+    /** A database with no REST surface yet (a document database): refused as not implemented, never answered from nothing. */
+    @Error(exception = SurfaceNotServedException.class)
+    public HttpResponse<Object> surfaceNotServed(SurfaceNotServedException e) {
+        return Reply.status(HttpStatus.NOT_IMPLEMENTED).body(PermissionErrors.restBody(SurfaceNotServedException.CODE, e.getMessage()));
     }
 
     /** A request naming a column, operator or shape this caller's schema does not have. */
