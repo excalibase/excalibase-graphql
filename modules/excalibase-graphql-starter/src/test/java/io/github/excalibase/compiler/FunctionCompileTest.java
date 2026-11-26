@@ -44,13 +44,17 @@ class FunctionCompileTest {
     }
 
     private static SqlCompiler compiler() {
+        return compiler(0);
+    }
+
+    private static SqlCompiler compiler(int maxDepth) {
         SchemaInfo schema = new SchemaInfo();
         schema.addColumn(NOTES, "id", "integer");
         schema.addColumn(NOTES, "body", "text");
         schema.addPrimaryKey(NOTES, "id");
         schema.setTableSchema(NOTES, "public");
         schema.addComputedField(NOTES, "notes_label", "text");
-        return new SqlCompiler(schema, "public", 30, new TestDialect(), new NoMutations(), 0, TableAccess.UNRESTRICTED,
+        return new SqlCompiler(schema, "public", 30, new TestDialect(), new NoMutations(), maxDepth, TableAccess.UNRESTRICTED,
                 ExposedFunctions.of(List.of(SEARCH, LATEST, ADD)));
     }
 
@@ -129,6 +133,24 @@ class FunctionCompileTest {
                 .isInstanceOf(UnknownFieldException.class);
         assertThatThrownBy(() -> compiler().compile(Parser.parse("{ publicNotes { id label } }")))
                 .isInstanceOf(UnknownFieldException.class);
+    }
+
+    @Test
+    void introspection_isHeldToTheSameDepthAndSelectionLimitsAsAnyQuery() {
+        String deep = "{ __schema " + "{ types ".repeat(20) + "{ name }" + " }".repeat(20) + " }";
+        String wide = "{ " + "a: __typename ".repeat(QueryComplexity.MAX_SELECTIONS + 1) + "}";
+
+        assertThatThrownBy(() -> compiler(15).enforceLimits(Parser.parse(deep))).hasMessageContaining("depth");
+        assertThatThrownBy(() -> compiler(15).enforceLimits(Parser.parse(wide))).isInstanceOf(QueryRejectedException.class);
+    }
+
+    @Test
+    void theStandardIntrospectionQuery_staysWithinTheLimits() {
+        String ofType = "ofType { kind name ".repeat(7) + "}".repeat(7);
+        String standard = "query IntrospectionQuery { __schema { queryType { name } types { kind name fields(includeDeprecated: true) "
+                + "{ name args { name type { kind name " + ofType + " } } type { kind name " + ofType + " } } } } }";
+
+        compiler(15).enforceLimits(Parser.parse(standard));
     }
 
     @Test

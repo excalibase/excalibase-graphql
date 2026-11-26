@@ -114,6 +114,17 @@ public class SqlCompiler {
         }
     }
 
+    /**
+     * The limits {@link #compile} holds every operation to, for a request that does not compile (introspection):
+     * a fragment cycle, too many selections once fragments expand, or too deep a query.
+     */
+    public void enforceLimits(Document doc) {
+        var ops = doc.getDefinitionsOfType(OperationDefinition.class);
+        if (!ops.isEmpty()) {
+            enforceQueryLimits(ops.getFirst(), collectFragments(doc));
+        }
+    }
+
     /** Collect all fragment definitions from the document for later expansion. */
     private Map<String, FragmentDefinition> collectFragments(Document doc) {
         Map<String, FragmentDefinition> fragments = new HashMap<>();
