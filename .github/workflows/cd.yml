@@ -82,7 +82,7 @@ jobs:
     # (EXC-642); the push below is served from this build's cache.
     - name: Build the candidate image
       if: steps.trunk.outputs.exists != 'true'
-      uses: docker/build-push-action@ca052bb54ab0790a636c9b5f226502c73d547a25 # v5.4.0
+      uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
       with:
         context: .
         load: true
@@ -99,7 +99,7 @@ jobs:
 
     - name: Build and push Docker image
       if: steps.trunk.outputs.exists != 'true'
-      uses: docker/build-push-action@ca052bb54ab0790a636c9b5f226502c73d547a25 # v5.4.0
+      uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
       with:
         context: .
         push: true
@@ -202,7 +202,7 @@ jobs:
           type=raw,value=${{ needs.release-plan.outputs.prefix }},enable=${{ needs.release-plan.outputs.floating == 'true' }}
 
     - name: Build the candidate image
-      uses: docker/build-push-action@ca052bb54ab0790a636c9b5f226502c73d547a25 # v5.4.0
+      uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
       with:
         context: .
         load: true
@@ -217,7 +217,7 @@ jobs:
         image: graphql-candidate:${{ env.COMMIT_SHA }}
 
     - name: Build and push release image
-      uses: docker/build-push-action@ca052bb54ab0790a636c9b5f226502c73d547a25 # v5.4.0
+      uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
       with:
         context: .
         push: true
@@ -286,7 +286,7 @@ jobs:
     # (EXC-642); the push below is served from this build's cache.
     - name: Build the candidate image
       if: steps.trunk.outputs.exists != 'true'
-      uses: docker/build-push-action@ca052bb54ab0790a636c9b5f226502c73d547a25 # v5.4.0
+      uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
       with:
         context: .
         file: Dockerfile.native
@@ -304,7 +304,7 @@ jobs:
 
     - name: Build and push native Docker image
       if: steps.trunk.outputs.exists != 'true'
-      uses: docker/build-push-action@ca052bb54ab0790a636c9b5f226502c73d547a25 # v5.4.0
+      uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
       with:
         context: .
         file: Dockerfile.native
@@ -379,7 +379,7 @@ jobs:
     # Scanned before anything is pushed, like the all-in-one image (EXC-642).
     - name: Build the candidate image
       if: steps.trunk.outputs.exists != 'true'
-      uses: docker/build-push-action@ca052bb54ab0790a636c9b5f226502c73d547a25 # v5.4.0
+      uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
       with:
         context: .
         build-args: ENGINE=${{ matrix.engine }}
@@ -397,7 +397,7 @@ jobs:
 
     - name: Build and push Docker image
       if: steps.trunk.outputs.exists != 'true'
-      uses: docker/build-push-action@ca052bb54ab0790a636c9b5f226502c73d547a25 # v5.4.0
+      uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
       with:
         context: .
         build-args: ENGINE=${{ matrix.engine }}
