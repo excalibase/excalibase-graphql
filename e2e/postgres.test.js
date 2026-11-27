@@ -1068,15 +1068,15 @@ describe('Engine RLS (policy from provisioning mock)', () => {
     });
     token = login.data.accessToken;
     decoded = decodeJwt(token);
-    // Mirror the app's extractUserId: prefer the userId claim, fall back to sub.
-    userId = decoded.userId != null ? String(decoded.userId) : decoded.sub;
+    // The engine reads the end-user id only from sub (needs excalibase-auth with sub = account id).
+    userId = decoded.sub;
 
     // Two rows owned by the caller, one owned by someone else.
     psql('DELETE FROM hana.rls_notes;');
     psql(`INSERT INTO hana.rls_notes (owner_id, body) VALUES ('${userId}','mine-1'),('${userId}','mine-2'),('someone-else','theirs');`);
   });
 
-  test('JWT carries userId + projectId (engine needs both for RLS context)', () => {
+  test('JWT carries sub + projectId (engine needs both for RLS context)', () => {
     expect(userId).toBeTruthy();
     expect(decoded.projectId).toBeTruthy();
   });

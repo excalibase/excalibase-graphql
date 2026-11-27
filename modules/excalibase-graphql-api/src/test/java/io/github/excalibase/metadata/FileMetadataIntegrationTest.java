@@ -127,7 +127,7 @@ class FileMetadataIntegrationTest extends EngineIntegrationTest {
     }
 
     private String jwt() throws Exception {
-        JWTClaimsSet claims = new JWTClaimsSet.Builder().subject("u@test.com").claim("userId", "u-1")
+        JWTClaimsSet claims = new JWTClaimsSet.Builder().subject("u-1")
                 .claim("projectId", PROJECT).claim("role", ROLE).claim("scope", "authenticated")
                 .audience("excalibase:" + PROJECT).issuer("excalibase")
                 .issueTime(Date.from(Instant.parse("2024-01-01T00:00:00Z")))

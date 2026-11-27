@@ -390,14 +390,11 @@ public class JwtService {
     }
 
     private String extractUserId(JWTClaimsSet claims) {
-        Object userIdClaim = claims.getClaim("userId");
-        if (userIdClaim != null) {
-            return String.valueOf(userIdClaim);
-        }
+        // The end-user id is sub and nothing else: a custom claim must never choose who the caller is.
         String sub = claims.getSubject();
         if (sub != null && !sub.isBlank()) {
             return sub;
         }
-        throw new JwtVerificationException("Missing required claim: userId or sub");
+        throw new JwtVerificationException("Missing required claim: sub");
     }
 }

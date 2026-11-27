@@ -20,7 +20,7 @@ class PrincipalTest {
     private static final String PROJECT = "proj-a";
 
     private static JwtClaims passwordToken(Map<String, Object> rawClaims) {
-        return new JwtClaims(String.valueOf(rawClaims.getOrDefault("userId", rawClaims.get("sub"))), PROJECT,
+        return new JwtClaims(String.valueOf(rawClaims.get("sub")), PROJECT,
                 "org", "app", "Org", (String) rawClaims.get("role"), (String) rawClaims.get("email"),
                 (String) rawClaims.get("scope"), 0L, rawClaims, Set.of((String) rawClaims.get("role")));
     }
@@ -29,7 +29,6 @@ class PrincipalTest {
         Map<String, Object> raw = new LinkedHashMap<>();
         raw.put("sub", "42");
         raw.put("email", "alice@test.com");
-        raw.put("userId", 42L);
         raw.put("role", "user");
         raw.put("projectId", PROJECT);
         raw.put("orgSlug", "org");
@@ -92,12 +91,59 @@ class PrincipalTest {
     }
 
     @Test
-    void userId_comesOnlyFromTheUserIdClaim_neverFromSub() {
+    void userId_isTheSubject() {
+        Principal principal = new Principal("user", false, passwordToken(userClaims()), Map.of());
+
+        assertThat(principal.sessionVariables(PROJECT)).containsEntry("x-excalibase-user-id", "42");
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"user-id", "User-Id", "USER-ID", "user_id", "USER_ID", "userId", "userid", "user"})
+    void userId_neverComesFromACustomClaim(String claimName) {
         Map<String, Object> raw = userClaims();
-        raw.remove("userId");
+        raw.put(claimName, "forged");
+        Principal principal = new Principal("user", false, passwordToken(raw), Map.of());
+
+        assertThat(principal.sessionVariables(PROJECT)).containsEntry("x-excalibase-user-id", "42")
+                .doesNotContainValue("forged");
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"public", "service"})
+    void apiKeyScopes_haveNoUserId(String scope) {
+        Map<String, Object> raw = userClaims();
+        raw.put("sub", "apikey:9");
+        raw.put("scope", scope);
         Principal principal = new Principal("user", false, passwordToken(raw), Map.of());
 
         assertThat(principal.sessionVariables(PROJECT)).doesNotContainKey("x-excalibase-user-id");
+    }
+
+    @Test
+    void aTokenWithAKeyId_hasNoUserId() {
+        JwtClaims keyed = new JwtClaims("apikey:9", PROJECT, "org", "app", "Org", "user", null, null, 9L,
+                Map.of("sub", "apikey:9"), Set.of("user"));
+
+        assertThat(new Principal("user", false, keyed, Map.of()).sessionVariables(PROJECT))
+                .doesNotContainKey("x-excalibase-user-id");
+    }
+
+    @Test
+    void anon_hasNoUserEvenWhenItsTokenCarriesASubject() {
+        Map<String, Object> raw = userClaims();
+        raw.put("role", "anon");
+        Principal principal = new Principal("anon", false, passwordToken(raw), Map.of());
+
+        assertThat(principal.sessionVariables(PROJECT)).doesNotContainKey("x-excalibase-user-id");
+    }
+
+    @Test
+    void isUserIdName_ignoresCaseAndDashVersusUnderscore() {
+        assertThat(Principal.isUserIdName("User_ID")).isTrue();
+        assertThat(Principal.isUserIdName("USER")).isTrue();
+        assertThat(Principal.isUserIdName("userId")).isTrue();
+        assertThat(Principal.isUserIdName("user-name")).isFalse();
+        assertThat(Principal.isUserIdName(null)).isFalse();
     }
 
     @Test
@@ -222,7 +268,7 @@ class PrincipalTest {
     @Test
     void impersonation_takesSessionVariablesFromTheHeadersNotTheServiceToken() {
         Map<String, Object> raw = new HashMap<>(Map.of(
-                "sub", "apikey:9", "role", "service", "scope", "service", "keyId", 9L, "userId", 1L));
+                "sub", "apikey:9", "role", "service", "scope", "service", "keyId", 9L));
         Principal principal = new Principal("user", false, passwordToken(raw),
                 Map.of("X-Excalibase-User-Id", "77", "x-excalibase-plan", "gold"));
 

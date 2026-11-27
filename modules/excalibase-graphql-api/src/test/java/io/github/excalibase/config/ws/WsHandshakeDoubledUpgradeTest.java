@@ -50,7 +50,7 @@ class WsHandshakeDoubledUpgradeTest {
     }
 
     private static String tokenFor(String project) throws Exception {
-        JWTClaimsSet claims = new JWTClaimsSet.Builder().subject("alice@test.com").claim("userId", 42)
+        JWTClaimsSet claims = new JWTClaimsSet.Builder().subject("42")
                 .claim("projectId", project).claim("role", "user")
                 .expirationTime(Date.from(Instant.now().plusSeconds(3600))).build();
         SignedJWT signed = new SignedJWT(new JWSHeader.Builder(JWSAlgorithm.ES256).build(), claims);

@@ -196,8 +196,7 @@ class RoleViewRelationshipNamesIntegrationTest extends EngineIntegrationTest {
 
     private static String token(Map<String, Object> claims) throws Exception {
         JWTClaimsSet.Builder builder = new JWTClaimsSet.Builder()
-                .subject("fan@test.com")
-                .claim("userId", "u-1")
+                .subject("u-1")
                 .claim("projectId", PROJECT)
                 .audience("excalibase:" + PROJECT)
                 .issueTime(Date.from(Instant.now()))

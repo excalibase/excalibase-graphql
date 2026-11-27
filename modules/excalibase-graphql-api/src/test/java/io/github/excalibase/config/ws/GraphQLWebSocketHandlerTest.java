@@ -112,7 +112,7 @@ class GraphQLWebSocketHandlerTest {
 
     private static JwtClaims user(String userId) {
         return new JwtClaims(userId, "p1", "acme", "demo", "", ROLE, "u@x.com", "authenticated", 0L,
-                Map.of("userId", userId), null);
+                Map.of(), null);
     }
 
     private static Principal principalOf(JwtClaims claims) {

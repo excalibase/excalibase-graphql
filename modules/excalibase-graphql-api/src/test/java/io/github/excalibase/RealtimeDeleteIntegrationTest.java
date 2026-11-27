@@ -272,8 +272,7 @@ class RealtimeDeleteIntegrationTest extends EngineIntegrationTest {
 
     private static String jwt(String userId) throws Exception {
         JWTClaimsSet claims = new JWTClaimsSet.Builder()
-                .subject("user@test.com")
-                .claim("userId", userId)
+                .subject(String.valueOf(userId))
                 .claim("projectId", PROJECT)
                 .audience("excalibase:" + PROJECT)
                 .claim("role", ROLE)

@@ -137,7 +137,7 @@ class EngineRlsIntegrationTest extends EngineIntegrationTest {
         postgres.start();
         Map<String, String> properties = EngineProperties.isolated();
         properties.put("app.database-type", "postgres");
-        properties.put("app.max-rows", String.valueOf(30));
+        properties.put("app.max-rows", "30");
         properties.put("app.security.jwt-enabled", "true");
         properties.put("app.security.auth.jwks-url", String.valueOf("http://localhost:" + mockVaultPort + "/.well-known/jwks.json"));
         properties.put("app.security.multi-tenant.provisioning-url", String.valueOf("http://localhost:" + mockVaultPort + "/api"));
@@ -198,8 +198,7 @@ class EngineRlsIntegrationTest extends EngineIntegrationTest {
 
     private String jwt(String userId, String projectId, Map<String, Object> extraClaims) throws Exception {
         JWTClaimsSet.Builder claims = new JWTClaimsSet.Builder()
-                .subject("user@test.com")
-                .claim("userId", userId)
+                .subject(String.valueOf(userId))
                 .claim("projectId", projectId)
                 .audience("excalibase:" + projectId)
                 .claim("role", "app_authenticated")
@@ -255,7 +254,6 @@ class EngineRlsIntegrationTest extends EngineIntegrationTest {
     private String guestJwt(String projectId) throws Exception {
         JWTClaimsSet claims = new JWTClaimsSet.Builder()
                 .subject("77")
-                .claim("userId", 77L)
                 .claim("projectId", projectId)
                 .audience("excalibase:" + projectId)
                 .claim("role", "guest")

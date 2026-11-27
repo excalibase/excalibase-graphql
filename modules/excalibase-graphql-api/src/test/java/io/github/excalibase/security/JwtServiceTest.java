@@ -50,8 +50,7 @@ class JwtServiceTest {
 
     private String signJwt(ECPrivateKey key, long userId, String projectId, String role, String email, Instant exp) throws Exception {
         JWTClaimsSet claims = new JWTClaimsSet.Builder()
-                .subject(email)
-                .claim("userId", userId)
+                .subject(String.valueOf(userId))
                 .claim("projectId", projectId)
                 .claim("orgSlug", "duc-corp")
                 .claim("projectName", "app-a")
@@ -71,7 +70,6 @@ class JwtServiceTest {
         JWTClaimsSet withEmail = new JWTClaimsSet.Builder()
                 .subject("42")
                 .claim("email", "alice@test.com")
-                .claim("userId", 42L)
                 .claim("projectId", "my-project")
                 .claim("role", "user")
                 .issuer("excalibase")
@@ -109,7 +107,6 @@ class JwtServiceTest {
         // Mirror the wire format that excalibase-auth's grant_type=api_key emits.
         JWTClaimsSet apiKeyClaims = new JWTClaimsSet.Builder()
                 .subject("apikey:7")
-                .claim("userId", 42L)
                 .claim("projectId", "duc-corp/app-a")
                 .claim("orgSlug", "duc-corp")
                 .claim("projectName", "app-a")
@@ -135,7 +132,6 @@ class JwtServiceTest {
     void publishableKeyToken_hasPublicScope() throws Exception {
         JWTClaimsSet pubClaims = new JWTClaimsSet.Builder()
                 .subject("apikey:3")
-                .claim("userId", 1L)
                 .claim("projectId", "duc-corp/app-a")
                 .claim("orgSlug", "duc-corp")
                 .claim("projectName", "app-a")
@@ -202,7 +198,7 @@ class JwtServiceTest {
         // the HMAC secret). In EC mode the verifier must pin ES256 and reject it
         // outright, never attempting HMAC verification.
         JWTClaimsSet claims = new JWTClaimsSet.Builder()
-                .claim("userId", 1).claim("projectId", "p")
+                .claim("projectId", "p")
                 .expirationTime(Date.from(Instant.now().plusSeconds(3600))).build();
         SignedJWT hs = new SignedJWT(new JWSHeader.Builder(JWSAlgorithm.HS256).build(), claims);
         hs.sign(new MACSigner("0123456789abcdef0123456789abcdef".getBytes(StandardCharsets.UTF_8)));
@@ -214,7 +210,7 @@ class JwtServiceTest {
     @Test
     void algNone_unsignedToken_rejected() {
         JWTClaimsSet claims = new JWTClaimsSet.Builder()
-                .claim("userId", 1).claim("projectId", "p")
+                .claim("projectId", "p")
                 .expirationTime(Date.from(Instant.now().plusSeconds(3600))).build();
         String unsigned = new PlainJWT(claims).serialize(); // alg: none
 
@@ -240,7 +236,7 @@ class JwtServiceTest {
 
     private String signWithIssuer(String iss) throws Exception {
         JWTClaimsSet claims = new JWTClaimsSet.Builder()
-                .issuer(iss).claim("userId", 1).claim("projectId", "p").claim("role", "user")
+                .issuer(iss).claim("projectId", "p").claim("role", "user")
                 .subject("a@b.com").expirationTime(Date.from(Instant.now().plusSeconds(3600))).build();
         SignedJWT signed = new SignedJWT(new JWSHeader.Builder(JWSAlgorithm.ES256).build(), claims);
         signed.sign(new ECDSASigner(privateKey));
@@ -307,8 +303,7 @@ class JwtServiceTest {
 
             for (int i = 0; i < 3; i++) {
                 JWTClaimsSet claims = new JWTClaimsSet.Builder()
-                        .subject("test@test.com")
-                        .claim("userId", 1L)
+                        .subject("1")
                         .claim("projectId", "test/proj")
                         .claim("role", "user")
                         .issuer("excalibase")

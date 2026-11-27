@@ -94,13 +94,13 @@ class MysqlPermissionsIntegrationTest extends EngineIntegrationTest {
         properties.put("spring.datasource.password", mysql.getPassword());
         properties.put("spring.datasource.driver-class-name", "com.mysql.cj.jdbc.Driver");
         properties.put("app.database-type", "mysql");
-        properties.put("app.max-rows", String.valueOf(30));
+        properties.put("app.max-rows", "30");
         properties.put("app.project-id", String.valueOf(PROJECT));
         properties.put("app.security.jwt-enabled", "true");
         properties.put("app.security.auth.jwks-url", String.valueOf("http://localhost:" + CONTROL_PLANE.getAddress().getPort() + "/.well-known/jwks.json"));
         properties.put("app.security.rls.policy-url", String.valueOf("http://localhost:" + CONTROL_PLANE.getAddress().getPort() + "/api"));
         properties.put("app.security.rls.policy-pat", "test-pat");
-        properties.put("app.security.rls.policy-ttl-ms", String.valueOf(0));
+        properties.put("app.security.rls.policy-ttl-ms", "0");
         return properties;
     }
 
@@ -543,7 +543,7 @@ class MysqlPermissionsIntegrationTest extends EngineIntegrationTest {
     /** With an aal claim; null leaves it out. */
     private static String jwt(String userId, String aal) throws Exception {
         JWTClaimsSet claims = new JWTClaimsSet.Builder()
-                .subject("u@test.com").claim("userId", userId).claim("projectId", PROJECT).claim("aal", aal)
+                .subject(String.valueOf(userId)).claim("projectId", PROJECT).claim("aal", aal)
                 .audience("excalibase:" + PROJECT).claim("role", ROLE).issuer("excalibase")
                 .issueTime(Date.from(Instant.parse("2024-01-01T00:00:00Z")))
                 .expirationTime(Date.from(Instant.parse("2099-01-01T00:00:00Z")))

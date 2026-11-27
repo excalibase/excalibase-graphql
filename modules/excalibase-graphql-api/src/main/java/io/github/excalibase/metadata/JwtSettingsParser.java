@@ -175,7 +175,8 @@ final class JwtSettingsParser {
         Map<String, String> extra = new LinkedHashMap<>();
         node.fields().forEachRemaining(entry -> {
             String where = "jwt.claims.extra." + entry.getKey();
-            if (!EXTRA_NAME.matcher(entry.getKey()).matches() || RESERVED_NAMES.contains(entry.getKey())) {
+            if (!EXTRA_NAME.matcher(entry.getKey()).matches() || RESERVED_NAMES.contains(entry.getKey())
+                    || Principal.isUserIdName(entry.getKey())) {
                 throw invalid(where + ": the name must be lower-case letters, digits, - or _ and not one the "
                         + "engine fills itself (it becomes x-excalibase-<name>)");
             }

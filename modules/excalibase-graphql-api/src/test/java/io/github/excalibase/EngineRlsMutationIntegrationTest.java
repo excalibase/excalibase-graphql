@@ -96,13 +96,13 @@ class EngineRlsMutationIntegrationTest extends EngineIntegrationTest {
         properties.put("spring.datasource.username", postgres.getUsername());
         properties.put("spring.datasource.password", postgres.getPassword());
         properties.put("app.database-type", "postgres");
-        properties.put("app.max-rows", String.valueOf(30));
+        properties.put("app.max-rows", "30");
         properties.put("app.security.jwt-enabled", "true");
         properties.put("app.project-id", String.valueOf(PROJECT));
         properties.put("app.security.auth.jwks-url", String.valueOf("http://localhost:" + mockVaultPort + "/.well-known/jwks.json"));
         properties.put("app.security.rls.policy-url", String.valueOf("http://localhost:" + mockVaultPort + "/api"));
         properties.put("app.security.rls.policy-pat", "test-pat");
-        properties.put("app.security.rls.policy-ttl-ms", String.valueOf(0));
+        properties.put("app.security.rls.policy-ttl-ms", "0");
         return properties;
     }
 
@@ -152,7 +152,7 @@ class EngineRlsMutationIntegrationTest extends EngineIntegrationTest {
 
     private String jwt(String userId) throws Exception {
         JWTClaimsSet claims = new JWTClaimsSet.Builder()
-                .subject("u@test.com").claim("userId", userId).claim("projectId", PROJECT)
+                .subject(String.valueOf(userId)).claim("projectId", PROJECT)
                 .audience("excalibase:" + PROJECT)
                 .claim("role", "app_authenticated").issuer("excalibase")
                 .issueTime(java.util.Date.from(java.time.Instant.parse("2024-01-01T00:00:00Z"))).expirationTime(java.util.Date.from(java.time.Instant.parse("2099-01-01T00:00:00Z")))

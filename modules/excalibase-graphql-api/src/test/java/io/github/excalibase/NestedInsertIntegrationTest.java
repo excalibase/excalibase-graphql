@@ -162,7 +162,7 @@ class NestedInsertIntegrationTest extends EngineIntegrationTest {
 
     private static String token(String role) throws Exception {
         JWTClaimsSet claims = new JWTClaimsSet.Builder()
-                .subject("u@test.com").claim("userId", "11111111-1111-1111-1111-111111111111")
+                .subject("11111111-1111-1111-1111-111111111111")
                 .claim("projectId", PROJECT).audience("excalibase:" + PROJECT)
                 .claim("role", role).issuer("excalibase")
                 .issueTime(Date.from(Instant.parse("2024-01-01T00:00:00Z")))

@@ -50,6 +50,7 @@ class JwtSettingsParserTest {
             "unknown key|issuer: https://i/\\njwksUrl: https://i/jwks\\naudience: a\\nsurprise: 1|jwt.surprise",
             "upper-case extra|issuer: https://i/\\njwksUrl: https://i/jwks\\naudience: a\\nclaims:\\n  extra:\\n    Org: o|jwt.claims.extra",
             "reserved extra|issuer: https://i/\\njwksUrl: https://i/jwks\\naudience: a\\nclaims:\\n  extra:\\n    user-id: o|jwt.claims.extra",
+            "reserved extra with underscore|issuer: https://i/\\njwksUrl: https://i/jwks\\naudience: a\\nclaims:\\n  extra:\\n    user_id: o|jwt.claims.extra",
             "service default role|issuer: https://i/\\njwksUrl: https://i/jwks\\naudience: a\\nclaims:\\n  defaultRole: service|jwt.claims.defaultRole",
             "negative skew|issuer: https://i/\\njwksUrl: https://i/jwks\\naudience: a\\nclockSkew: -1|jwt.clockSkew",
             "huge skew|issuer: https://i/\\njwksUrl: https://i/jwks\\naudience: a\\nclockSkew: 99999|jwt.clockSkew",

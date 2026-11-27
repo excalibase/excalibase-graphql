@@ -146,8 +146,7 @@ class TrackedFunctionIntegrationTest extends EngineIntegrationTest {
 
     private String jwt(String role, String scope, String userId) throws Exception {
         JWTClaimsSet claims = new JWTClaimsSet.Builder()
-                .subject(userId + "@test.com")
-                .claim("userId", userId)
+                .subject(String.valueOf(userId))
                 .claim("projectId", PROJECT)
                 .claim("role", role)
                 .claim("scope", scope)

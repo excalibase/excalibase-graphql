@@ -383,7 +383,7 @@ describe('CDC deletes under a row filter (tenant A, owner-only select)', () => {
     if (daveSub) { daveSub.close(); daveSub = null; }
   });
 
-  const userIdOf = (token) => String(JSON.parse(Buffer.from(token.split('.')[1], 'base64').toString()).userId);
+  const userIdOf = (token) => String(JSON.parse(Buffer.from(token.split('.')[1], 'base64').toString()).sub);
   const changeOf = (sub, operation, title) =>
     sub.events.find((ev) => ev.operation === operation && ev.data && ev.data.title === title);
 

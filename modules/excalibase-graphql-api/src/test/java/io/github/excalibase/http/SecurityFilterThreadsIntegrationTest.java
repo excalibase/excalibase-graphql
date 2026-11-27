@@ -64,7 +64,7 @@ class SecurityFilterThreadsIntegrationTest extends EngineIntegrationTest {
     }
 
     private static String token() throws Exception {
-        JWTClaimsSet claims = new JWTClaimsSet.Builder().subject("42").claim("userId", 42L)
+        JWTClaimsSet claims = new JWTClaimsSet.Builder().subject("42")
                 .claim("projectId", PROJECT).claim("role", "service").claim("scope", "service")
                 .expirationTime(Date.from(Instant.now().plusSeconds(3600))).build();
         SignedJWT jwt = new SignedJWT(new JWSHeader(JWSAlgorithm.HS256), claims);
